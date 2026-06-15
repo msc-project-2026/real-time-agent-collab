@@ -1,6 +1,11 @@
 {
   "gateway": {
-    "mode": "local"
+    "mode": "local",
+    "controlUi": {
+      "allowedOrigins": [
+        "https://real-time-agent-collab-production.up.railway.app"
+      ]
+    }
   },
   "models": {
     "mode": "merge",
