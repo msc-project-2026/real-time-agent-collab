@@ -1,0 +1,34 @@
+{
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "cisco": {
+        "baseUrl": "https://llm-proxy.dev.outshift.ai/",
+        "apiKey": "${CISCO_LLM_API_KEY}",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "bedrock/global.anthropic.claude-sonnet-4-6",
+            "name": "Claude Sonnet 4.6"
+          },
+          {
+            "id": "bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0",
+            "name": "Claude Haiku 4.5"
+          },
+          { "id": "azure/gpt-5.4", "name": "GPT-5.4" },
+          {
+            "id": "vertex_ai/gemini-3-pro-preview",
+            "name": "Gemini 3 Pro Preview"
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "cisco/bedrock/global.anthropic.claude-sonnet-4-6"
+      }
+    }
+  }
+}
