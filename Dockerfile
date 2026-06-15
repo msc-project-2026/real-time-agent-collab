@@ -11,5 +11,10 @@ COPY --chown=node:node config/openclaw.json /app/config/openclaw.json
 COPY --chown=node:node docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
 
+# Note: the Railway volume at /home/node/.openclaw is mounted as root, while
+# the base image's default user is node (uid 1000). Set RAILWAY_RUN_UID=0 in
+# the Railway service variables so the container runs as root and can write
+# to the mounted volume.
+
 # Overrides the base CMD only; ENTRYPOINT (tini) is inherited.
 CMD ["/app/docker-entrypoint.sh"]
