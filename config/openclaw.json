@@ -4,8 +4,14 @@
     "controlUi": {
       "allowedOrigins": [
         "https://real-time-agent-collab-production.up.railway.app"
-      ]
-    }
+      ],
+      "allowInsecureAuth": true
+    },
+    "auth": {
+      "mode": "token",
+      "token": "${OPENCLAW_GATEWAY_TOKEN}"
+    },
+    "trustedProxies": ["172.16.0.0/12", "10.0.0.0/8"]
   },
   "models": {
     "mode": "merge",
