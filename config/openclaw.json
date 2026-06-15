@@ -5,13 +5,19 @@
       "allowedOrigins": [
         "https://real-time-agent-collab-production.up.railway.app"
       ],
-      "allowInsecureAuth": true
+      "dangerouslyDisableDeviceAuth": true
     },
     "auth": {
       "mode": "token",
       "token": "${OPENCLAW_GATEWAY_TOKEN}"
     },
-    "trustedProxies": ["100.64.0.0/10", "10.0.0.0/8", "172.16.0.0/12"]
+    "trustedProxies": [
+      "100.64.0.3",
+      "100.64.0.5",
+      "100.64.0.7",
+      "100.64.0.8",
+      "100.64.0.11"
+    ]
   },
   "models": {
     "mode": "merge",
