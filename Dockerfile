@@ -17,7 +17,8 @@ RUN chmod +x /app/docker-entrypoint.sh
 # to the mounted volume.
 
 # Install webex plugin
-RUN npm install @jimiford/webex && chown -R root:root node_modules/@jimiford/webex
+USER root
+RUN npm install @jimiford/webex
 
 # Overrides the base CMD only; ENTRYPOINT (tini) is inherited.
 CMD ["/app/docker-entrypoint.sh"]
