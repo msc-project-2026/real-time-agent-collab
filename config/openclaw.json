@@ -64,6 +64,11 @@
   "plugins": {
     "load": {
       "paths": ["node_modules/@jimiford/webex"]
+    },
+    "entries": {
+      "webex": {
+        "enabled": true
+      }
     }
   }
 }
