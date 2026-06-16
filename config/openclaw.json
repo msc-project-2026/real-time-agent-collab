@@ -69,7 +69,8 @@
       "webex": {
         "enabled": true,
         "config": {
-          "token": "${WEBEX_BOT_TOKEN}"
+          "token": "${WEBEX_BOT_TOKEN}",
+          "webhookUrl": "https://real-time-agent-collab-production.up.railway.app/webhooks/webex/default"
         }
       }
     }
