@@ -25,7 +25,7 @@ function register(api) {
   // registerHttpRoute to match current OpenClaw plugin API.
   api.registerHttpRoute({
     path: '/webhooks/webex/',
-    auth: 'none',
+    auth: 'plugin',
     handler: (0, channel_plugin_1.createWebhookHandler)(),
   });
 }
