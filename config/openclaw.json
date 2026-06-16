@@ -50,5 +50,20 @@
         "primary": "cisco/bedrock/global.anthropic.claude-sonnet-4-6"
       }
     }
+  },
+  "channels": {
+    "webex": {
+      "enabled": true,
+      "token": "${WEBEX_BOT_TOKEN}",
+      "webhookUrl": "https://real-time-agent-collab-production.up.railway.app/webhooks/webex/default",
+      "webhookSecret": "${WEBEX_WEBHOOK_SECRET}",
+      "dmPolicy": "allowlisted",
+      "allowFrom": ["ucabtg2@ucl.ac.uk"]
+    }
+  },
+  "plugins": {
+    "load": {
+      "paths": ["node_modules/@jimiford/webex"]
+    }
   }
 }
