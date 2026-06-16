@@ -16,9 +16,7 @@ RUN chmod +x /app/docker-entrypoint.sh
 # the Railway service variables so the container runs as root and can write
 # to the mounted volume.
 
-# Install webex plugin
-USER root
-RUN npm install @jimiford/webex
+COPY --chown=root:root plugins/ /app/plugins/ 
 
 # Overrides the base CMD only; ENTRYPOINT (tini) is inherited.
 CMD ["/app/docker-entrypoint.sh"]

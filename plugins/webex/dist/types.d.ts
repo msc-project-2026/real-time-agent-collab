@@ -1,0 +1,223 @@
+/**
+ * Webex Channel Plugin Types
+ */
+export type DmPolicy = 'allow' | 'deny' | 'allowlisted' | 'allowlist' | 'pairing';
+export interface WebexChannelConfig {
+    /** Webex Bot access token */
+    token: string;
+    /** Public URL where webhooks will be received */
+    webhookUrl: string;
+    /** Policy for handling direct messages */
+    dmPolicy: DmPolicy;
+    /** List of allowed person IDs or emails (used when dmPolicy is 'allowlisted') */
+    allowFrom?: string[];
+    /** Webhook secret for payload verification */
+    webhookSecret?: string;
+    /** Base URL for Webex API (defaults to https://webexapis.com/v1) */
+    apiBaseUrl?: string;
+    /** Maximum retry attempts for failed requests */
+    maxRetries?: number;
+    /** Retry delay in milliseconds */
+    retryDelayMs?: number;
+}
+export interface WebexPerson {
+    id: string;
+    emails: string[];
+    displayName: string;
+    nickName?: string;
+    firstName?: string;
+    lastName?: string;
+    avatar?: string;
+    orgId: string;
+    created: string;
+    lastModified?: string;
+    type: 'person' | 'bot';
+}
+export interface WebexRoom {
+    id: string;
+    title: string;
+    type: 'direct' | 'group';
+    isLocked: boolean;
+    teamId?: string;
+    lastActivity: string;
+    creatorId: string;
+    created: string;
+    ownerId?: string;
+}
+export interface WebexMessage {
+    id: string;
+    roomId: string;
+    roomType: 'direct' | 'group';
+    toPersonId?: string;
+    toPersonEmail?: string;
+    text?: string;
+    markdown?: string;
+    html?: string;
+    files?: string[];
+    personId: string;
+    personEmail: string;
+    mentionedPeople?: string[];
+    mentionedGroups?: string[];
+    attachments?: WebexAttachment[];
+    created: string;
+    updated?: string;
+    parentId?: string;
+}
+export interface WebexAttachment {
+    contentType: 'application/vnd.microsoft.card.adaptive';
+    content: AdaptiveCard;
+}
+export interface AdaptiveCard {
+    type: 'AdaptiveCard';
+    version: string;
+    body: unknown[];
+    actions?: unknown[];
+}
+export interface WebexWebhook {
+    id: string;
+    name: string;
+    targetUrl: string;
+    resource: WebexWebhookResource;
+    event: WebexWebhookEvent;
+    filter?: string;
+    secret?: string;
+    status: 'active' | 'inactive';
+    created: string;
+    orgId: string;
+    createdBy: string;
+    appId: string;
+    ownedBy: 'creator' | 'org';
+}
+export type WebexWebhookResource = 'messages' | 'memberships' | 'rooms' | 'attachmentActions' | 'meetings' | 'recordings';
+export type WebexWebhookEvent = 'created' | 'updated' | 'deleted' | 'started' | 'ended';
+export interface WebexWebhookPayload {
+    id: string;
+    name: string;
+    targetUrl: string;
+    resource: WebexWebhookResource;
+    event: WebexWebhookEvent;
+    filter?: string;
+    orgId: string;
+    createdBy: string;
+    appId: string;
+    ownedBy: string;
+    status: string;
+    created: string;
+    actorId: string;
+    data: WebexWebhookData;
+}
+export interface WebexWebhookData {
+    id: string;
+    roomId: string;
+    roomType: 'direct' | 'group';
+    personId: string;
+    personEmail: string;
+    created: string;
+    mentionedPeople?: string[];
+    mentionedGroups?: string[];
+    files?: string[];
+}
+export interface CreateMessageRequest {
+    roomId?: string;
+    toPersonId?: string;
+    toPersonEmail?: string;
+    text?: string;
+    markdown?: string;
+    files?: string[];
+    attachments?: WebexAttachment[];
+    parentId?: string;
+}
+export interface CreateWebhookRequest {
+    name: string;
+    targetUrl: string;
+    resource: WebexWebhookResource;
+    event: WebexWebhookEvent;
+    filter?: string;
+    secret?: string;
+}
+export interface WebexApiError {
+    message: string;
+    errors?: Array<{
+        description: string;
+    }>;
+    trackingId: string;
+}
+export interface PaginatedResponse<T> {
+    items: T[];
+}
+export interface OpenClawEnvelope {
+    /** Unique message identifier */
+    id: string;
+    /** Channel identifier */
+    channel: 'webex';
+    /** Conversation/thread identifier */
+    conversationId: string;
+    /** Message author information */
+    author: {
+        id: string;
+        email?: string;
+        displayName?: string;
+        isBot: boolean;
+    };
+    /** Message content */
+    content: {
+        text?: string;
+        markdown?: string;
+        attachments?: OpenClawAttachment[];
+    };
+    /** Message metadata */
+    metadata: {
+        roomType: 'direct' | 'group';
+        roomId: string;
+        timestamp: string;
+        mentions?: string[];
+        parentId?: string;
+        raw: WebexMessage;
+    };
+}
+export interface OpenClawAttachment {
+    type: 'file' | 'card';
+    url?: string;
+    content?: unknown;
+}
+export interface OpenClawOutboundMessage {
+    /** Target conversation ID (roomId) or person ID/email for DMs */
+    to: string;
+    /** Message content */
+    content: {
+        text?: string;
+        markdown?: string;
+        files?: string[];
+        card?: AdaptiveCard;
+    };
+    /** Optional parent message ID for threading */
+    parentId?: string;
+}
+export interface WebexChannelPlugin {
+    name: string;
+    version: string;
+    /** Initialize the channel with configuration */
+    initialize(config: WebexChannelConfig): Promise<void>;
+    /** Send a message */
+    send(message: OpenClawOutboundMessage): Promise<WebexMessage>;
+    /** Handle incoming webhook */
+    handleWebhook(payload: WebexWebhookPayload, signature?: string): Promise<OpenClawEnvelope | null>;
+    /** Register webhooks with Webex */
+    registerWebhooks(): Promise<WebexWebhook[]>;
+    /** Cleanup and shutdown */
+    shutdown(): Promise<void>;
+}
+export interface WebhookHandler {
+    (envelope: OpenClawEnvelope): Promise<void> | void;
+}
+export interface RetryOptions {
+    maxRetries: number;
+    retryDelayMs: number;
+    shouldRetry?: (error: Error, attempt: number) => boolean;
+}
+export interface RequestOptions {
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+    path: string;
+    body?: unknown;
+    headers?: Record<string, string>;
+}

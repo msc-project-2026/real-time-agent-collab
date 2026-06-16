@@ -63,7 +63,7 @@
   },
   "plugins": {
     "load": {
-      "paths": ["node_modules/@jimiford/webex"]
+      "paths": ["plugins/webex"]
     },
     "entries": {
       "webex": {
