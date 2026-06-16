@@ -67,7 +67,10 @@
     },
     "entries": {
       "webex": {
-        "enabled": true
+        "enabled": true,
+        "config": {
+          "token": "${WEBEX_BOT_TOKEN}"
+        }
       }
     }
   }
