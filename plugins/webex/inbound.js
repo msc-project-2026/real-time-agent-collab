@@ -7,7 +7,9 @@ const { buildMsgBody } = require('./send');
 
 // Holds the OpenClaw plugin runtime (set via setRuntime() by register() in index.js).
 let pluginRuntime = null;
-function setRuntime(r) { pluginRuntime = r; }
+function setRuntime(r) {
+  pluginRuntime = r;
+}
 
 function isDmAllowed(cfg, personId, personEmail) {
   switch (cfg.dmPolicy) {
