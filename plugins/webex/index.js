@@ -180,7 +180,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
     return;
   }
 
-  const loadedCfg = pluginRuntime.config?.loadConfig?.() ?? {};
+  const loadedCfg = pluginRuntime.config?.current?.() ?? {};
   await dispatch({
     ctx: ctxPayload,
     cfg: loadedCfg,
@@ -207,6 +207,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
 // Registered at /webhooks/webex/ (prefix match, auth: plugin).
 // Dispatches to the right account target based on the full path.
 async function webhookRouter(req, res) {
+  console.log(`[webex] webhookRouter called: ${req.method} ${req.url}`);
   const path = normPath(new URL(req.url ?? '/', 'http://x').pathname);
   const target = targets.get(path);
   if (!target) return false; // not our path
