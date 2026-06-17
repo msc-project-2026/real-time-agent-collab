@@ -33,6 +33,22 @@
         "type": "array",
         "items": { "type": "string" },
         "description": "Allowed sender emails or person IDs (dmPolicy: allowlisted)"
+      },
+      "accessToken": {
+        "type": "string",
+        "description": "OAuth access token for receiving all space messages"
+      },
+      "refreshToken": {
+        "type": "string",
+        "description": "OAuth refresh token for renewing the access token"
+      },
+      "clientId": {
+        "type": "string",
+        "description": "Webex Integration client ID"
+      },
+      "clientSecret": {
+        "type": "string",
+        "description": "Webex Integration client secret"
       }
     }
   }
