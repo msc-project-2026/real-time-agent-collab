@@ -90,20 +90,43 @@ function buildMsgBody(to, content, parentId) {
   return body;
 }
 
+// ── OAuth token refresh ───────────────────────────────────────────────────
+
+async function refreshAccessToken(cfg) {
+  const params = new URLSearchParams({
+    grant_type: 'refresh_token',
+    client_id: cfg.clientId,
+    client_secret: cfg.clientSecret,
+    refresh_token: cfg.refreshToken,
+  });
+  const res = await fetch(`${WEBEX_API}/access_token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Webex token refresh → ${res.status}: ${text}`);
+  }
+  const data = await res.json();
+  return data.access_token;
+}
+
 // ── webhook registration ──────────────────────────────────────────────────
 
 // Deregisters any existing webhooks pointing at cfg.webhookUrl then creates a
 // fresh one.  Idempotent — safe to call on every startAccount.
 async function ensureWebhook(cfg) {
-  const data = await webexFetch(cfg.token, '/webhooks');
+  const token = currentAccessToken ?? cfg.token;
+  const data = await webexFetch(token, '/webhooks');
   await Promise.all(
     (data?.items ?? [])
       .filter((w) => w.targetUrl === cfg.webhookUrl)
       .map((w) =>
-        webexFetch(cfg.token, `/webhooks/${w.id}`, { method: 'DELETE' })
+        webexFetch(token, `/webhooks/${w.id}`, { method: 'DELETE' })
       )
   );
-  await webexFetch(cfg.token, '/webhooks', {
+  await webexFetch(token, '/webhooks', {
     method: 'POST',
     body: {
       name: 'OpenClaw Message Handler',
@@ -116,12 +139,13 @@ async function ensureWebhook(cfg) {
 }
 
 async function deregisterWebhooks(cfg) {
-  const data = await webexFetch(cfg.token, '/webhooks');
+  const token = currentAccessToken ?? cfg.token;
+  const data = await webexFetch(token, '/webhooks');
   await Promise.all(
     (data?.items ?? [])
       .filter((w) => w.targetUrl === cfg.webhookUrl)
       .map((w) =>
-        webexFetch(cfg.token, `/webhooks/${w.id}`, { method: 'DELETE' })
+        webexFetch(token, `/webhooks/${w.id}`, { method: 'DELETE' })
       )
   );
 }
@@ -143,7 +167,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
   }
 
   // Webhooks only carry IDs — fetch full message to get text + mentions
-  const msg = await webexFetch(cfg.token, `/messages/${payload.data.id}`);
+  const msg = await webexFetch(currentAccessToken ?? cfg.token, `/messages/${payload.data.id}`);
 
   const isMentioned =
     Array.isArray(msg.mentionedPeople) && msg.mentionedPeople.includes(botId);
@@ -304,6 +328,10 @@ function resolveAccount(cfg, accountId = DEFAULT_ACCOUNT) {
         webhookSecret: named.webhookSecret ?? section.webhookSecret,
         dmPolicy: named.dmPolicy ?? section.dmPolicy ?? 'deny',
         allowFrom: named.allowFrom ?? section.allowFrom ?? [],
+        accessToken: named.accessToken ?? section.accessToken,
+        clientId: named.clientId ?? section.clientId,
+        clientSecret: named.clientSecret ?? section.clientSecret,
+        refreshToken: named.refreshToken ?? section.refreshToken,
       }
     : accountId === DEFAULT_ACCOUNT
       ? {
@@ -312,6 +340,10 @@ function resolveAccount(cfg, accountId = DEFAULT_ACCOUNT) {
           webhookSecret: section.webhookSecret,
           dmPolicy: section.dmPolicy ?? 'deny',
           allowFrom: section.allowFrom ?? [],
+          accessToken: section.accessToken,
+          clientId: section.clientId,
+          clientSecret: section.clientSecret,
+          refreshToken: section.refreshToken,
         }
       : null;
 
@@ -462,7 +494,7 @@ const webexPlugin = {
       const start = Date.now();
       try {
         const res = await fetch(`${WEBEX_API}/people/me`, {
-          headers: { Authorization: `Bearer ${account.config.token}` },
+          headers: { Authorization: `Bearer ${currentAccessToken ?? account.config.token}` },
           ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
         });
         const elapsedMs = Date.now() - start;
@@ -487,10 +519,27 @@ const webexPlugin = {
       setStatus?.({ accountId: account.accountId, baseUrl: WEBEX_API });
       log?.info?.(`[webex:${account.accountId}] starting`);
 
+      // Initialise OAuth access token (used for all API calls except sending replies)
+      currentAccessToken = cfg.accessToken ?? null;
+
       // Resolve bot identity so we can filter self-messages and detect mentions
-      const botInfo = await webexFetch(cfg.token, '/people/me');
+      const botInfo = await webexFetch(currentAccessToken ?? cfg.token, '/people/me');
       const botId = botInfo.id;
       log?.info?.(`[webex:${account.accountId}] bot id=${botId}`);
+
+      // Refresh access token every 12 days (tokens last ~14 days); Webex auto-renews the refresh token.
+      let refreshInterval = null;
+      if (cfg.accessToken) {
+        const TWELVE_DAYS_MS = 12 * 24 * 60 * 60 * 1000;
+        refreshInterval = setInterval(async () => {
+          try {
+            currentAccessToken = await refreshAccessToken(cfg);
+            log?.info?.(`[webex:${account.accountId}] access token refreshed`);
+          } catch (err) {
+            log?.warn?.(`[webex:${account.accountId}] token refresh failed: ${err?.message}`);
+          }
+        }, TWELVE_DAYS_MS);
+      }
 
       // Register (or refresh) the Webex webhook for this account
       await ensureWebhook(cfg);
@@ -510,6 +559,7 @@ const webexPlugin = {
       try {
         await new Promise(() => {}); // never resolves
       } finally {
+        if (refreshInterval) clearInterval(refreshInterval);
         log?.info?.(`[webex:${account.accountId}] stopping`);
         targets.delete(webhookPath);
         await deregisterWebhooks(cfg).catch((err) =>
@@ -526,6 +576,9 @@ const webexPlugin = {
 
 // module-level
 let pluginRuntime = null;
+// Current OAuth access token — updated by the 12-day refresh interval in startAccount.
+// Falls back to cfg.token (bot token) when null.
+let currentAccessToken = null;
 
 function register(api) {
   pluginRuntime = api.runtime;

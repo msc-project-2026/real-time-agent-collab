@@ -68,6 +68,10 @@
     "webex": {
       "enabled": true,
       "token": "${WEBEX_BOT_TOKEN}",
+      "accessToken": "${WEBEX_ACCESS_TOKEN}",
+      "refreshToken": "${WEBEX_REFRESH_TOKEN}",
+      "clientId": "${WEBEX_CLIENT_ID}",
+      "clientSecret": "${WEBEX_CLIENT_SECRET}",
       "webhookUrl": "https://real-time-agent-collab-production.up.railway.app/webhooks/webex/default",
       "webhookSecret": "${WEBEX_WEBHOOK_SECRET}",
       "dmPolicy": "allowlisted",
