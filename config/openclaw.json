@@ -75,7 +75,12 @@
       "webhookUrl": "https://real-time-agent-collab-production.up.railway.app/webhooks/webex/default",
       "webhookSecret": "${WEBEX_WEBHOOK_SECRET}",
       "dmPolicy": "allowlisted",
-      "allowFrom": ["ucabtg2@ucl.ac.uk"]
+      "allowFrom": [
+        "ucabtg2@ucl.ac.uk",
+        "ucab295@ucl.ac.uk",
+        "davit.gevorgyan.25@ucl.ac.uk",
+        "leonardo.martin.25@ucl.ac.uk"
+      ]
     }
   },
   "plugins": {
