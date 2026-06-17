@@ -34,7 +34,6 @@
         "items": { "type": "string" },
         "description": "Allowed sender emails or person IDs (dmPolicy: allowlisted)"
       }
-    },
-    "required": ["token", "webhookUrl"]
+    }
   }
 }
