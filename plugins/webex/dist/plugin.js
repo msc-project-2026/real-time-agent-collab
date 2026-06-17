@@ -26,6 +26,7 @@ function register(api) {
   api.registerHttpRoute({
     path: '/webhooks/webex/',
     auth: 'plugin',
+    match: 'prefix',
     handler: (0, channel_plugin_1.createWebhookHandler)(),
   });
 }
