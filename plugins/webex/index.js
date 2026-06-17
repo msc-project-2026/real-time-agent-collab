@@ -122,9 +122,7 @@ async function ensureWebhook(cfg) {
   await Promise.all(
     (data?.items ?? [])
       .filter((w) => w.targetUrl === cfg.webhookUrl)
-      .map((w) =>
-        webexFetch(token, `/webhooks/${w.id}`, { method: 'DELETE' })
-      )
+      .map((w) => webexFetch(token, `/webhooks/${w.id}`, { method: 'DELETE' }))
   );
   await webexFetch(token, '/webhooks', {
     method: 'POST',
@@ -144,9 +142,7 @@ async function deregisterWebhooks(cfg) {
   await Promise.all(
     (data?.items ?? [])
       .filter((w) => w.targetUrl === cfg.webhookUrl)
-      .map((w) =>
-        webexFetch(token, `/webhooks/${w.id}`, { method: 'DELETE' })
-      )
+      .map((w) => webexFetch(token, `/webhooks/${w.id}`, { method: 'DELETE' }))
   );
 }
 
@@ -167,7 +163,10 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
   }
 
   // Webhooks only carry IDs — fetch full message to get text + mentions
-  const msg = await webexFetch(currentAccessToken ?? cfg.token, `/messages/${payload.data.id}`);
+  const msg = await webexFetch(
+    currentAccessToken ?? cfg.token,
+    `/messages/${payload.data.id}`
+  );
 
   const isMentioned =
     Array.isArray(msg.mentionedPeople) && msg.mentionedPeople.includes(botId);
@@ -494,7 +493,9 @@ const webexPlugin = {
       const start = Date.now();
       try {
         const res = await fetch(`${WEBEX_API}/people/me`, {
-          headers: { Authorization: `Bearer ${currentAccessToken ?? account.config.token}` },
+          headers: {
+            Authorization: `Bearer ${account.config.token}`,
+          },
           ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
         });
         const elapsedMs = Date.now() - start;
@@ -523,7 +524,7 @@ const webexPlugin = {
       currentAccessToken = cfg.accessToken ?? null;
 
       // Resolve bot identity so we can filter self-messages and detect mentions
-      const botInfo = await webexFetch(currentAccessToken ?? cfg.token, '/people/me');
+      const botInfo = await webexFetch(cfg.token, '/people/me');
       const botId = botInfo.id;
       log?.info?.(`[webex:${account.accountId}] bot id=${botId}`);
 
@@ -536,7 +537,9 @@ const webexPlugin = {
             currentAccessToken = await refreshAccessToken(cfg);
             log?.info?.(`[webex:${account.accountId}] access token refreshed`);
           } catch (err) {
-            log?.warn?.(`[webex:${account.accountId}] token refresh failed: ${err?.message}`);
+            log?.warn?.(
+              `[webex:${account.accountId}] token refresh failed: ${err?.message}`
+            );
           }
         }, TWELVE_DAYS_MS);
       }
