@@ -169,10 +169,15 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
   );
 
   // *** Addition: only process messages from spaces where the bot is a member
-  const membership = await webexFetch(
-    cfg.token,
-    `/memberships?roomId=${msg.roomId}&personId=${botId}`
-  );
+  let membership;
+  try {
+    membership = await webexFetch(
+      cfg.token,
+      `/memberships?roomId=${msg.roomId}&personId=${botId}`
+    );
+  } catch {
+    return; // bot not in this space or no access — skip silently
+  }
   if (!membership?.items?.length) return;
 
   const isMentioned =
