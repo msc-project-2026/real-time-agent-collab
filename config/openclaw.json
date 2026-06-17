@@ -53,14 +53,14 @@
     },
     "list": [
       {
-        "id": "default",
+        "id": "main",
         "default": true
       }
     ]
   },
   "bindings": [
     {
-      "agentId": "default",
+      "agentId": "main",
       "match": { "channel": "webex" }
     }
   ],
