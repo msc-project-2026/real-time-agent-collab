@@ -9,87 +9,32 @@
     "properties": {
       "enabled": {
         "type": "boolean",
-        "description": "Enable the Webex channel",
         "default": false
       },
       "token": {
         "type": "string",
-        "description": "Webex bot access token from developer.webex.com"
+        "description": "Webex bot access token"
       },
       "webhookUrl": {
         "type": "string",
-        "description": "Public URL for receiving Webex webhooks"
+        "description": "Public URL for receiving Webex webhook POSTs"
       },
       "webhookSecret": {
         "type": "string",
-        "description": "Secret for verifying webhook signatures (recommended)"
+        "description": "HMAC-SHA1 secret for verifying webhook signatures"
       },
       "dmPolicy": {
         "type": "string",
-        "enum": ["allow", "deny", "allowlisted", "pairing"],
-        "description": "Policy for handling direct messages",
-        "default": "deny"
+        "enum": ["allow", "deny", "allowlisted"],
+        "default": "deny",
+        "description": "Policy for direct messages"
       },
       "allowFrom": {
         "type": "array",
         "items": { "type": "string" },
-        "description": "List of allowed person IDs or emails (when dmPolicy is allowlisted)"
-      },
-      "apiBaseUrl": {
-        "type": "string",
-        "description": "Custom Webex API base URL",
-        "default": "https://webexapis.com/v1"
-      },
-      "maxRetries": {
-        "type": "number",
-        "description": "Maximum retry attempts for failed API calls",
-        "default": 3
-      },
-      "retryDelayMs": {
-        "type": "number",
-        "description": "Delay between retries in milliseconds",
-        "default": 1000
+        "description": "Allowed sender emails or person IDs (dmPolicy: allowlisted)"
       }
     },
     "required": ["token", "webhookUrl"]
-  },
-  "uiHints": {
-    "token": {
-      "label": "Bot Access Token",
-      "sensitive": true,
-      "placeholder": "Your Webex bot token from developer.webex.com"
-    },
-    "webhookUrl": {
-      "label": "Webhook URL",
-      "placeholder": "https://your-domain.com/webhooks/webex/default"
-    },
-    "webhookSecret": {
-      "label": "Webhook Secret",
-      "sensitive": true,
-      "placeholder": "Strong random secret for webhook verification"
-    },
-    "dmPolicy": {
-      "label": "DM Policy",
-      "options": [
-        { "value": "allow", "label": "Allow all" },
-        { "value": "deny", "label": "Deny all" },
-        { "value": "allowlisted", "label": "Allowlist only" },
-        { "value": "pairing", "label": "Pairing required" }
-      ]
-    },
-    "allowFrom": {
-      "label": "Allowed Senders",
-      "placeholder": "Person ID or email address"
-    },
-    "apiBaseUrl": {
-      "label": "API Base URL",
-      "placeholder": "https://webexapis.com/v1"
-    },
-    "maxRetries": {
-      "label": "Max Retries"
-    },
-    "retryDelayMs": {
-      "label": "Retry Delay (ms)"
-    }
   }
 }
