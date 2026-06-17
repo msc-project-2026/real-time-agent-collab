@@ -130,7 +130,7 @@ async function deregisterWebhooks(cfg) {
 
 // Called asynchronously after the webhook POST is acknowledged.  Filters,
 // fetches full message details, then delivers to the OpenClaw agent pipeline.
-async function handleInbound(payload, { botId, cfg, account, runtime, log }) {
+async function handleInbound(payload, { botId, cfg, account, log }) {
   if (payload.resource !== 'messages' || payload.event !== 'created') return;
 
   // Ignore messages sent by the bot itself
@@ -172,7 +172,7 @@ async function handleInbound(payload, { botId, cfg, account, runtime, log }) {
   };
 
   const dispatch =
-    runtime?.channel?.reply?.dispatchReplyWithBufferedBlockDispatcher;
+    pluginRuntime?.channel?.reply?.dispatchReplyWithBufferedBlockDispatcher;
   if (!dispatch) {
     log?.warn?.(
       `[webex:${account.accountId}] agent pipeline dispatch unavailable`
@@ -180,7 +180,7 @@ async function handleInbound(payload, { botId, cfg, account, runtime, log }) {
     return;
   }
 
-  const loadedCfg = runtime.config?.loadConfig?.() ?? {};
+  const loadedCfg = pluginRuntime.config?.loadConfig?.() ?? {};
   await dispatch({
     ctx: ctxPayload,
     cfg: loadedCfg,
@@ -500,7 +500,7 @@ const webexPlugin = {
       targets.set(webhookPath, {
         account,
         handle: (payload) =>
-          handleInbound(payload, { botId, cfg, account, runtime, log }),
+          handleInbound(payload, { botId, cfg, account, log }),
       });
       log?.info?.(`[webex:${account.accountId}] ready at ${webhookPath}`);
 
@@ -523,7 +523,12 @@ const webexPlugin = {
 
 // ── plugin registration entry point ──────────────────────────────────────
 
+// module-level
+let pluginRuntime = null;
+
 function register(api) {
+  pluginRuntime = api.runtime;
+
   api.registerChannel({ plugin: webexPlugin });
   api.registerHttpRoute({
     path: '/webhooks/webex/',
