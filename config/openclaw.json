@@ -50,8 +50,20 @@
       "model": {
         "primary": "cisco/bedrock/global.anthropic.claude-sonnet-4-6"
       }
-    }
+    },
+    "list": [
+      {
+        "id": "default",
+        "default": true
+      }
+    ]
   },
+  "bindings": [
+    {
+      "agentId": "default",
+      "match": { "channel": "webex" }
+    }
+  ],
   "channels": {
     "webex": {
       "enabled": true,
