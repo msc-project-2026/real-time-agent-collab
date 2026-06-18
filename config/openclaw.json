@@ -89,7 +89,7 @@
     "path": "/hooks",
     "allowRequestSessionKey": true,
     "allowedSessionKeyPrefixes": ["agent:main:webex:", "hook:"],
-    "defaultSessionKey": "agent:main:main"
+    "defaultSessionKey": "hook:collab-sync"
   },
   "plugins": {
     "load": {
