@@ -1,0 +1,16 @@
+{
+  "name": "setup-ui",
+  "version": "1.0.0",
+  "description": "Project onboarding UI for the Real-Time Agent Collaboration system",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
