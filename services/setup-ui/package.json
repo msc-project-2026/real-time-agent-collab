@@ -2,6 +2,7 @@
   "name": "setup-ui",
   "version": "1.0.0",
   "description": "Project onboarding UI for the Real-Time Agent Collaboration system",
+  "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
