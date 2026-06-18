@@ -96,9 +96,11 @@ async function handleWebhook(req, res) {
 }
 
 function register(api) {
-  api.registerHttpHandler(async (req, res) => {
-    if (!req.url?.startsWith('/webhooks/github')) return false;
-    return handleWebhook(req, res);
+  api.registerPluginHttpRoute({
+    path: '/webhooks/github',
+    auth: 'plugin',
+    match: 'prefix',
+    handler: handleWebhook,
   });
 }
 
