@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { mkdir, writeFile as fsWriteFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { readFile, listFiles } from '../../lib/github.js';
+import { readFile, listFiles } from '@collab/github';
 
 const WORKSPACE_DIR =
   process.env.OPENCLAW_WORKSPACE_DIR ?? '/home/node/.openclaw/workspace';

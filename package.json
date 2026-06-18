@@ -4,6 +4,7 @@
   "type": "module",
   "workspaces": [
     "lib",
-    "services/setup-ui"
+    "services/setup-ui",
+    "plugins/github"
   ]
 }

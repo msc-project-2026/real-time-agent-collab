@@ -9,6 +9,9 @@
       "./index.js"
     ]
   },
+  "dependencies": {
+    "@collab/github": "*"
+  },
   "engines": {
     "node": ">=24.0.0"
   }
