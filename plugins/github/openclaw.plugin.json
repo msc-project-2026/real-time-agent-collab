@@ -1,5 +1,15 @@
 {
   "id": "github",
   "name": "GitHub Webhook Handler",
-  "description": "Receives GitHub push events and syncs .collab/ files to local workspace"
+  "description": "Receives GitHub push events and syncs .collab/ files to local workspace",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "default": false
+      }
+    },
+    "additionalProperties": false
+  }
 }
