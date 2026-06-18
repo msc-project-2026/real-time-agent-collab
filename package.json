@@ -1,0 +1,9 @@
+{
+  "name": "real-time-agent-collab",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "lib",
+    "services/setup-ui"
+  ]
+}
