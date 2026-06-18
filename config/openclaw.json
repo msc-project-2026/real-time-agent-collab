@@ -85,14 +85,28 @@
   },
   "plugins": {
     "load": {
-      "paths": ["plugins/webex", "plugins/github"]
+      "paths": ["plugins/webex"]
     },
     "entries": {
       "webex": {
         "enabled": true
       },
-      "github": {
-        "enabled": true
+      "webhooks": {
+        "enabled": true,
+        "config": {
+          "routes": {
+            "collab-context-sync": {
+              "path": "/plugins/webhooks/collab-context-sync",
+              "sessionKey": "agent:main:collab-sync",
+              "secret": {
+                "source": "env",
+                "provider": "default",
+                "id": "OPENCLAW_WEBHOOK_SECRET"
+              },
+              "description": "Triggered by GitHub push adapter when .collab/ files are updated in a project repo"
+            }
+          }
+        }
       }
     }
   }
