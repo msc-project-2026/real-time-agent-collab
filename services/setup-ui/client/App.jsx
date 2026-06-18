@@ -1,4 +1,5 @@
-const { useState, useEffect } = React;
+import React, { useState, useEffect } from 'react';
+import './App.css';
 
 function newRepo(primary = false) {
   return { url: '', name: '', primary };
@@ -314,5 +315,3 @@ function App() {
     </div>
   );
 }
-
-window.App = App;

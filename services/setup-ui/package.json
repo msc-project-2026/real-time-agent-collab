@@ -5,12 +5,19 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "vite",
+    "build": "vite build",
+    "start": "node server.js"
   },
   "dependencies": {
     "@collab/github": "*",
     "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "vite": "^5.0.0"
   },
   "engines": {
     "node": ">=18"

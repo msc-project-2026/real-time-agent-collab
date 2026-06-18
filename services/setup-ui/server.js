@@ -11,14 +11,14 @@ const PORT = process.env.PORT || 3000;
 const GITHUB_APP_NAME = process.env.GITHUB_APP_NAME || '';
 
 app.use(express.json());
-app.use(express.static(join(__dirname, 'client')));
+app.use(express.static(join(__dirname, 'dist')));
 
 app.get('/health', (req, res) => {
   res.json({ ok: true });
 });
 
 app.get('/setup', (req, res) => {
-  res.sendFile(join(__dirname, 'client', 'index.html'));
+  res.sendFile(join(__dirname, 'dist', 'index.html'));
 });
 
 app.get('/api/config', (req, res) => {
