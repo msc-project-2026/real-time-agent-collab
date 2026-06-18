@@ -97,7 +97,7 @@
           "routes": {
             "collab-context-sync": {
               "path": "/plugins/webhooks/collab-context-sync",
-              "sessionKey": "agent:main:collab-sync",
+              "sessionKey": "agent:main:main",
               "secret": {
                 "source": "env",
                 "provider": "default",
