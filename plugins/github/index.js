@@ -100,6 +100,7 @@ function register(api) {
     path: '/webhooks/github',
     auth: 'plugin',
     match: 'prefix',
+    nodeCapability: { surface: 'github-webhook' },
     handler: handleWebhook,
   });
 }
