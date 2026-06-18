@@ -1,0 +1,5 @@
+{
+  "id": "github",
+  "name": "GitHub Webhook Handler",
+  "description": "Receives GitHub push events and syncs .collab/ files to local workspace"
+}

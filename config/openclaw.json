@@ -85,10 +85,13 @@
   },
   "plugins": {
     "load": {
-      "paths": ["plugins/webex"]
+      "paths": ["plugins/webex", "plugins/github"]
     },
     "entries": {
       "webex": {
+        "enabled": true
+      },
+      "github": {
         "enabled": true
       }
     }
