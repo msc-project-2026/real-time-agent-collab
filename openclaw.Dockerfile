@@ -21,6 +21,7 @@ RUN chmod +x /app/docker-entrypoint.sh
 # so plugins can import shared packages (e.g. @collab/github) at runtime.
 COPY --chown=root:root plugins/ /app/plugins/
 COPY --chown=root:root lib/ /app/lib/
+COPY --chown=root:root package.json /app/package.json 
 RUN npm install --workspaces --ignore-scripts
 
 # Overrides the base CMD only; ENTRYPOINT (tini) is inherited.
