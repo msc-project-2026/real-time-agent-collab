@@ -106,3 +106,5 @@ function register(api) {
 }
 
 module.exports = register;
+module.exports.default = register;
+module.exports.id = 'github';
