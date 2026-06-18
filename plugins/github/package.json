@@ -1,7 +1,6 @@
 {
   "name": "@openclaw/github",
   "version": "1.0.0",
-  "type": "module",
   "description": "GitHub webhook handler plugin for OpenClaw",
   "main": "index.js",
   "openclaw": {
