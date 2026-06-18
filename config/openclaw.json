@@ -86,7 +86,9 @@
   "hooks": {
     "enabled": true,
     "token": "${OPENCLAW_WEBHOOK_SECRET}",
-    "path": "/hooks"
+    "path": "/hooks",
+    "allowRequestSessionKey": true,
+    "allowedSessionKeyPrefixes": ["agent:main:webex:"]
   },
   "plugins": {
     "load": {
