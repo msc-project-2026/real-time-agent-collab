@@ -1,0 +1,14 @@
+{
+  "name": "@openclaw/tools",
+  "version": "1.0.0",
+  "description": "Custom OpenClaw tool plugins",
+  "main": "issue.js",
+  "openclaw": {
+    "extensions": [
+      "./issue.js"
+    ]
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}
