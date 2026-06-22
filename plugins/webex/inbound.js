@@ -82,6 +82,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
     OriginatingTo: `webex:${msg.roomId}`,
     MessageThreadId: msg.parentId,
     IsMentioned: isMentioned,
+    RoomId: msg.roomId,
   };
 
   const dispatch =

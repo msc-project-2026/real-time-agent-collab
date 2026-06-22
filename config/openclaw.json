@@ -93,10 +93,13 @@
   },
   "plugins": {
     "load": {
-      "paths": ["plugins/webex"]
+      "paths": ["plugins/webex", "plugins/openclaw"]
     },
     "entries": {
       "webex": {
+        "enabled": true
+      },
+      "collab-writer": {
         "enabled": true
       }
     }
