@@ -4,6 +4,10 @@
   "type": "module",
   "workspaces": [
     "lib",
+    "plugins/source-observer",
     "services/setup-ui"
-  ]
+  ],
+  "scripts": {
+    "test": "node --test plugins/source-observer/*.test.js"
+  }
 }

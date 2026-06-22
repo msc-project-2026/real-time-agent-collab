@@ -62,9 +62,16 @@
     {
       "agentId": "main",
       "match": { "channel": "webex" }
+    },
+    {
+      "agentId": "main",
+      "match": { "channel": "source-observer" }
     }
   ],
   "channels": {
+    "source-observer": {
+      "enabled": true
+    },
     "webex": {
       "enabled": true,
       "token": "${WEBEX_BOT_TOKEN}",
@@ -93,9 +100,12 @@
   },
   "plugins": {
     "load": {
-      "paths": ["plugins/webex"]
+      "paths": ["plugins/webex", "plugins/source-observer"]
     },
     "entries": {
+      "source-observer": {
+        "enabled": true
+      },
       "webex": {
         "enabled": true
       }

@@ -1,0 +1,25 @@
+{
+  "name": "@openclaw/source-observer",
+  "version": "1.0.0",
+  "description": "Periodic source observer for OpenClaw collaboration context",
+  "main": "index.js",
+  "private": true,
+  "dependencies": {
+    "@collab/github": "*"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.js"
+    ],
+    "channel": {
+      "id": "source-observer",
+      "label": "Source Observer",
+      "selectionLabel": "Source Observer",
+      "docsPath": "/channels/source-observer",
+      "blurb": "Periodically summarizes repository changes into collaboration context."
+    }
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}
