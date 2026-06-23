@@ -1,13 +1,5 @@
 # Real-Time Agent Collaboration
 
-A human-agent collaboration framework built on [OpenClaw](https://openclaw.ai), developed in partnership with Cisco. The system embeds AI agents as active participants in a software engineering team's shared Webex workspace and development environment, exploring how agents can contribute meaningfully without disrupting the human collaborative flow.
-
-## Overview
-
-The project investigates the middle ground between passive (prompt-only) and overly proactive agent behaviour, designing and evaluating collaboration and interaction patterns for agents operating across a web app development workflow — from design through implementation, debugging, and review.
-
-See the architecture diagrams in `docs/` for a high-level view of the system.
-
 ## Repo structure
 
 ```
@@ -114,10 +106,3 @@ docker compose ps
 docker compose logs -f openclaw
 ```
 
-## Configuration notes
-
-**LLM provider** — Cisco's LLM proxy (`llm-proxy.dev.outshift.ai`) is configured as a custom `openai-completions` provider. The API key is injected at runtime from `CISCO_LLM_API_KEY`.
-
-**Device auth** — `dangerouslyDisableDeviceAuth: true` disables the Control UI device pairing requirement. Safe here as the gateway is protected by token auth and `allowedOrigins` is locked to the public domain (`CONTROL_UI_ORIGIN`).
-
-**Trusted proxies** — traffic reaches the gateway through the Caddy container, which holds the static IP `172.28.0.10` on the compose network. That IP is listed in `trustedProxies` in `config/openclaw.json`; if you change the network subnet in `docker-compose.yml`, update it to match.
