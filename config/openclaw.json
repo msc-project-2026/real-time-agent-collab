@@ -49,12 +49,23 @@
     "defaults": {
       "model": {
         "primary": "cisco/bedrock/global.anthropic.claude-sonnet-4-6"
+      },
+      "subagents": {
+        "allowAgents": ["coder"] 
       }
     },
     "list": [
       {
         "id": "main",
-        "default": true
+        "default": true,
+        "tools": { "profile": "coding" }
+      },
+      {
+        "id": "coder",
+        "name": "coder",
+        "workspace":"",  //TOOD: Add workspace path here
+        "agentDir":"", //TOOD: Add agentdir path here
+        "model": "cisco/bedrock/global.anthropic.claude-sonnet-4-6"
       }
     ]
   },
