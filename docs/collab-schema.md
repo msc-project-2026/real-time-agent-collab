@@ -46,7 +46,8 @@ These apply to all four files and exist to ensure all files are formatted in the
 {
     "repos": [
         {
-            "name": "real-time-agent-collab","url": "https://github.com/msc/real-time-agent-collab"
+            "name": "real-time-agent-collab",
+            "url": "https://github.com/msc/real-time-agent-collab"
         },
         {
             "name": "web-app-test",
@@ -54,8 +55,8 @@ These apply to all four files and exist to ensure all files are formatted in the
         }
     ],
     "space_mapping": {
-        "chat-111a": "real-time-agent-collab",
-        "chat-111b": "web-app-test"
+        "chat-001": "real-time-agent-collab",
+        "chat-002": "web-app-test"
     },
     "last_updated": "2026-06-18T09:00:00Z"
 }
