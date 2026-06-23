@@ -13,65 +13,111 @@ See the architecture diagrams in `docs/` for a high-level view of the system.
 ```
 real-time-agent-collab/
 ├── config/
-│   └── openclaw.json       # versioned gateway config
-├── docs/                   # architecture diagrams, design notes
-├── secrets/                # gitignored, local only — do not commit
-│   ├── api-credentials.md
-│   ├── collab-agent-token.md
-│   └── openclaw-gateway-token.md
-├── .gitignore
-├── Dockerfile              # extends official OpenClaw image
-├── docker-entrypoint.sh    # syncs config into volume, then starts gateway
-└── railway.toml            # Railway build/deploy config
+│   └── openclaw.json          # versioned gateway config
+├── docs/                      # architecture diagrams, design notes
+├── plugins/webex/             # Webex channel plugin
+├── lib/                       # shared @collab/* packages (e.g. github)
+├── services/setup-ui/         # onboarding web app (Express + Vite/React)
+├── scripts/deploy.sh          # rebuild + restart the stack on the VPS
+├── secrets/                   # gitignored, local only — do not commit
+│   └── github-app-private-key.pem
+├── .github/workflows/deploy.yml  # auto-deploy to the VPS on push to main
+├── .env.example               # copy to .env (gitignored) and fill in
+├── docker-compose.yml         # VPS stack: caddy + openclaw + setup-ui
+├── Caddyfile                  # reverse proxy + automatic HTTPS
+├── openclaw.Dockerfile        # extends official OpenClaw image
+└── docker-entrypoint.sh       # syncs config into volume, then starts gateway
 ```
 
 ## Deployment
 
-The system deploys to Railway via Docker, extending the official OpenClaw gateway image (`ghcr.io/openclaw/openclaw:latest`). The versioned `config/openclaw.json` is the source of truth for gateway configuration — synced into the mounted volume on every container start by `docker-entrypoint.sh`.
+The system runs on an **Ubuntu VPS** via Docker Compose. Three containers sit
+behind a Caddy reverse proxy that terminates TLS (automatic Let's Encrypt
+certificates):
 
-### One-time Railway setup
+| Container  | Role                                                                    |
+| ---------- | ----------------------------------------------------------------------- |
+| `caddy`    | Public entrypoint on :80/:443, automatic HTTPS for `${DOMAIN}`          |
+| `openclaw` | OpenClaw gateway — `/openclaw`, `/healthz`, `/hooks`, `/webhooks/webex/*` |
+| `setup-ui` | Onboarding web app — `/setup`, `/api/*`                                  |
 
-**1. Volume** — right-click the service on the Railway canvas → Attach Volume, mounted at:
+The versioned `config/openclaw.json` is the source of truth for gateway
+configuration — synced into the persistent volume on every container start by
+`docker-entrypoint.sh`. All secrets live in a gitignored `.env`.
 
+See **[docs/vps-migration.md](docs/vps-migration.md)** for the full step-by-step
+server setup. Quick reference below.
+
+### Prerequisites
+
+- An Ubuntu VPS with Docker Engine + Compose plugin installed.
+- A domain (or subdomain) with a DNS **A record** pointing at the VPS public IP
+  (required — Webex webhooks and Let's Encrypt need a real hostname).
+- Ports **80** and **443** open in the firewall.
+
+### One-time server setup
+
+```bash
+git clone <repo-url> /opt/real-time-agent-collab
+cd /opt/real-time-agent-collab
+
+cp .env.example .env          # fill in DOMAIN, tokens, Webex + Cisco keys
+mkdir -p secrets              # gitignored
+# place the GitHub App private key here:
+#   secrets/github-app-private-key.pem
+
+docker compose up -d --build
 ```
-/home/node/.openclaw
-```
 
-Persists runtime state (sessions, workspace files) across redeploys. Gateway config is not stored here — it is overwritten from `config/openclaw.json` on every container start.
+Caddy obtains a certificate automatically on first start (give it ~30s). State
+lives in the `openclaw_state` Docker volume and survives rebuilds.
 
-**2. Public networking** — Service → Settings → Networking → Generate Domain. Required for the Control UI and Webex webhooks.
+### Environment variables
 
-**3. Environment variables** — set in Railway dashboard → Service → Variables:
+All variables live in `.env` (copied from `.env.example`). Key ones:
 
-| Variable                 | Value                            | Notes                                                          |
-| ------------------------ | -------------------------------- | -------------------------------------------------------------- |
-| `OPENCLAW_GATEWAY_PORT`  | `18789`                          | Port the gateway listens on                                    |
-| `OPENCLAW_GATEWAY_BIND`  | `lan`                            | Bind to all interfaces                                         |
-| `OPENCLAW_GATEWAY_TOKEN` | `<random secret>`                | Admin token — generate with `openssl rand -hex 32`             |
-| `OPENCLAW_STATE_DIR`     | `/home/node/.openclaw`           | Persistent state directory                                     |
-| `OPENCLAW_WORKSPACE_DIR` | `/home/node/.openclaw/workspace` | Agent workspace directory                                      |
-| `PORT`                   | `18789`                          | Must match `OPENCLAW_GATEWAY_PORT` for Railway healthcheck     |
-| `RAILWAY_RUN_UID`        | `0`                              | Runs container as root so entrypoint can write to the volume   |
-| `CISCO_LLM_API_KEY`      | `<Cisco LLM proxy key>`          | Referenced as `${CISCO_LLM_API_KEY}` in `config/openclaw.json` |
+| Variable                  | Notes                                                            |
+| ------------------------- | --------------------------------------------------------------- |
+| `DOMAIN` / `ACME_EMAIL`   | Public hostname + Let's Encrypt contact (used by Caddy)         |
+| `CONTROL_UI_ORIGIN`       | `https://<DOMAIN>` — the Control UI's allowed browser origin    |
+| `WEBEX_WEBHOOK_URL`       | `https://<DOMAIN>/webhooks/webex/default`                       |
+| `OPENCLAW_GATEWAY_TOKEN`  | Admin token — generate with `openssl rand -hex 32`              |
+| `OPENCLAW_WEBHOOK_SECRET` | Protects `/hooks` — `openssl rand -hex 32`                      |
+| `CISCO_LLM_API_KEY`       | Cisco LLM proxy key                                             |
+| `WEBEX_*`                 | Bot/OAuth tokens, client id/secret, webhook HMAC secret        |
+| `GITHUB_APP_*`            | App id/name; private key mounted from `secrets/` (see `.env.example`) |
+
+### Auto-deploy on push
+
+`.github/workflows/deploy.yml` SSHes into the VPS on every push to `main`,
+fast-forwards the checkout, and runs `scripts/deploy.sh` (`docker compose up -d
+--build`). Configure these repository secrets: `VPS_HOST`, `VPS_USER`,
+`VPS_SSH_KEY`, `DEPLOY_PATH` (and optionally `VPS_PORT`).
+
+To deploy manually instead: `bash scripts/deploy.sh` on the server.
 
 ### Accessing the Control UI
 
 ```
-https://<your-railway-domain>/openclaw
+https://<your-domain>/openclaw
 ```
 
-Enter the `OPENCLAW_GATEWAY_TOKEN` when prompted. Device pairing is disabled via `gateway.controlUi.dangerouslyDisableDeviceAuth: true` in `config/openclaw.json` — token auth alone is sufficient.
+Enter the `OPENCLAW_GATEWAY_TOKEN` when prompted. Device pairing is disabled via
+`gateway.controlUi.dangerouslyDisableDeviceAuth: true` in `config/openclaw.json`
+— token auth alone is sufficient.
 
 ### Verifying the deployment
 
 ```bash
-curl -fsS https://<your-railway-domain>/healthz
+curl -fsS https://<your-domain>/healthz
+docker compose ps
+docker compose logs -f openclaw
 ```
 
 ## Configuration notes
 
 **LLM provider** — Cisco's LLM proxy (`llm-proxy.dev.outshift.ai`) is configured as a custom `openai-completions` provider. The API key is injected at runtime from `CISCO_LLM_API_KEY`.
 
-**Device auth** — `dangerouslyDisableDeviceAuth: true` disables the Control UI device pairing requirement. Safe here as the gateway is protected by token auth and `allowedOrigins` is locked to the Railway domain.
+**Device auth** — `dangerouslyDisableDeviceAuth: true` disables the Control UI device pairing requirement. Safe here as the gateway is protected by token auth and `allowedOrigins` is locked to the public domain (`CONTROL_UI_ORIGIN`).
 
-**Trusted proxies** — Railway routes traffic through internal `100.64.x.x` addresses. These are listed in `trustedProxies` in `config/openclaw.json`. If connection issues arise, check Railway logs for the current proxy IP and update accordingly.
+**Trusted proxies** — traffic reaches the gateway through the Caddy container, which holds the static IP `172.28.0.10` on the compose network. That IP is listed in `trustedProxies` in `config/openclaw.json`; if you change the network subnet in `docker-compose.yml`, update it to match.

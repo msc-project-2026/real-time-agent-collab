@@ -11,10 +11,9 @@ COPY --chown=node:node config/openclaw.json /app/config/openclaw.json
 COPY --chown=node:node docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
 
-# Note: the Railway volume at /home/node/.openclaw is mounted as root, while
-# the base image's default user is node (uid 1000). Set RAILWAY_RUN_UID=0 in
-# the Railway service variables so the container runs as root and can write
-# to the mounted volume.
+# Note: the named volume at /home/node/.openclaw needs to be writable at
+# runtime. docker-compose runs this service as root (`user: "0:0"`) so the
+# entrypoint can sync config and the gateway can persist state.
 
 # Copy shared lib and update plugins/ ownership.
 # npm install --workspaces creates the @collab/* symlinks in node_modules

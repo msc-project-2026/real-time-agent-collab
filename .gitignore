@@ -1,1 +1,6 @@
 secrets/
+node_modules/
+.env
+.env.*
+!.env.example
+services/setup-ui/dist/

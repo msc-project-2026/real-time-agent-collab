@@ -2,23 +2,14 @@
   "gateway": {
     "mode": "local",
     "controlUi": {
-      "allowedOrigins": [
-        "https://real-time-agent-collab-production.up.railway.app"
-      ],
+      "allowedOrigins": ["${CONTROL_UI_ORIGIN}"],
       "dangerouslyDisableDeviceAuth": true
     },
     "auth": {
       "mode": "token",
       "token": "${OPENCLAW_GATEWAY_TOKEN}"
     },
-    "trustedProxies": [
-      "100.64.0.3",
-      "100.64.0.5",
-      "100.64.0.6",
-      "100.64.0.7",
-      "100.64.0.8",
-      "100.64.0.11"
-    ]
+    "trustedProxies": ["172.28.0.10"]
   },
   "models": {
     "mode": "merge",
@@ -72,7 +63,7 @@
       "refreshToken": "${WEBEX_REFRESH_TOKEN}",
       "clientId": "${WEBEX_CLIENT_ID}",
       "clientSecret": "${WEBEX_CLIENT_SECRET}",
-      "webhookUrl": "https://real-time-agent-collab-production.up.railway.app/webhooks/webex/default",
+      "webhookUrl": "${WEBEX_WEBHOOK_URL}",
       "webhookSecret": "${WEBEX_WEBHOOK_SECRET}",
       "dmPolicy": "allowlisted",
       "allowFrom": [

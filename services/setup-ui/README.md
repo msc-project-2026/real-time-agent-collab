@@ -18,13 +18,13 @@ The user fills in a form to configure the project (name, repos, team members, Gi
 |---|---|---|
 | `GITHUB_APP_NAME` | GitHub App slug used to build the installation URL | — |
 | `OPENCLAW_WORKSPACE_DIR` | Path to the OpenClaw workspace root | `/home/node/.openclaw/workspace` |
-| `PORT` | HTTP port (assigned by Railway) | `3000` |
+| `PORT` | HTTP port the server listens on | `3000` |
 
 ## Routes
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/health` | Railway healthcheck — returns `{ ok: true }` |
+| `GET` | `/health` | Container healthcheck — returns `{ ok: true }` |
 | `GET` | `/setup` | Serves the React setup form |
 | `GET` | `/api/config` | Returns `{ appName }` for the client |
 | `POST` | `/api/setup` | Receives form submission, writes workspace files |

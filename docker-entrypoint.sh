@@ -1,8 +1,8 @@
 # !/bin/sh
 # Ensures the repo's versioned openclaw.json is the source of truth.
 # Volumes mask image-layer files, so the config must be copied at runtime,
-# not just at build time. Container runs as root (RAILWAY_RUN_UID=0), so no
-# permission issues writing to the mounted volume.
+# not just at build time. Container runs as root (compose `user: "0:0"`), so
+# there are no permission issues writing to the mounted volume.
 
 set -e
 
