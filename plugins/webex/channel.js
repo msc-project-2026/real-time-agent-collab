@@ -27,7 +27,7 @@ function redactAccount(a) {
 }
 
 function getWebexSection(cfg) {
-  return cfg ?? {};
+  return cfg?.channels?.webex ?? {};
 }
 
 function listAccountIds(cfg) {
