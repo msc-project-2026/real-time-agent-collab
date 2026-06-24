@@ -2,27 +2,62 @@
 'use strict';
 
 const { WEBEX_API, webexFetch } = require('./api');
-const { getAccessToken, setAccessToken, refreshAccessToken, ensureWebhook, deregisterWebhooks } = require('./token');
+const {
+  getAccessToken,
+  setAccessToken,
+  refreshAccessToken,
+  ensureWebhook,
+  deregisterWebhooks,
+} = require('./token');
 const { buildMsgBody } = require('./send');
 const { handleInbound } = require('./inbound');
 const { targets, normPath } = require('./webhook');
 
 const DEFAULT_ACCOUNT = 'default';
 
+function redactAccount(a) {
+  if (!a) return null;
+  return {
+    ...a,
+    token: a.token ? '[present]' : '[missing]',
+    accessToken: a.accessToken ? '[present]' : '[missing]',
+    refreshToken: a.refreshToken ? '[present]' : '[missing]',
+    clientSecret: a.clientSecret ? '[present]' : '[missing]',
+  };
+}
+
+function getWebexSection(cfg) {
+  return cfg ?? {};
+}
+
 function listAccountIds(cfg) {
-  const section = cfg?.channels?.webex;
+  const section = getWebexSection(cfg);
+
+  console.log('[webex] listAccountIds:', {
+    cfgKeys: Object.keys(cfg ?? {}),
+    sectionKeys: Object.keys(section ?? {}),
+    tokenPresent: Boolean(section?.token),
+    accountIds: section?.accounts ? Object.keys(section.accounts) : [],
+  });
+
   if (!section?.token) return [];
+
   const ids = [DEFAULT_ACCOUNT];
+
   if (section.accounts) {
     for (const id of Object.keys(section.accounts)) {
       if (id !== DEFAULT_ACCOUNT) ids.push(id);
     }
   }
+
+  console.log('[webex] listAccountIds result:', ids);
+
   return ids;
 }
 
 function resolveAccount(cfg, accountId = DEFAULT_ACCOUNT) {
-  const section = cfg?.channels?.webex ?? {};
+  const section = getWebexSection(cfg);
+
   const named =
     accountId !== DEFAULT_ACCOUNT ? section.accounts?.[accountId] : null;
 
@@ -52,13 +87,23 @@ function resolveAccount(cfg, accountId = DEFAULT_ACCOUNT) {
         }
       : null;
 
-  if (!resolved)
+  console.log('[webex] resolveAccount:', {
+    accountId,
+    cfgKeys: Object.keys(cfg ?? {}),
+    sectionKeys: Object.keys(section ?? {}),
+    resolved: redactAccount(resolved),
+    configured: Boolean(resolved?.token),
+    enabled: section.enabled !== false,
+  });
+
+  if (!resolved) {
     return { accountId, enabled: false, configured: false, config: {} };
+  }
 
   return {
     accountId,
     enabled: section.enabled !== false,
-    configured: Boolean(resolved.token && resolved.webhookUrl),
+    configured: Boolean(resolved.token),
     config: resolved,
   };
 }
@@ -110,7 +155,7 @@ const webexPlugin = {
     buildToolContext: ({ context, hasRepliedRef }) => ({
       currentChannelId: context.To?.trim() || undefined,
       currentThreadTs:
-        context.MessageThreadId != null
+        context.MessathreadId != null
           ? String(context.MessageThreadId)
           : context.ReplyToId,
       hasRepliedRef,
@@ -137,10 +182,25 @@ const webexPlugin = {
     textChunkLimit: 7000, // Webex max is 7439 bytes
 
     sendText: async ({ to, text, account, replyToId }) => {
+      console.log('[webex] sendText:', {
+        to,
+        textLength: text?.length ?? 0,
+        accountPresent: Boolean(account),
+        configPresent: Boolean(account?.config),
+        tokenPresent: Boolean(account?.config?.token),
+      });
+
+      if (!account?.config?.token) {
+        throw new Error(
+          'Webex send failed: missing account.config.token. Check listAccountIds/resolveAccount config loading.'
+        );
+      }
+
       const msg = await webexFetch(account.config.token, '/messages', {
         method: 'POST',
         body: buildMsgBody(to, { text }, replyToId),
       });
+
       return { channel: 'webex', messageId: msg.id, roomId: msg.roomId };
     },
 
