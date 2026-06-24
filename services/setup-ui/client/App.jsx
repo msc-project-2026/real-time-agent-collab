@@ -28,11 +28,26 @@ function App() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [done, setDone] = useState(false);
+  const [existingConfig, setExistingConfig] = useState(null);
 
   useEffect(() => {
     fetch('/api/config')
       .then((r) => r.json())
       .then((data) => setAppName(data.appName || ''))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!spaceId) return;
+    fetch(`/api/spaces/${encodeURIComponent(spaceId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data) return;
+        setExistingConfig(data);
+        setProject(data.project || '');
+        setRepos(data.repos?.length ? data.repos : [newRepo(true)]);
+        setMembers(data.members?.length ? data.members : [newMember()]);
+      })
       .catch(() => {});
   }, []);
 
@@ -153,6 +168,11 @@ function App() {
       <div className="card-header">
         <h1>Project Setup</h1>
         <p>Configure this Webex space for agent collaboration.</p>
+        {existingConfig && (
+          <p className="config-meta">
+            Last updated: {new Date(existingConfig.updatedAt).toLocaleString()} &middot; Version {existingConfig.version}
+          </p>
+        )}
       </div>
 
       {submitError && <div className="error-banner">{submitError}</div>}
@@ -309,7 +329,7 @@ function App() {
           className="btn-submit"
           disabled={!canSubmit || submitting}
         >
-          {submitting ? 'Setting up…' : 'Complete Setup'}
+          {submitting ? 'Setting up…' : existingConfig ? 'Update configuration' : 'Complete Setup'}
         </button>
       </form>
     </div>
