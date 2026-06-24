@@ -181,22 +181,33 @@ const webexPlugin = {
     deliveryMode: 'direct',
     textChunkLimit: 7000, // Webex max is 7439 bytes
 
-    sendText: async ({ to, text, account, replyToId }) => {
+    sendText: async ({
+      cfg,
+      to,
+      text,
+      account,
+      accountId = DEFAULT_ACCOUNT,
+      replyToId,
+    }) => {
+      const resolvedAccount = account ?? resolveAccount(cfg, accountId);
+
       console.log('[webex] sendText:', {
         to,
         textLength: text?.length ?? 0,
+        accountId,
         accountPresent: Boolean(account),
-        configPresent: Boolean(account?.config),
-        tokenPresent: Boolean(account?.config?.token),
+        resolvedAccountPresent: Boolean(resolvedAccount),
+        configPresent: Boolean(resolvedAccount?.config),
+        tokenPresent: Boolean(resolvedAccount?.config?.token),
       });
 
-      if (!account?.config?.token) {
+      if (!resolvedAccount?.config?.token) {
         throw new Error(
-          'Webex send failed: missing account.config.token. Check listAccountIds/resolveAccount config loading.'
+          'Webex send failed: missing resolvedAccount.config.token'
         );
       }
 
-      const msg = await webexFetch(account.config.token, '/messages', {
+      const msg = await webexFetch(resolvedAccount.config.token, '/messages', {
         method: 'POST',
         body: buildMsgBody(to, { text }, replyToId),
       });
@@ -204,8 +215,35 @@ const webexPlugin = {
       return { channel: 'webex', messageId: msg.id, roomId: msg.roomId };
     },
 
-    sendMedia: async ({ to, text, mediaUrl, account, replyToId }) => {
-      const msg = await webexFetch(account.config.token, '/messages', {
+    sendMedia: async ({
+      cfg,
+      to,
+      text,
+      mediaUrl,
+      account,
+      accountId = DEFAULT_ACCOUNT,
+      replyToId,
+    }) => {
+      const resolvedAccount = account ?? resolveAccount(cfg, accountId);
+
+      console.log('[webex] sendMedia:', {
+        to,
+        textLength: text?.length ?? 0,
+        mediaUrlPresent: Boolean(mediaUrl),
+        accountId,
+        accountPresent: Boolean(account),
+        resolvedAccountPresent: Boolean(resolvedAccount),
+        configPresent: Boolean(resolvedAccount?.config),
+        tokenPresent: Boolean(resolvedAccount?.config?.token),
+      });
+
+      if (!resolvedAccount?.config?.token) {
+        throw new Error(
+          'Webex sendMedia failed: missing resolvedAccount.config.token'
+        );
+      }
+
+      const msg = await webexFetch(resolvedAccount.config.token, '/messages', {
         method: 'POST',
         body: buildMsgBody(
           to,
@@ -213,6 +251,7 @@ const webexPlugin = {
           replyToId
         ),
       });
+
       return { channel: 'webex', messageId: msg.id, roomId: msg.roomId };
     },
   },
