@@ -136,8 +136,11 @@ app.post('/webhooks/github', express.raw({ type: '*/*' }), async (req, res) => {
       Authorization: `Bearer ${OPENCLAW_WEBHOOK_SECRET}`,
     },
     body: JSON.stringify({
-      message: `A .collab/ update was detected in ${owner}/${repo}. The spaceId is ${spaceId}. Read the updated .collab/ files from GitHub and write them to the local workspace. Then send a Webex message to the space confirming the update.`,
+      message: `A .collab/ update was detected in ${owner}/${repo}. Send a Webex message to room ID ${spaceId} saying: "I detected a .collab/ update in ${owner}/${repo} and will sync the context shortly."`,
       sessionKey: 'hook:collab-sync',
+      deliver: true,
+      channel: 'webex',
+      to: spaceId,
     }),
   }).catch((err) => console.error('OpenClaw forward error:', err));
 
