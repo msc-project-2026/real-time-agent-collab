@@ -2,6 +2,13 @@
 
 const { inspectPage, screenshotPage, inspectElement, getPageStructure } = require('../../lib/browser.js');
 
+let appendToFile;
+try {
+  ({ appendToFile } = require('../../lib/collab-cache.js'));
+} catch {
+  appendToFile = null;
+}
+
 function register(api) {
   api.registerTool({
     name: 'inspect_webpage',
@@ -105,6 +112,55 @@ function register(api) {
     },
     handler: async ({ url }) => {
       return getPageStructure(url);
+    },
+  });
+
+  api.registerTool({
+    name: 'log_browser_issue',
+    description:
+      'Log an issue discovered during browser inspection to the project\'s .collab/issues.md file. ' +
+      'Use this after inspect_webpage or inspect_element finds a confirmed, actionable problem ' +
+      '(broken link, console error, failed resource, missing element). The issue is recorded with ' +
+      'Source: browser so it can be distinguished from chat-reported or code-review issues.',
+    parameters: {
+      type: 'object',
+      properties: {
+        room_id: {
+          type: 'string',
+          description: 'The Webex room ID, used to resolve the project repo',
+        },
+        title: {
+          type: 'string',
+          description: 'Short title for the issue (e.g. "Broken link on /dashboard")',
+        },
+        severity: {
+          type: 'string',
+          enum: ['low', 'medium', 'high'],
+          description: 'Issue severity: high for page-breaking problems, medium for broken resources, low for minor issues',
+        },
+        description: {
+          type: 'string',
+          description: 'Details about the issue including the affected URL and what was found',
+        },
+      },
+      required: ['room_id', 'title', 'severity', 'description'],
+    },
+    handler: async ({ room_id, title, severity, description }) => {
+      if (!appendToFile) {
+        return { ok: false, error: 'collab-cache module not available — issues.md logging is disabled' };
+      }
+      const timestamp = new Date().toISOString();
+      const entry = [
+        `## I-???`,
+        `- **Title:** ${title}`,
+        `- **Source:** browser`,
+        `- **Severity:** ${severity}`,
+        `- **Status:** open`,
+        `- **Reported at:** ${timestamp}`,
+        `- **Description:** ${description}`,
+      ].join('\n');
+      await appendToFile(room_id, 'issues.md', entry);
+      return { ok: true };
     },
   });
 }
