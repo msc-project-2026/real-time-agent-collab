@@ -25,6 +25,7 @@ const OPENCLAW_WEBHOOK_SECRET = process.env.OPENCLAW_WEBHOOK_SECRET || '';
 const OPENCLAW_INTERNAL_URL =
   process.env.OPENCLAW_INTERNAL_URL ||
   'http://real-time-agent-collab.railway.internal:18789';
+const WEBEX_BOT_TOKEN = process.env.WEBEX_BOT_TOKEN || '';
 
 const BY_SPACE_DIR = join(DATA_DIR, 'by-space');
 const BY_REPO_DIR = join(DATA_DIR, 'by-repo');
@@ -54,6 +55,38 @@ async function writeLocalCache(config, owner, repo) {
   await fsWriteFile(
     join(BY_REPO_DIR, `${owner}-${repo}.json`),
     JSON.stringify({ spaceId: config.spaceId, owner, repo }, null, 2),
+    'utf8'
+  );
+}
+
+async function writeLocalCache(config, owner, repo) {
+  // Write full config keyed by spaceId
+  await fsWriteFile(
+    join(BY_SPACE_DIR, `${config.spaceId}.json`),
+    JSON.stringify(config, null, 2),
+    'utf8'
+  );
+
+  // Read existing by-repo entry or create new; append spaceId if not present
+  let repoEntry = { owner, repo, spaceIds: [] };
+  try {
+    const existing = await fsReadFile(
+      join(BY_REPO_DIR, `${owner}-${repo}.json`),
+      'utf8'
+    );
+    repoEntry = JSON.parse(existing);
+    if (!repoEntry.spaceIds) repoEntry.spaceIds = [];
+  } catch {
+    /* file doesn't exist yet */
+  }
+
+  if (!repoEntry.spaceIds.includes(config.spaceId)) {
+    repoEntry.spaceIds.push(config.spaceId);
+  }
+
+  await fsWriteFile(
+    join(BY_REPO_DIR, `${owner}-${repo}.json`),
+    JSON.stringify(repoEntry, null, 2),
     'utf8'
   );
 }
@@ -94,6 +127,7 @@ app.post('/webhooks/github', express.raw({ type: '*/*' }), async (req, res) => {
     return res.status(400).json({ ok: false, error: 'invalid JSON' });
   }
 
+  // Ignore non .collab changes
   const commits = payload.commits || [];
   const collabChanged = commits.some((c) =>
     [...(c.added || []), ...(c.modified || []), ...(c.removed || [])].some(
@@ -105,6 +139,7 @@ app.post('/webhooks/github', express.raw({ type: '*/*' }), async (req, res) => {
     return res.json({ ok: true, ignored: true });
   }
 
+  // Extract payload
   const fullName = payload.repository?.full_name || '';
   const [owner, repo] = fullName.split('/');
   if (!owner || !repo) {
@@ -122,25 +157,28 @@ app.post('/webhooks/github', express.raw({ type: '*/*' }), async (req, res) => {
     return res.json({ ok: true, ignored: true });
   }
 
-  const { spaceId } = repoConfig;
-
   // Resolve hostname to IPv4 explicitly (OpenClaw only binds IPv4 it seems)
   const hostname = new URL(OPENCLAW_INTERNAL_URL).hostname;
   const { address } = await lookup(hostname, { family: 4 });
   const openclawUrl = OPENCLAW_INTERNAL_URL.replace(hostname, address);
 
-  fetch(`${openclawUrl}/hooks/agent`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${OPENCLAW_WEBHOOK_SECRET}`,
-    },
-    body: JSON.stringify({
-      message: `[SYSTEM] .collab/ update detected in ${owner}/${repo}. Acknowledge this in the space with a brief message.`,
-      sessionKey: `webex:${spaceId}`,
-      name: 'collab-sync',
-    }),
-  }).catch((err) => console.error('OpenClaw forward error:', err));
+  // Fetch and emit for all spaceIds
+  const { spaceIds } = repoConfig;
+
+  for (const spaceId of spaceIds) {
+    fetch(`${openclawUrl}/hooks/agent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${OPENCLAW_WEBHOOK_SECRET}`,
+      },
+      body: JSON.stringify({
+        message: `[SYSTEM] .collab/ update detected in ${owner}/${repo}. Acknowledge this in the space with a brief message.`,
+        sessionKey: `agent:main:webex:${spaceId}`,
+        name: 'collab-sync',
+      }),
+    }).catch((err) => console.error('OpenClaw forward error:', err));
+  }
 
   return res.json({ ok: true });
 });
@@ -168,11 +206,34 @@ app.get('/api/spaces/:spaceId', async (req, res) => {
 });
 
 app.post('/api/setup', async (req, res) => {
-  const { spaceId, project, repos, members } = req.body;
+  let { spaceId, project, repos, members } = req.body;
 
+  // spaceId
   if (!spaceId || typeof spaceId !== 'string' || !spaceId.trim()) {
     return res.status(400).json({ ok: false, error: 'spaceId is required' });
   }
+
+  // Resolve canonical mixed-case room ID from Webex
+  const roomsRes = await fetch('https://webexapis.com/v1/rooms', {
+    headers: { Authorization: `Bearer ${WEBEX_BOT_TOKEN}` },
+  });
+  if (!roomsRes.ok) {
+    return res
+      .status(500)
+      .json({ ok: false, error: 'Failed to retrieve rooms from Webex API' });
+  }
+  const data = await roomsRes.json();
+  const match = data.items.find(
+    (r) => r.id.toLowerCase() === spaceId.toLowerCase()
+  );
+  if (!match) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Space not found — ensure the bot is a member of this space',
+    });
+  }
+  spaceId = match.id;
+
   if (!project || typeof project !== 'string' || !project.trim()) {
     return res
       .status(400)
