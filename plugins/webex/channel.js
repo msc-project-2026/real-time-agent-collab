@@ -169,7 +169,7 @@ const webexPlugin = {
     targetResolver: {
       looksLikeId: (raw) => {
         const t = String(raw ?? '').trim();
-        return t.startsWith('Y2lzY29zcGFyazovL3') || t.includes('@');
+        return t.startsWith('y2lzy29zcgfyazovl3') || t.includes('@');
       },
       hint: '<roomId|personId|email>',
     },
