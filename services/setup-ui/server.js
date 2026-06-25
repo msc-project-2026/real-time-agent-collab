@@ -160,7 +160,7 @@ app.post('/webhooks/github', express.raw({ type: '*/*' }), async (req, res) => {
         Authorization: `Bearer ${OPENCLAW_WEBHOOK_SECRET}`,
       },
       body: JSON.stringify({
-        message: `[SYSTEM] .collab/ update detected in ${owner}/${repo}. Acknowledge this in the space with a brief message.`,
+        message: `[SYSTEM] .collab/ update detected in ${owner}/${repo}. Send a brief acknowledgment message to Webex room ${spaceId}.`,
         sessionKey: `agent:main:webex:${spaceId}`,
         name: 'collab-sync',
       }),
