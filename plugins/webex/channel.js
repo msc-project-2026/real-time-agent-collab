@@ -33,14 +33,15 @@ function getWebexSection(cfg) {
 function listAccountIds(cfg) {
   const section = getWebexSection(cfg);
 
-  console.log('[webex] listAccountIds:', {
-    cfgKeys: Object.keys(cfg ?? {}),
-    sectionKeys: Object.keys(section ?? {}),
-    tokenPresent: Boolean(section?.token),
-    accountIds: section?.accounts ? Object.keys(section.accounts) : [],
-  });
-
-  if (!section?.token) return [];
+  if (!section?.token) {
+    console.log('[webex] listAccountIds:', {
+      cfgKeys: Object.keys(cfg ?? {}),
+      sectionKeys: Object.keys(section ?? {}),
+      tokenPresent: Boolean(section?.token),
+      accountIds: section?.accounts ? Object.keys(section.accounts) : [],
+    });
+    return [];
+  }
 
   const ids = [DEFAULT_ACCOUNT];
 
@@ -49,8 +50,6 @@ function listAccountIds(cfg) {
       if (id !== DEFAULT_ACCOUNT) ids.push(id);
     }
   }
-
-  console.log('[webex] listAccountIds result:', ids);
 
   return ids;
 }
@@ -87,16 +86,15 @@ function resolveAccount(cfg, accountId = DEFAULT_ACCOUNT) {
         }
       : null;
 
-  console.log('[webex] resolveAccount:', {
-    accountId,
-    cfgKeys: Object.keys(cfg ?? {}),
-    sectionKeys: Object.keys(section ?? {}),
-    resolved: redactAccount(resolved),
-    configured: Boolean(resolved?.token),
-    enabled: section.enabled !== false,
-  });
-
   if (!resolved) {
+    console.log('[webex] resolveAccount:', {
+      accountId,
+      cfgKeys: Object.keys(cfg ?? {}),
+      sectionKeys: Object.keys(section ?? {}),
+      resolved: redactAccount(resolved),
+      configured: Boolean(resolved?.token),
+      enabled: section.enabled !== false,
+    });
     return { accountId, enabled: false, configured: false, config: {} };
   }
 
@@ -191,17 +189,16 @@ const webexPlugin = {
     }) => {
       const resolvedAccount = account ?? resolveAccount(cfg, accountId);
 
-      console.log('[webex] sendText:', {
-        to,
-        textLength: text?.length ?? 0,
-        accountId,
-        accountPresent: Boolean(account),
-        resolvedAccountPresent: Boolean(resolvedAccount),
-        configPresent: Boolean(resolvedAccount?.config),
-        tokenPresent: Boolean(resolvedAccount?.config?.token),
-      });
-
       if (!resolvedAccount?.config?.token) {
+        console.log('[webex] sendText failed to resolve account:', {
+          to,
+          textLength: text?.length ?? 0,
+          accountId,
+          accountPresent: Boolean(account),
+          resolvedAccountPresent: Boolean(resolvedAccount),
+          configPresent: Boolean(resolvedAccount?.config),
+          tokenPresent: Boolean(resolvedAccount?.config?.token),
+        });
         throw new Error(
           'Webex send failed: missing resolvedAccount.config.token'
         );
@@ -226,18 +223,17 @@ const webexPlugin = {
     }) => {
       const resolvedAccount = account ?? resolveAccount(cfg, accountId);
 
-      console.log('[webex] sendMedia:', {
-        to,
-        textLength: text?.length ?? 0,
-        mediaUrlPresent: Boolean(mediaUrl),
-        accountId,
-        accountPresent: Boolean(account),
-        resolvedAccountPresent: Boolean(resolvedAccount),
-        configPresent: Boolean(resolvedAccount?.config),
-        tokenPresent: Boolean(resolvedAccount?.config?.token),
-      });
-
       if (!resolvedAccount?.config?.token) {
+        console.log('[webex] sendMedia failed to resolve account:', {
+          to,
+          textLength: text?.length ?? 0,
+          mediaUrlPresent: Boolean(mediaUrl),
+          accountId,
+          accountPresent: Boolean(account),
+          resolvedAccountPresent: Boolean(resolvedAccount),
+          configPresent: Boolean(resolvedAccount?.config),
+          tokenPresent: Boolean(resolvedAccount?.config?.token),
+        });
         throw new Error(
           'Webex sendMedia failed: missing resolvedAccount.config.token'
         );
