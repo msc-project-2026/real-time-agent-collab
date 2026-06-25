@@ -47,19 +47,6 @@ async function readSpaceConfig(spaceId) {
 }
 
 async function writeLocalCache(config, owner, repo) {
-  await fsWriteFile(
-    join(BY_SPACE_DIR, `${config.spaceId}.json`),
-    JSON.stringify(config, null, 2),
-    'utf8'
-  );
-  await fsWriteFile(
-    join(BY_REPO_DIR, `${owner}-${repo}.json`),
-    JSON.stringify({ spaceId: config.spaceId, owner, repo }, null, 2),
-    'utf8'
-  );
-}
-
-async function writeLocalCache(config, owner, repo) {
   // Write full config keyed by spaceId
   await fsWriteFile(
     join(BY_SPACE_DIR, `${config.spaceId}.json`),
