@@ -10,6 +10,7 @@ import {
   mkdir,
   readFile as fsReadFile,
   writeFile as fsWriteFile,
+  readdir as fsReaddir,
 } from 'fs/promises';
 import { lookup } from 'node:dns/promises';
 
@@ -38,12 +39,25 @@ mkdir(BY_REPO_DIR, { recursive: true }).catch((err) =>
 );
 
 async function readSpaceConfig(spaceId) {
+  // Try exact match first
   try {
     const raw = await fsReadFile(join(BY_SPACE_DIR, `${spaceId}.json`), 'utf8');
     return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+  } catch {}
+
+  // Fall back to case-insensitive match
+  try {
+    const files = await fsReaddir(BY_SPACE_DIR);
+    const match = files.find(
+      (f) => f.toLowerCase() === `${spaceId.toLowerCase()}.json`
+    );
+    if (match) {
+      const raw = await fsReadFile(join(BY_SPACE_DIR, match), 'utf8');
+      return JSON.parse(raw);
+    }
+  } catch {}
+
+  return null;
 }
 
 async function writeLocalCache(config, owner, repo) {
