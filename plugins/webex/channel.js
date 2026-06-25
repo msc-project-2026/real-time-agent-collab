@@ -168,7 +168,9 @@ const webexPlugin = {
     },
     targetResolver: {
       looksLikeId: (raw) => {
-        const t = String(raw ?? '').trim();
+        const t = String(raw ?? '')
+          .trim()
+          .toLowerCase();
         return t.startsWith('y2lzy29zcgfyazovl3') || t.includes('@');
       },
       hint: '<roomId|personId|email>',
