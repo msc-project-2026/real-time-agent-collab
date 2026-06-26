@@ -6,7 +6,12 @@
 
 set -e
 
+# Copy openclaw config
 mkdir -p /home/node/.openclaw
 cp /app/config/openclaw.json /home/node/.openclaw/openclaw.json
+
+# Copy openclaw workspace
+mkdir -p /home/node/.openclaw/workspace
+cp -r /app/config/workspace/. /home/node/.openclaw/workspace/
 
 exec node openclaw.mjs gateway
