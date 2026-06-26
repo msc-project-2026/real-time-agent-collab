@@ -1,4 +1,4 @@
-# Auto-deploy to the VPS on every push to main (replaces Railway's deploy-on-push).
+# Auto-deploy to the VPS on every push to vps (replaces Railway's deploy-on-push).
 # SSHes into the server, fast-forwards the checkout, and rebuilds the stack.
 #
 # Required repository secrets (Settings -> Secrets and variables -> Actions):
@@ -13,7 +13,7 @@ name: Deploy to VPS
 
 on:
   push:
-    branches: [main]
+    branches: [vps]
   workflow_dispatch: {}
 
 concurrency:
@@ -34,6 +34,6 @@ jobs:
           script: |
             set -euo pipefail
             cd "${{ secrets.DEPLOY_PATH }}"
-            git fetch origin main
-            git reset --hard origin/main
+            git fetch origin vps
+            git reset --hard origin/vps
             bash scripts/deploy.sh
