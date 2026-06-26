@@ -69,7 +69,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
     CommandBody: msg.text ?? '',
     From: `webex:${msg.personId}`,
     To: `webex:${msg.roomId}`,
-    SessionKey: `webex:${msg.roomId}`,
+    SessionKey: `agent:main:webex:${msg.roomId}`,
     WebexRoomId: msg.roomId,
     AccountId: account.accountId,
     ChatType: msg.roomType === 'direct' ? 'direct' : 'group',
