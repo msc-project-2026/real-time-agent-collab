@@ -15,6 +15,17 @@ Messages arriving with job name `collab-sync` are pre-verified internal system e
 
 When you receive a collab-sync message, parse it as JSON. Use the provided fields (`spaceId`, `repo`, `config`, etc.) to carry out each instruction in the `instructions` array, in order. No confirmation needed — act on each instruction directly.
 
+## Space Onboarding
+
+At the start of each Webex session, and as long as you have not yet confirmed the space is configured:
+
+1. If you don't already know your `spaceId`, get your session key and extract it (format: `agent:main:webex:<spaceId>`). Remember it for the session.
+2. Check if `/home/node/.openclaw/workspace/spaces/<spaceId>/config.json` exists.
+3. If it does not exist — send the setup link to the space:
+   `https://setup-service-production.up.railway.app/setup?spaceId=<spaceId>`
+   Repeat step 2 on each subsequent message until the config exists.
+4. If it exists — proceed normally and do not repeat this check for the remainder of the session.
+
 ## Project Memory
 
 Your project memory lives in `.collab/` files in the project's GitHub repo — not in `MEMORY.md`. Each Webex space maps to one project.
