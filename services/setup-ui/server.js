@@ -167,6 +167,18 @@ app.post('/webhooks/github', express.raw({ type: '*/*' }), async (req, res) => {
   const { spaceIds } = repoConfig;
 
   for (const spaceId of spaceIds) {
+    // Read full space config to include in message
+    let spaceConfig = null;
+    try {
+      const raw = await fsReadFile(
+        join(BY_SPACE_DIR, `${spaceId}.json`),
+        'utf8'
+      );
+      spaceConfig = JSON.parse(raw);
+    } catch {
+      /* config not found, pass null */
+    }
+
     fetch(`${openclawUrl}/hooks/agent`, {
       method: 'POST',
       headers: {
@@ -174,8 +186,16 @@ app.post('/webhooks/github', express.raw({ type: '*/*' }), async (req, res) => {
         Authorization: `Bearer ${OPENCLAW_WEBHOOK_SECRET}`,
       },
       body: JSON.stringify({
-        message: `[SYSTEM] .collab/ update detected in ${owner}/${repo}. Send a brief acknowledgment message to Webex room ${spaceId}.`,
-        sessionKey: `hook:collab-sync`,
+        message: JSON.stringify({
+          spaceId,
+          repo: { owner, repo },
+          config: spaceConfig,
+          instructions: [
+            `Write config to /home/node/.openclaw/workspace/spaces/${spaceId}/config.json, creating directories as needed.`,
+            `Send a brief acknowledgment to Webex room ${spaceId} confirming the project config update was processed.`,
+          ],
+        }),
+        sessionKey: 'hook:collab-sync',
         name: 'collab-sync',
       }),
     }).catch((err) => console.error('OpenClaw forward error:', err));
