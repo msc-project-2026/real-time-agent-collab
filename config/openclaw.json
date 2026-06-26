@@ -49,6 +49,9 @@
     "defaults": {
       "model": {
         "primary": "cisco/bedrock/global.anthropic.claude-sonnet-4-6"
+      },
+      "memorySearch": {
+        "provider": "none"
       }
     },
     "list": [
