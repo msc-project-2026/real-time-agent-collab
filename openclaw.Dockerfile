@@ -7,7 +7,7 @@ FROM ghcr.io/openclaw/openclaw:latest
 # Versioned config is the source of truth. Copied into /app/config at build
 # time, then synced into the mounted volume at container start (volumes mask
 # image-layer files, so build-time COPY alone isn't enough).
-COPY --chown=node:node config/openclaw.json /app/config/openclaw.jsonok 
+COPY --chown=node:node config/openclaw.json /app/config/openclaw.json
 COPY --chown=node:node config/workspace/ /home/node/.openclaw/workspace/
 
 COPY --chown=node:node docker-entrypoint.sh /app/docker-entrypoint.sh
