@@ -8,10 +8,10 @@ import {
 import { createHmac, timingSafeEqual } from 'crypto';
 import {
   mkdir,
-  lookup,
   readFile as fsReadFile,
   writeFile as fsWriteFile,
 } from 'fs/promises';
+import { lookup } from 'node:dns/promises';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
