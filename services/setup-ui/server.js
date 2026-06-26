@@ -1,9 +1,17 @@
 import express from 'express';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { writeFile as ghWriteFile, readFile as ghReadFile } from '@collab/github';
+import {
+  writeFile as ghWriteFile,
+  readFile as ghReadFile,
+} from '@collab/github';
 import { createHmac, timingSafeEqual } from 'crypto';
-import { mkdir, readFile as fsReadFile, writeFile as fsWriteFile } from 'fs/promises';
+import {
+  mkdir,
+  lookup,
+  readFile as fsReadFile,
+  writeFile as fsWriteFile,
+} from 'fs/promises';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -88,8 +96,8 @@ app.post('/webhooks/github', express.raw({ type: '*/*' }), async (req, res) => {
 
   const commits = payload.commits || [];
   const collabChanged = commits.some((c) =>
-    [...(c.added || []), ...(c.modified || []), ...(c.removed || [])].some((f) =>
-      f.startsWith('.collab/')
+    [...(c.added || []), ...(c.modified || []), ...(c.removed || [])].some(
+      (f) => f.startsWith('.collab/')
     )
   );
 
@@ -105,7 +113,10 @@ app.post('/webhooks/github', express.raw({ type: '*/*' }), async (req, res) => {
 
   let repoConfig;
   try {
-    const raw = await fsReadFile(join(BY_REPO_DIR, `${owner}-${repo}.json`), 'utf8');
+    const raw = await fsReadFile(
+      join(BY_REPO_DIR, `${owner}-${repo}.json`),
+      'utf8'
+    );
     repoConfig = JSON.parse(raw);
   } catch {
     return res.json({ ok: true, ignored: true });
@@ -113,7 +124,12 @@ app.post('/webhooks/github', express.raw({ type: '*/*' }), async (req, res) => {
 
   const { spaceId } = repoConfig;
 
-  fetch(`${OPENCLAW_INTERNAL_URL}/hooks/agent`, {
+  // Resolve hostname to IPv4 explicitly (OpenClaw only binds IPv4 it seems)
+  const hostname = new URL(OPENCLAW_INTERNAL_URL).hostname;
+  const { address } = await lookup(hostname, { family: 4 });
+  const openclawUrl = OPENCLAW_INTERNAL_URL.replace(hostname, address);
+
+  fetch(`${openclawUrl}/hooks/agent`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
