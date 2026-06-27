@@ -51,8 +51,7 @@
         "id": "observer",
         "model": {
           "primary": "cisco/bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0"
-        },
-        "prompt": "You are the Source Observer agent. On each tick you receive a repository diff and the current .collab context. Summarize the meaningful source changes concisely and update the collaboration context. Be terse and factual: no greetings, no preamble, no conversational filler. Ignore .collab-only changes."
+        }
       }
     ]
   },
