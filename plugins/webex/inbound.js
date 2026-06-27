@@ -26,6 +26,21 @@ function isDmAllowed(cfg, personId, personEmail) {
   }
 }
 
+function isSpaceAllowed(cfg, roomId) {
+  switch (cfg.spacePolicy) {
+    case 'allow':
+      return true;
+    case 'deny':
+      return false;
+    case 'allowlisted': {
+      const list = cfg.allowedSpaces ?? [];
+      return list.includes(roomId);
+    }
+    default:
+      return true;
+  }
+}
+
 // Called asynchronously after the webhook POST is acknowledged.  Filters,
 // fetches full message details, then delivers to the OpenClaw agent pipeline.
 async function handleInbound(payload, { botId, cfg, account, log }) {
@@ -38,6 +53,14 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
   if (payload.data?.roomType === 'direct') {
     if (!isDmAllowed(cfg, payload.data.personId, payload.data.personEmail))
       return;
+  }
+
+  // Apply space policy for group messages
+  if (payload.data?.roomType !== 'direct') {
+    if (!isSpaceAllowed(cfg, payload.data?.roomId)) {
+      log?.info?.(`[webex] ignored message from non-allowlisted space ${payload.data?.roomId}`);
+      return;
+    }
   }
 
   // Webhooks only carry IDs — fetch full message to get text + mentions
@@ -116,4 +139,4 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
   });
 }
 
-module.exports = { handleInbound, isDmAllowed, setRuntime };
+module.exports = { handleInbound, isDmAllowed, isSpaceAllowed, setRuntime };
