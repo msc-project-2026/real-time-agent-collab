@@ -52,12 +52,6 @@
       },
       "memorySearch": {
         "provider": "none"
-      },
-      "cron": {
-        "maxConcurrent": 8
-      },
-      "subagents": {
-        "maxConcurrent": 8
       }
     },
     "list": [
@@ -66,6 +60,12 @@
         "default": true
       }
     ]
+  },
+  "cron": {
+    "maxConcurrent": 8
+  },
+  "subagents": {
+    "maxConcurrent": 8
   },
   "bindings": [
     {
