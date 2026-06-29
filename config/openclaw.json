@@ -53,7 +53,12 @@
       "memorySearch": {
         "provider": "none"
       },
-      "nestedMaxConcurrent": 8
+      "cron": {
+        "maxConcurrent": 8
+      },
+      "subagents": {
+        "maxConcurrent": 8
+      }
     },
     "list": [
       {
