@@ -180,7 +180,7 @@ app.post('/webhooks/github', express.raw({ type: '*/*' }), async (req, res) => {
       /* config not found, pass null */
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 1500)); //  small pause
+    //await new Promise((resolve) => setTimeout(resolve, 1500)); //  small pause
     fetch(`${openclawUrl}/hooks/agent`, {
       method: 'POST',
       headers: {
