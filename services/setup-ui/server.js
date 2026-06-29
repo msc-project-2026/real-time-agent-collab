@@ -13,6 +13,7 @@ import {
   readdir as fsReaddir,
 } from 'fs/promises';
 import { lookup } from 'node:dns/promises';
+import { resolve } from 'node:dns';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -179,6 +180,7 @@ app.post('/webhooks/github', express.raw({ type: '*/*' }), async (req, res) => {
       /* config not found, pass null */
     }
 
+    await new Promise((resolve) => setTimeout(resolve, 1500)); //  small pause
     fetch(`${openclawUrl}/hooks/agent`, {
       method: 'POST',
       headers: {
@@ -197,6 +199,9 @@ app.post('/webhooks/github', express.raw({ type: '*/*' }), async (req, res) => {
         }),
         sessionKey: 'hook:collab-sync',
         name: 'collab-sync',
+        deliver: true,
+        channel: 'webex',
+        to: spaceId,
       }),
     }).catch((err) => console.error('OpenClaw forward error:', err));
   }
