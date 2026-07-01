@@ -1,0 +1,15 @@
+{
+  "id": "collab-writer",
+  "name": "Collab Writer",
+  "description": "Registers the append_to_collab_file tool for persisting classified message content to the project's .collab/ files on GitHub",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "default": true
+      }
+    }
+  }
+}
