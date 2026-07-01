@@ -101,10 +101,26 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
     cfg: loadedCfg,
     dispatcherOptions: {
       deliver: async (out) => {
-        if (!out.text) return;
+        log?.info?.(`[webex:${account.accountId}] raw out.text: ${JSON.stringify(out?.text)}`);
+        const text = out?.text ?? '';
+        const match = text.match(/^\s*DECISION:\s*(SPEAK|SILENT)\s*\n?([\s\S]*)$/i);
+
+        if (!match) {
+          log?.warn?.(
+            `[webex:${account.accountId}] reply missing DECISION tag, suppressing`
+          );
+          return;
+        }
+
+        const [, decision, body] = match;
+        if (decision.toUpperCase() !== 'SPEAK') return;
+
+        const reply = body.trim();
+        if (!reply) return;
+
         await webexFetch(cfg.token, '/messages', {
           method: 'POST',
-          body: buildMsgBody(msg.roomId, { text: out.text }, msg.parentId),
+          body: buildMsgBody(msg.roomId, { text: reply }, msg.parentId),
         });
       },
       onError: (err) => {
