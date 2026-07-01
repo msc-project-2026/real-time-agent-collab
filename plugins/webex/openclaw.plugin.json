@@ -3,6 +3,9 @@
   "name": "Webex Channel",
   "description": "Cisco Webex messaging integration for OpenClaw",
   "channels": ["webex"],
+  "contracts": {
+    "tools": ["collab_append_pending_message"]
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
