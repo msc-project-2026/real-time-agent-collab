@@ -1,1 +1,6 @@
 secrets/
+.DS_Store
+.claude/
+ralph/
+CLAUDE.md
+client-brief.md
