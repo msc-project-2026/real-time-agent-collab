@@ -97,13 +97,16 @@
   },
   "plugins": {
     "load": {
-      "paths": ["plugins/webex", "plugins/source-observer"]
+      "paths": ["plugins/webex", "plugins/openclaw", "plugins/source-observer"]
     },
     "entries": {
       "source-observer": {
         "enabled": true
       },
       "webex": {
+        "enabled": true
+      },
+      "collab-writer": {
         "enabled": true
       }
     }

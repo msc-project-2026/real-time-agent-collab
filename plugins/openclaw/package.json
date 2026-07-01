@@ -1,0 +1,14 @@
+{
+  "name": "@openclaw/openclaw",
+  "version": "1.0.0",
+  "description": "Custom OpenClaw tool plugins",
+  "main": "collab-tool.js",
+  "openclaw": {
+    "extensions": [
+      "./collab-tool.js"
+    ]
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}
