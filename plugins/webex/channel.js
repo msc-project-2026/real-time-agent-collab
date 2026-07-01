@@ -321,8 +321,23 @@ const webexPlugin = {
       setStatus?.({ accountId: account.accountId, baseUrl: WEBEX_API });
       log?.info?.(`[webex:${account.accountId}] starting`);
 
-      // Initialise OAuth access token (used for all API calls except sending replies)
-      setAccessToken(cfg.accessToken ?? null);
+      // Initialise OAuth access token for broad Webex API access.
+      if (cfg.refreshToken && cfg.clientId && cfg.clientSecret) {
+        try {
+          const freshToken = await refreshAccessToken(cfg);
+          setAccessToken(freshToken);
+          log?.info?.(
+            `[webex:${account.accountId}] access token refreshed on start`
+          );
+        } catch (err) {
+          setAccessToken(cfg.accessToken ?? null);
+          log?.warn?.(
+            `[webex:${account.accountId}] startup token refresh failed: ${err?.message}`
+          );
+        }
+      } else {
+        setAccessToken(cfg.accessToken ?? null);
+      }
 
       // Resolve bot identity so we can filter self-messages and detect mentions
       const botInfo = await webexFetch(cfg.token, '/people/me');
@@ -331,7 +346,7 @@ const webexPlugin = {
 
       // Refresh access token every 12 days (tokens last ~14 days); Webex auto-renews the refresh token.
       let refreshInterval = null;
-      if (cfg.accessToken) {
+      if (cfg.refreshToken && cfg.clientId && cfg.clientSecret) {
         const TWELVE_DAYS_MS = 12 * 24 * 60 * 60 * 1000;
         refreshInterval = setInterval(async () => {
           try {
