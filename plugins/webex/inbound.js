@@ -101,7 +101,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
     cfg: loadedCfg,
     dispatcherOptions: {
       deliver: async (out) => {
-        log?.info?.(`[webex:${account.accountId}] raw out.text: ${JSON.stringify(out?.text)}`);
+        log?.info?.(`[webex:${account.accountId}] raw out.text: ${JSON.stringify(out?.text)}`); //for debugging purposes
         const text = out?.text ?? '';
         const match = text.match(/^\s*DECISION:\s*(SPEAK|SILENT)\s*\n?([\s\S]*)$/i);
 

@@ -39,6 +39,9 @@ services:
       # GitHub App private key mounted read-only; referenced via
       # GITHUB_APP_PRIVATE_KEY_FILE in .env. The secrets/ dir is gitignored.
       - ./secrets/github-app-private-key.pem:/run/secrets/github-app-private-key.pem:ro
+      # Custom skills tracked in the repo, mounted over the workspace's skills dir
+      # so edits here are version-controlled and survive volume resets.
+      - ./skills:/home/node/.openclaw/workspace/skills
     expose:
       - "18789"
     networks:
