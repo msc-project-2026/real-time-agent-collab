@@ -5,8 +5,7 @@ function appendPendingMessageTool() {
     name: 'collab_append_pending_message',
     description:
       'Append the current inbound Webex message to this space’s pending collab message buffer.',
-
-    inputSchema: {
+    parameters: {
       type: 'object',
       properties: {
         spaceId: { type: 'string' },
@@ -26,8 +25,7 @@ function appendPendingMessageTool() {
       required: ['spaceId', 'message'],
       additionalProperties: false,
     },
-
-    async handler({ spaceId, message }) {
+    async execute({ spaceId, message }) {
       return appendPendingMessage({
         spaceId,
         message,

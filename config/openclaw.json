@@ -105,9 +105,6 @@
     "entries": {
       "webex": {
         "enabled": true
-      },
-      "tools": {
-        "collab_append_pending_message": { "enabled": true }
       }
     }
   }
