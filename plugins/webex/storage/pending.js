@@ -12,6 +12,9 @@ async function appendPendingMessage({
   explicitRoot,
   debounceMs = 15000,
 }) {
+  if (!spaceId) throw new Error('spaceId is required');
+  if (!message) throw new Error('message is required');
+
   const now = new Date().toISOString();
 
   await fs.mkdir(pendingDir(spaceId, explicitRoot), { recursive: true });
