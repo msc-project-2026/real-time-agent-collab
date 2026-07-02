@@ -38,6 +38,41 @@ mkdir(BY_REPO_DIR, { recursive: true }).catch((err) =>
   console.error('mkdir by-repo:', err)
 );
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function backoffDelay(attempt) {
+  const base = 300 * 2 ** (attempt - 1);
+  return Math.min(base + Math.random() * base * 0.5, 5000);
+}
+
+// OpenClaw rejects concurrent dispatches to the same sessionKey with a
+// "reply session initialization conflicted" error (e.g. a collab-sync
+// notification racing a live inbound Webex message for the same room).
+// Retry with backoff so both deliveries land instead of one being dropped.
+async function notifyOpenClaw(openclawUrl, body, { maxAttempts = 5 } = {}) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const res = await fetch(`${openclawUrl}/hooks/agent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${OPENCLAW_WEBHOOK_SECRET}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (res.ok) return;
+
+    const text = await res.text().catch(() => '');
+    const isSessionConflict = /session initialization conflicted/i.test(text);
+    if (!isSessionConflict || attempt === maxAttempts) {
+      throw new Error(`OpenClaw hook failed (${res.status}): ${text}`);
+    }
+    await sleep(backoffDelay(attempt));
+  }
+}
+
 async function readSpaceConfig(spaceId) {
   // Try exact match first
   try {
@@ -167,17 +202,10 @@ app.post('/webhooks/github', express.raw({ type: '*/*' }), async (req, res) => {
   const { spaceIds } = repoConfig;
 
   for (const spaceId of spaceIds) {
-    fetch(`${openclawUrl}/hooks/agent`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${OPENCLAW_WEBHOOK_SECRET}`,
-      },
-      body: JSON.stringify({
-        message: `[SYSTEM] .collab/ update detected in ${owner}/${repo}. Send a brief acknowledgment message to Webex room ${spaceId}.`,
-        sessionKey: `agent:main:webex:${spaceId}`,
-        name: 'collab-sync',
-      }),
+    notifyOpenClaw(openclawUrl, {
+      message: `[SYSTEM] .collab/ update detected in ${owner}/${repo}. Send a brief acknowledgment message to Webex room ${spaceId}.`,
+      sessionKey: `agent:main:webex:${spaceId}`,
+      name: 'collab-sync',
     }).catch((err) => console.error('OpenClaw forward error:', err));
   }
 

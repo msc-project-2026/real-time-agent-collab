@@ -11,6 +11,33 @@ function setRuntime(r) {
   pluginRuntime = r;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function backoffDelay(attempt) {
+  const base = 300 * 2 ** (attempt - 1);
+  return Math.min(base + Math.random() * base * 0.5, 5000);
+}
+
+// OpenClaw rejects concurrent dispatches to the same sessionKey with a
+// "reply session initialization conflicted" error (e.g. this inbound
+// message racing a collab-sync notification for the same room). Retry
+// with backoff so both deliveries land instead of one being dropped.
+async function dispatchWithRetry(dispatch, args, { maxAttempts = 5 } = {}) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await dispatch(args);
+    } catch (err) {
+      const isSessionConflict = /session initialization conflicted/i.test(
+        err?.message ?? ''
+      );
+      if (!isSessionConflict || attempt === maxAttempts) throw err;
+      await sleep(backoffDelay(attempt));
+    }
+  }
+}
+
 function isDmAllowed(cfg, personId, personEmail) {
   switch (cfg.dmPolicy) {
     case 'allow':
@@ -96,7 +123,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
   }
 
   const loadedCfg = pluginRuntime.config?.current?.() ?? {};
-  await dispatch({
+  await dispatchWithRetry(dispatch, {
     ctx: ctxPayload,
     cfg: loadedCfg,
     dispatcherOptions: {
