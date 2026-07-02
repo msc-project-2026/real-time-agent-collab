@@ -40,6 +40,8 @@ async function ensureWebhook(cfg) {
       .filter((w) => w.targetUrl === cfg.webhookUrl)
       .map((w) => webexFetch(token, `/webhooks/${w.id}`, { method: 'DELETE' }))
   );
+  const secret = cfg.webhookSecret ? { secret: cfg.webhookSecret } : {};
+
   await webexFetch(token, '/webhooks', {
     method: 'POST',
     body: {
@@ -47,7 +49,19 @@ async function ensureWebhook(cfg) {
       targetUrl: cfg.webhookUrl,
       resource: 'messages',
       event: 'created',
-      ...(cfg.webhookSecret ? { secret: cfg.webhookSecret } : {}),
+      ...secret,
+    },
+  });
+
+  // Reactions webhook — used by feedback.js to log 👍/👎 on bot messages.
+  await webexFetch(token, '/webhooks', {
+    method: 'POST',
+    body: {
+      name: 'OpenClaw Reaction Handler',
+      targetUrl: cfg.webhookUrl,
+      resource: 'reactions',
+      event: 'created',
+      ...secret,
     },
   });
 }

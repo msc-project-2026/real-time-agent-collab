@@ -18,12 +18,27 @@ const CONFIG_PATH = '.collab/config.json';
 const MAX_DIFF_CHARS = 12000;
 const MAX_SEEN_SHAS = 200;
 
+// Keywords that mark a commit as significant enough to notify the Webex space.
+const SIGNIFICANT_KEYWORDS =
+  /\b(breaking|deploy|revert|hotfix|rollback|critical|urgent)\b/i;
+// Conventional commit breaking-change marker (feat!: / fix!: etc.)
+const CONVENTIONAL_BREAKING = /^(fix|feat|refactor|perf|revert)!:/i;
+const LARGE_COMMIT_FILE_COUNT = 6;
+
+function isSignificant(commitMessage, files) {
+  if (SIGNIFICANT_KEYWORDS.test(commitMessage)) return true;
+  if (CONVENTIONAL_BREAKING.test(commitMessage)) return true;
+  if (files.length >= LARGE_COMMIT_FILE_COUNT) return true;
+  return false;
+}
+
 function createObserver({
   log = console,
   dispatchAgentPrompt,
   github = { readFile, writeFile, getCommitsSince, getCommitDiff },
   stateFile = STATE_FILE,
   now = () => new Date(),
+  notifyRoom = null, // async (spaceId, text) => void — optional, injected by channel.js
 } = {}) {
   if (!dispatchAgentPrompt) {
     throw new Error('dispatchAgentPrompt is required');
@@ -38,16 +53,18 @@ function createObserver({
         github,
         stateFile,
         now,
+        notifyRoom,
       }),
   };
 }
 
-async function runTick({ log, dispatchAgentPrompt, github, stateFile, now }) {
+async function runTick({ log, dispatchAgentPrompt, github, stateFile, now, notifyRoom }) {
   const checkedAt = now();
   const bootstrap = parseRepoUrl(BOOTSTRAP_REPO);
   const state = await readState(stateFile);
   const config = await readConfig(github, bootstrap);
   const repoConfigs = Array.isArray(config.repos) ? config.repos : [];
+  const spaceId = config.spaceId ?? null;
 
   let foundCount = 0;
   let ignoredCollabCount = 0;
@@ -110,6 +127,17 @@ async function runTick({ log, dispatchAgentPrompt, github, stateFile, now }) {
         files: sourceFiles,
         summary,
       });
+
+      // Notify the Webex space immediately for significant commits so the team
+      // doesn't have to wait for the next context.md write to notice big changes.
+      if (notifyRoom && spaceId && isSignificant(commitMessage, sourceFiles)) {
+        notifyRoom(
+          spaceId,
+          `📌 Notable commit in **${repoConfig.name || repo.repo}**: ${summary} (\`${shortSha}\`)`
+        ).catch((err) =>
+          log?.warn?.(`[source-observer] Webex notify failed: ${err?.message ?? err}`)
+        );
+      }
     }
 
     stateUpdates.set(repoKey, {
@@ -354,6 +382,7 @@ module.exports = {
   parseRepoUrl,
   parseChangedFiles,
   isCollabPath,
+  isSignificant,
   removeCollabDiffBlocks,
   buildSummaryPrompt,
   normalizeAgentSummary,

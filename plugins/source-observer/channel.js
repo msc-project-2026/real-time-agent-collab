@@ -93,6 +93,18 @@ const sourceObserverPlugin = {
       const observer = createObserver({
         log,
         dispatchAgentPrompt: (prompt) => dispatchAgentPrompt(prompt, log),
+        notifyRoom: async (spaceId, text) => {
+          const token = process.env.WEBEX_BOT_TOKEN;
+          if (!token) return;
+          await fetch('https://webexapis.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ roomId: spaceId, text }),
+          });
+        },
       });
 
       let stopped = false;

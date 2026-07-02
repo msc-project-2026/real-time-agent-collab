@@ -84,7 +84,27 @@
         "ucab295@ucl.ac.uk",
         "davit.gevorgyan.25@ucl.ac.uk",
         "leonardo.martin.25@ucl.ac.uk"
-      ]
+      ],
+      "proactivity": {
+        "_comment": "Tune without redeploying — only a container restart is needed. All fields have in-code defaults.",
+        "gateThreshold": 0.6,
+        "system1Prob": 0.05,
+        "lullWindowMs": 8000,
+        "lullMaxWaitMs": 30000,
+        "silenceGapMs": 14400000,
+        "silenceThresholdBonus": 0.15,
+        "thresholdByType": {
+          "FACTUAL_CORRECTION": 0.4,
+          "BLOCKER": 0.45,
+          "CLARIFICATION": 0.55,
+          "ELABORATION": 0.75,
+          "NONE": 1.1
+        },
+        "gate": {
+          "url": "https://llm-proxy.dev.outshift.ai/chat/completions",
+          "model": "bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0"
+        }
+      }
     }
   },
   "hooks": {
