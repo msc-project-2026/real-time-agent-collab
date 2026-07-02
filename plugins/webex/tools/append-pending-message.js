@@ -25,7 +25,10 @@ function appendPendingMessageTool() {
       required: ['spaceId', 'message'],
       additionalProperties: false,
     },
-    async execute({ spaceId, message }) {
+    async execute(input) {
+      console.log('[collab_append_pending_message] raw input:', input);
+      const { spaceId, message } = input ?? {};
+
       return appendPendingMessage({
         spaceId,
         message,
