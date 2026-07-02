@@ -1,12 +1,12 @@
-import fs from 'node:fs/promises';
+const fs = require('node:fs/promises');
 
-import {
+const {
   pendingDir,
   pendingMessagesPath,
   pendingBatchStatePath,
-} from './paths.js';
+} = require('./paths.js');
 
-export async function appendPendingMessage({
+async function appendPendingMessage({
   spaceId,
   message,
   explicitRoot,
@@ -66,3 +66,7 @@ async function readBatchState(spaceId, explicitRoot) {
     throw err;
   }
 }
+
+module.exports = {
+  appendPendingMessage,
+};

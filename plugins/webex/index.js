@@ -1,7 +1,7 @@
 // Entry point: registers the Webex channel plugin, HTTP route, and plugin tools with the OpenClaw plugin API.
 'use strict';
 
-import { appendPendingMessageTool } from './tools/append-pending-message';
+const { appendPendingMessageTool } = require('./tools/append-pending-message');
 
 const { webexPlugin } = require('./channel');
 const { webhookRouter } = require('./webhook');

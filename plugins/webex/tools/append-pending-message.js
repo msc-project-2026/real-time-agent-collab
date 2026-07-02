@@ -1,6 +1,6 @@
-import { appendPendingMessage } from '../storage/pending.js';
+const { appendPendingMessage } = require('../storage/pending.js');
 
-export function appendPendingMessageTool() {
+function appendPendingMessageTool() {
   return {
     name: 'collab_append_pending_message',
     description:
@@ -35,3 +35,7 @@ export function appendPendingMessageTool() {
     },
   };
 }
+
+module.exports = {
+  appendPendingMessageTool,
+};
