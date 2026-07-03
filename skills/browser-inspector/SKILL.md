@@ -40,6 +40,19 @@ Returns a structural audit of the page: headings, links, images, forms, scripts,
 - You need to check heading hierarchy or find missing alt text
 - You want to list all external resources the page loads
 
+### `read_source_file`
+Read the current content of a file from the project's GitHub repository. **Always call this before `suggest_fix`**, never propose a fix based only on what you saw in the browser.
+
+### `suggest_fix`
+Propose a fix for a confirmed issue. Saves the suggestion as `FIX-XXX` and returns the ID. After calling this, tell the team what the fix does and ask:
+> "Reply **approve FIX-XXX** to commit this change, or **reject FIX-XXX** to discard it."
+
+### `commit_fix`
+Commits an approved fix to GitHub. Only call this after a developer has explicitly replied "approve FIX-XXX".
+
+### `reject_fix`
+Marks a suggestion as rejected without touching the repo. Call this when a developer replies "reject FIX-XXX".
+
 ## Reporting Findings
 
 When you find issues, report them clearly and concisely:
@@ -51,6 +64,18 @@ When you find issues, report them clearly and concisely:
 When you find significant issues (broken links, console errors, failed resources), log them to `.collab/issues.md` using the `append_to_collab_file` tool with `Source: browser`. This ensures browser-discovered issues are tracked alongside issues from chat and source code review.
 
 Only log confirmed, actionable issues — do not log minor warnings or informational findings unless the user asks you to.
+
+## Suggesting Fixes
+
+When you find a confirmed issue and the team asks you to propose a fix:
+
+1. Call `read_source_file` to read the affected file from the repo
+2. Work out what change would fix the issue
+3. Call `suggest_fix` with the full corrected file content and a clear explanation
+4. Post the suggestion ID and explanation to the room and ask for approve/reject
+5. When a developer replies, call `commit_fix` or `reject_fix` accordingly
+
+Only suggest fixes for issues you have confirmed via `inspect_webpage` or `inspect_element`. Do not guess at fixes for things you have not actually inspected.
 
 ## Limitations
 

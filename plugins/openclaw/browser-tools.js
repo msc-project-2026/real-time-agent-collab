@@ -2,11 +2,21 @@
 
 const { inspectPage, screenshotPage, inspectElement, getPageStructure } = require('../../lib/browser.js');
 
-let appendToFile;
+let appendToFile, readSourceFile, saveSuggestion, commitSuggestion, updateSuggestionStatus;
 try {
-  ({ appendToFile } = require('../../lib/collab-cache.js'));
+  ({
+    appendToFile,
+    readSourceFile,
+    saveSuggestion,
+    commitSuggestion,
+    updateSuggestionStatus,
+  } = require('../../lib/collab-cache.js'));
 } catch {
   appendToFile = null;
+  readSourceFile = null;
+  saveSuggestion = null;
+  commitSuggestion = null;
+  updateSuggestionStatus = null;
 }
 
 function register(api) {
@@ -161,6 +171,121 @@ function register(api) {
       ].join('\n');
       await appendToFile(room_id, 'issues.md', entry);
       return { ok: true };
+    },
+  });
+
+  api.registerTool({
+    name: 'read_source_file',
+    description:
+      'Read the current content of a source file from the project\'s GitHub repository. ' +
+      'Always call this before suggest_fix so the proposed content is based on the real file.',
+    parameters: {
+      type: 'object',
+      properties: {
+        room_id: {
+          type: 'string',
+          description: 'The Webex room ID, used to resolve the project repo',
+        },
+        file_path: {
+          type: 'string',
+          description: 'Repo-relative path of the file (e.g. src/components/Header.jsx)',
+        },
+      },
+      required: ['room_id', 'file_path'],
+    },
+    handler: async ({ room_id, file_path }) => {
+      if (!readSourceFile) return { ok: false, error: 'collab-cache module not available' };
+      const content = await readSourceFile(room_id, file_path);
+      if (content === null) return { found: false, file_path };
+      return { found: true, file_path, content };
+    },
+  });
+
+  api.registerTool({
+    name: 'suggest_fix',
+    description:
+      'Propose a fix for an issue found during browser inspection. Saves the suggestion with a unique FIX-XXX ID. ' +
+      'After calling this, present the ID and explanation to the team and ask a developer to reply ' +
+      '"approve FIX-XXX" to commit it or "reject FIX-XXX" to discard it. ' +
+      'Always call read_source_file first so proposed_content reflects the actual current file.',
+    parameters: {
+      type: 'object',
+      properties: {
+        room_id: {
+          type: 'string',
+          description: 'The Webex room ID, used to resolve the project repo',
+        },
+        file_path: {
+          type: 'string',
+          description: 'Repo-relative path of the file to fix (e.g. src/components/Nav.jsx)',
+        },
+        proposed_content: {
+          type: 'string',
+          description: 'The complete new content for the file after the fix is applied',
+        },
+        explanation: {
+          type: 'string',
+          description: 'One or two sentences describing what the fix does and why it resolves the issue',
+        },
+      },
+      required: ['room_id', 'file_path', 'proposed_content', 'explanation'],
+    },
+    handler: async ({ room_id, file_path, proposed_content, explanation }) => {
+      if (!saveSuggestion) return { ok: false, error: 'collab-cache module not available, fix suggestions are disabled' };
+      const suggestion = await saveSuggestion(room_id, {
+        filePath: file_path,
+        proposedContent: proposed_content,
+        explanation,
+      });
+      return { ok: true, id: suggestion.id, filePath: suggestion.filePath, explanation: suggestion.explanation };
+    },
+  });
+
+  api.registerTool({
+    name: 'commit_fix',
+    description:
+      'Apply an approved fix by committing the proposed file content to GitHub. ' +
+      'Only call this after a developer has explicitly replied "approve FIX-XXX".',
+    parameters: {
+      type: 'object',
+      properties: {
+        room_id: { type: 'string', description: 'The Webex room ID' },
+        suggestion_id: { type: 'string', description: 'The suggestion ID to apply (e.g. FIX-001)' },
+      },
+      required: ['room_id', 'suggestion_id'],
+    },
+    handler: async ({ room_id, suggestion_id }) => {
+      if (!commitSuggestion) return { ok: false, error: 'collab-cache module not available' };
+      try {
+        const result = await commitSuggestion(room_id, suggestion_id);
+        return { ok: true, ...result };
+      } catch (err) {
+        return { ok: false, error: err.message };
+      }
+    },
+  });
+
+  api.registerTool({
+    name: 'reject_fix',
+    description:
+      'Discard a pending fix suggestion without committing anything. ' +
+      'Call this when a developer replies "reject FIX-XXX".',
+    parameters: {
+      type: 'object',
+      properties: {
+        room_id: { type: 'string', description: 'The Webex room ID' },
+        suggestion_id: { type: 'string', description: 'The suggestion ID to reject (e.g. FIX-001)' },
+      },
+      required: ['room_id', 'suggestion_id'],
+    },
+    handler: async ({ room_id, suggestion_id }) => {
+      if (!updateSuggestionStatus) return { ok: false, error: 'collab-cache module not available' };
+      try {
+        await updateSuggestionStatus(room_id, suggestion_id, 'rejected');
+        return { ok: true, id: suggestion_id };
+      } catch (err) {
+        return { ok: false, error: err.message };
+      }
     },
   });
 }
