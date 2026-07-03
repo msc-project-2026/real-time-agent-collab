@@ -30,6 +30,11 @@ function isDmAllowed(cfg, personId, personEmail) {
 
 // Serialise dispatch per Webex space
 const dispatchQueues = new Map();
+const DISPATCH_SETTLE_DELAY_MS = 500;
+
+function sleep(ms = DISPATCH_SETTLE_DELAY_MS) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function enqueueSpaceDispatch(spaceId, job) {
   const previous = dispatchQueues.get(spaceId) ?? Promise.resolve();
@@ -49,7 +54,11 @@ function enqueueSpaceDispatch(spaceId, job) {
     })
     .then(async () => {
       console.log('[webex] start dispatch', { spaceId });
-      return job();
+      try {
+        return await job();
+      } finally {
+        await sleep();
+      }
     })
     .finally(() => {
       console.log('[webex] finish dispatch', { spaceId });
@@ -128,7 +137,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
 
     From: `webex:${msg.personId}`,
     To: `webex:${msg.roomId}`,
-    SessionKey: `webex:${msg.roomId}`,
+    SessionKey: `agent:main:webex:${msg.roomId}`,
 
     WebexRoomId: msg.roomId,
     AccountId: account.accountId,
