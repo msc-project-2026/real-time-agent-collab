@@ -9,9 +9,7 @@ const { recordMessage: lullRecord, waitForLull, getLastSeen } = require('./lull'
 const { recordMessage: ctxRecord, getRecentMessages } = require('./context');
 const { tryAccept } = require('./debounce');
 const { logDecision } = require('./audit');
-const { appendToFile } = require('../../lib/collab-cache');
 const prefs = require('./prefs');
-const feedback = require('./feedback');
 
 let pluginRuntime = null;
 function setRuntime(r) {
@@ -176,14 +174,6 @@ async function handleCommand(text, { roomId, personId, token, proactivity, log }
 // ── Main inbound handler ───────────────────────────────────────────────────────
 
 async function handleInbound(payload, { botId, cfg, account, log }) {
-  // Route reaction events to the feedback handler
-  if (payload.resource === 'reactions') {
-    await feedback.handleReaction(payload, { log, appendToFile }).catch((err) =>
-      log?.error?.(`[webex:feedback] reaction handler error: ${err?.message ?? err}`)
-    );
-    return;
-  }
-
   if (payload.resource !== 'messages' || payload.event !== 'created') return;
 
   if (payload.data?.personId === botId) return;
@@ -349,8 +339,6 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
     return;
   }
 
-  const capturedScore = gateScore;
-  const capturedType = interventionType;
   const capturedIsMentioned = isMentioned;
 
   await dispatchWithRetry(dispatch, {
@@ -375,15 +363,8 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
           body: buildMsgBody(roomId, { text: reply }, msg.parentId),
         });
 
-        if (sent?.id) {
-          feedback.trackMessage(sent.id, {
-            roomId,
-            gateScore: capturedScore,
-            interventionType: capturedType,
-          });
-          if (!capturedIsMentioned) {
-            prefs.recordProactiveSend(roomId);
-          }
+        if (sent?.id && !capturedIsMentioned) {
+          prefs.recordProactiveSend(roomId);
         }
       },
       onError: (err) => {
