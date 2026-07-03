@@ -128,7 +128,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
 
     From: `webex:${msg.personId}`,
     To: `webex:${msg.roomId}`,
-    SessionKey: `agent:main:webex:${msg.roomId}`,
+    SessionKey: `webex:${msg.roomId}`,
 
     WebexRoomId: msg.roomId,
     AccountId: account.accountId,
