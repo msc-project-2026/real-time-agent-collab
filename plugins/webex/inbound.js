@@ -34,12 +34,25 @@ const dispatchQueues = new Map();
 function enqueueSpaceDispatch(spaceId, job) {
   const previous = dispatchQueues.get(spaceId) ?? Promise.resolve();
 
+  console.log('[webex] enqueue dispatch', {
+    spaceId,
+    alreadyQueued: dispatchQueues.has(spaceId),
+  });
+
   const next = previous
-    .catch(() => {
+    .catch((err) => {
       // Keep the queue alive even if the previous dispatch failed.
+      console.warn('[webex] previous dispatch failed; continuing queue', {
+        spaceId,
+        error: err?.message ?? String(err),
+      });
     })
-    .then(job)
+    .then(async () => {
+      console.log('[webex] start dispatch', { spaceId });
+      return job();
+    })
     .finally(() => {
+      console.log('[webex] finish dispatch', { spaceId });
       if (dispatchQueues.get(spaceId) === next) {
         dispatchQueues.delete(spaceId);
       }
