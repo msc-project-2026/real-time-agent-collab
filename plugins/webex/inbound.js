@@ -85,7 +85,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
       '',
       'Webex message context:',
       '```json',
-      JSON.stringify(visibleContext, null, 2),
+      JSON.stringify(contextHeader, null, 2),
       '```',
       '',
       'Inbound message:',
