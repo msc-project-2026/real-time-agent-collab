@@ -71,6 +71,29 @@ function enqueueSpaceDispatch(spaceId, job) {
   return next;
 }
 
+async function dispatchWithSessionConflictRetry(dispatchJob) {
+  try {
+    return await dispatchJob();
+  } catch (err) {
+    const message = err?.message ?? String(err);
+
+    if (!message.includes('reply session initialization conflicted')) {
+      throw err;
+    }
+
+    console.warn(
+      '[webex] reply session conflict; retrying once after settle delay',
+      {
+        error: message,
+      }
+    );
+
+    await sleep(1000);
+
+    return await dispatchJob();
+  }
+}
+
 // Called asynchronously after the webhook POST is acknowledged.  Filters,
 // fetches full message details, then delivers to the OpenClaw agent pipeline.
 async function handleInbound(payload, { botId, cfg, account, log }) {
@@ -164,30 +187,32 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
 
   const loadedCfg = pluginRuntime.config?.current?.() ?? {};
   await enqueueSpaceDispatch(msg.roomId, () =>
-    dispatch({
-      ctx: ctxPayload,
-      cfg: loadedCfg,
-      dispatcherOptions: {
-        deliver: async (out) => {
-          if (!out.text) return;
-          log?.info?.(
-            `[webex:${account.accountId}] agent output suppressed: ${out.text}`
-          );
-          /*        
+    dispatchWithSessionConflictRetry(() =>
+      dispatch({
+        ctx: ctxPayload,
+        cfg: loadedCfg,
+        dispatcherOptions: {
+          deliver: async (out) => {
+            if (!out.text) return;
+            log?.info?.(
+              `[webex:${account.accountId}] agent output suppressed: ${out.text}`
+            );
+            /*        
           await webexFetch(cfg.token, '/messages', {
             method: 'POST',
             body: buildMsgBody(msg.roomId, { text: out.text }, msg.parentId),
           });
           */
+          },
+          onError: (err) => {
+            log?.error?.(
+              `[webex:${account.accountId}] reply dispatch error: ${err?.message ?? err}`
+            );
+          },
         },
-        onError: (err) => {
-          log?.error?.(
-            `[webex:${account.accountId}] reply dispatch error: ${err?.message ?? err}`
-          );
-        },
-      },
-      replyOptions: {},
-    })
+        replyOptions: {},
+      })
+    )
   );
 }
 
