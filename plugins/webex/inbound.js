@@ -81,16 +81,19 @@ async function dispatchWithSessionConflictRetry(dispatchJob) {
       throw err;
     }
 
+    const recoverySuffix = `recovery-${Date.now()}`;
+
     console.warn(
-      '[webex] reply session conflict; retrying once after settle delay',
+      '[webex] reply session conflict; retrying once with recovery session key',
       {
         error: message,
+        recoverySuffix,
       }
     );
 
     await sleep(1000);
 
-    return await dispatchJob();
+    return await dispatchJob(recoverySuffix);
   }
 }
 
@@ -142,39 +145,45 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
   // Fetch routing instruction
   const routingInstruction = buildRoutingInstruction();
 
-  // Context payload consumed by the OpenClaw agent pipeline.
-  const ctxPayload = {
-    Body: msg.text ?? '',
-    RawBody: msg.text ?? '',
-    CommandBody: [
-      routingInstruction,
-      '',
-      'Webex message context:',
-      '```json',
-      JSON.stringify(contextHeader, null, 2),
-      '```',
-      '',
-      'Inbound message:',
-      msg.text ?? '',
-    ].join('\n'),
+  // Build context payload
+  function buildCtxPayload(sessionKeySuffix) {
+    return {
+      Body: msg.text ?? '',
+      RawBody: msg.text ?? '',
+      CommandBody: [
+        routingInstruction,
+        '',
+        'Webex message context:',
+        '',
+        '```json',
+        JSON.stringify(contextHeader, null, 2),
+        '```',
+        '',
+        'Inbound message:',
+        msg.text ?? '',
+      ].join('\n'),
 
-    From: `webex:${msg.personId}`,
-    To: `webex:${msg.roomId}`,
-    SessionKey: `agent:main:webex:${msg.roomId}`,
+      From: `webex:${msg.personId}`,
+      To: `webex:${msg.roomId}`,
 
-    WebexRoomId: msg.roomId,
-    AccountId: account.accountId,
-    ChatType: msg.roomType === 'direct' ? 'direct' : 'group',
-    SenderName: msg.personEmail ?? msg.personId,
-    SenderId: msg.personId,
-    Provider: 'webex',
-    Surface: 'webex',
-    MessageSid: msg.id,
-    Timestamp: msg.created,
-    OriginatingChannel: 'webex',
-    OriginatingTo: `webex:${msg.roomId}`,
-    MessageThreadId: msg.parentId,
-  };
+      SessionKey: sessionKeySuffix
+        ? `agent:main:webex:${msg.roomId}:${sessionKeySuffix}`
+        : `agent:main:webex:${msg.roomId}`,
+
+      WebexRoomId: msg.roomId,
+      AccountId: account.accountId,
+      ChatType: msg.roomType === 'direct' ? 'direct' : 'group',
+      SenderName: msg.personEmail ?? msg.personId,
+      SenderId: msg.personId,
+      Provider: 'webex',
+      Surface: 'webex',
+      MessageSid: msg.id,
+      Timestamp: msg.created,
+      OriginatingChannel: 'webex',
+      OriginatingTo: `webex:${msg.roomId}`,
+      MessageThreadId: msg.parentId,
+    };
+  }
 
   const dispatch =
     pluginRuntime?.channel?.reply?.dispatchReplyWithBufferedBlockDispatcher;
@@ -187,9 +196,9 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
 
   const loadedCfg = pluginRuntime.config?.current?.() ?? {};
   await enqueueSpaceDispatch(msg.roomId, () =>
-    dispatchWithSessionConflictRetry(() =>
+    dispatchWithSessionConflictRetry((sessionKeySuffix) =>
       dispatch({
-        ctx: ctxPayload,
+        ctx: buildCtxPayload(sessionKeySuffix),
         cfg: loadedCfg,
         dispatcherOptions: {
           deliver: async (out) => {
