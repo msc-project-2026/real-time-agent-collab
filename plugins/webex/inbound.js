@@ -28,6 +28,27 @@ function isDmAllowed(cfg, personId, personEmail) {
   }
 }
 
+// Serialise dispatch per Webex space
+const dispatchQueues = new Map();
+
+function enqueueSpaceDispatch(spaceId, job) {
+  const previous = dispatchQueues.get(spaceId) ?? Promise.resolve();
+
+  const next = previous
+    .catch(() => {
+      // Keep the queue alive even if the previous dispatch failed.
+    })
+    .then(job)
+    .finally(() => {
+      if (dispatchQueues.get(spaceId) === next) {
+        dispatchQueues.delete(spaceId);
+      }
+    });
+
+  dispatchQueues.set(spaceId, next);
+  return next;
+}
+
 // Called asynchronously after the webhook POST is acknowledged.  Filters,
 // fetches full message details, then delivers to the OpenClaw agent pipeline.
 async function handleInbound(payload, { botId, cfg, account, log }) {
@@ -120,31 +141,32 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
   }
 
   const loadedCfg = pluginRuntime.config?.current?.() ?? {};
-  await dispatch({
-    ctx: ctxPayload,
-    cfg: loadedCfg,
-    dispatcherOptions: {
-      deliver: async (out) => {
-        if (!out.text) return;
-        log?.info?.(
-          `[webex:${account.accountId}] agent output suppressed: ${out.text}`
-        );
-
-        /*        
-        await webexFetch(cfg.token, '/messages', {
-          method: 'POST',
-          body: buildMsgBody(msg.roomId, { text: out.text }, msg.parentId),
-        });
-        */
+  await enqueueSpaceDispatch(msg.roomId, () =>
+    dispatch({
+      ctx: ctxPayload,
+      cfg: loadedCfg,
+      dispatcherOptions: {
+        deliver: async (out) => {
+          if (!out.text) return;
+          log?.info?.(
+            `[webex:${account.accountId}] agent output suppressed: ${out.text}`
+          );
+          /*        
+          await webexFetch(cfg.token, '/messages', {
+            method: 'POST',
+            body: buildMsgBody(msg.roomId, { text: out.text }, msg.parentId),
+          });
+          */
+        },
+        onError: (err) => {
+          log?.error?.(
+            `[webex:${account.accountId}] reply dispatch error: ${err?.message ?? err}`
+          );
+        },
       },
-      onError: (err) => {
-        log?.error?.(
-          `[webex:${account.accountId}] reply dispatch error: ${err?.message ?? err}`
-        );
-      },
-    },
-    replyOptions: {},
-  });
+      replyOptions: {},
+    })
+  );
 }
 
 module.exports = { handleInbound, isDmAllowed, setRuntime };
