@@ -19,7 +19,6 @@ async function claimPendingBatch({ spaceId, explicitRoot }) {
       spaceId,
       batchId: null,
       messageCount: 0,
-      messages: [],
     };
   }
 
@@ -47,7 +46,6 @@ async function claimPendingBatch({ spaceId, explicitRoot }) {
     spaceId,
     batchId,
     messageCount: messages.length,
-    messages,
   };
 }
 
