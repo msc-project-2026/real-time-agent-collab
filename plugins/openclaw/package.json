@@ -1,0 +1,14 @@
+{
+  "name": "@openclaw/tools",
+  "version": "1.0.0",
+  "description": "Custom OpenClaw tool plugins",
+  "main": "browser-tools.js",
+  "openclaw": {
+    "extensions": [
+      "./browser-tools.js"
+    ]
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}

@@ -20,11 +20,16 @@ RUN chmod +x /app/docker-entrypoint.sh
 
 # Copy shared lib and update plugins/ ownership.
 # npm install --workspaces creates the @collab/* symlinks in node_modules
-# so plugins can import shared packages (e.g. @collab/github) at runtime.
+# so plugins can import shared packages (e.g. @collab/lib) at runtime.
 COPY --chown=root:root plugins/ /app/plugins/
 COPY --chown=root:root lib/ /app/lib/
-COPY --chown=root:root package.json /app/package.json 
+COPY --chown=root:root package.json /app/package.json
 RUN npm install --workspaces --ignore-scripts
+
+# Install Playwright's Chromium binary and its required system libraries.
+# The base image (node:24-bookworm-slim) lacks these dependencies.
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
+RUN npx playwright install --with-deps chromium
 
 # Overrides the base CMD only; ENTRYPOINT (tini) is inherited.
 CMD ["/app/docker-entrypoint.sh"]
