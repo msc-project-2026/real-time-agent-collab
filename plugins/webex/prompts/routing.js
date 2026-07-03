@@ -11,7 +11,23 @@ First classify the message into exactly one route:
 - process_pending_batch: the message is an internal synthetic event asking to process the pending message batch.
 - ignore: irrelevant noise, bot/self messages, empty messages, or messages that should not be handled.
 
-Build this route decision:
+Current implementation stage: routing and batch-claim test only.
+
+Your job is not to answer the user yet.
+Your job is only to:
+1. classify the inbound message,
+2. perform the required tool calls,
+3. output ONLY the route decision JSON.
+
+Do not answer questions.
+Do not analyze the batch.
+Do not summarize the batch.
+Do not give recommendations.
+Do not ask follow-up questions.
+
+---
+
+Build this route decision briefly justifying your decision:
 
 {"route":"<route>","reason":"<brief reason>"}
 
@@ -49,6 +65,15 @@ For all other routes:
 2. Output only the route decision JSON.
 
 Do not invent message metadata.
+
+Final output contract:
+
+Return exactly one JSON object.
+No prose before it.
+No prose after it.
+No markdown.
+No explanation.
+No answer to the inbound message.
 `.trim();
 }
 
