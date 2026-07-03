@@ -5,6 +5,8 @@ const { webexFetch } = require('./api');
 const { getAccessToken } = require('./token');
 const { buildMsgBody } = require('./send');
 
+const { buildRoutingInstruction } = require('./prompts/routing');
+
 // Holds the OpenClaw plugin runtime (set via setRuntime() by register() in index.js).
 let pluginRuntime = null;
 function setRuntime(r) {
@@ -46,7 +48,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
     `/messages/${payload.data.id}`
   );
 
-  // *** Addition: only process messages from spaces where the bot is a member
+  // Filter: only process messages from spaces where the bot is a member
   let membership;
   try {
     membership = await webexFetch(
@@ -61,15 +63,39 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
   const isMentioned =
     Array.isArray(msg.mentionedPeople) && msg.mentionedPeople.includes(botId);
 
+  const contextHeader = {
+    spaceId: msg.roomId,
+    messageId: msg.id,
+    senderId: msg.personId,
+    senderName: msg.personEmail ?? msg.personId,
+    createdAt: msg.created,
+    roomType: msg.roomType,
+    isMentioned,
+  };
+
+  // Fetch routing instruction
+  const routingInstruction = buildRoutingInstruction();
+
   // Context payload consumed by the OpenClaw agent pipeline.
-  // IsMentioned is delivered as a signal for the agent, not used to gate here.
   const ctxPayload = {
     Body: msg.text ?? '',
     RawBody: msg.text ?? '',
-    CommandBody: msg.text ?? '',
+    CommandBody: [
+      routingInstruction,
+      '',
+      'Webex message context:',
+      '```json',
+      JSON.stringify(visibleContext, null, 2),
+      '```',
+      '',
+      'Inbound message:',
+      msg.text ?? '',
+    ].join('\n'),
+
     From: `webex:${msg.personId}`,
     To: `webex:${msg.roomId}`,
     SessionKey: `agent:main:webex:${msg.roomId}`,
+
     WebexRoomId: msg.roomId,
     AccountId: account.accountId,
     ChatType: msg.roomType === 'direct' ? 'direct' : 'group',
@@ -82,7 +108,6 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
     OriginatingChannel: 'webex',
     OriginatingTo: `webex:${msg.roomId}`,
     MessageThreadId: msg.parentId,
-    IsMentioned: isMentioned,
   };
 
   const dispatch =
@@ -101,10 +126,16 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
     dispatcherOptions: {
       deliver: async (out) => {
         if (!out.text) return;
+        log?.info?.(
+          `[webex:${account.accountId}] agent output suppressed: ${out.text}`
+        );
+
+        /*        
         await webexFetch(cfg.token, '/messages', {
           method: 'POST',
           body: buildMsgBody(msg.roomId, { text: out.text }, msg.parentId),
         });
+        */
       },
       onError: (err) => {
         log?.error?.(
