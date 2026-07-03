@@ -24,6 +24,20 @@ If route is append_only:
 3. Wait for the tool result.
 4. Output only the route decision JSON you already built.
 
+If route is append_and_process:
+
+1. Call collab_append_pending_message exactly once using the current inbound message.
+2. Use only the Webex message context JSON and inbound message to build the append tool arguments.
+3. Wait for the append tool result.
+4. Call collab_claim_pending_batch exactly once using the current Webex space ID.
+5. Wait for the claim tool result.
+6. Add a claimedBatch field to the route decision JSON you already built, using the claim tool result:
+   {
+     "batchId": "<claim result batchId or null>",
+     "messageCount": <claim result messageCount>
+   }
+7. Output only the updated route decision JSON.
+
 For all other routes:
 
 1. Do not call any tools.

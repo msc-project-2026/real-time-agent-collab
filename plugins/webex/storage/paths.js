@@ -1,4 +1,5 @@
 const path = require('node:path');
+const { getHeapSpaceStatistics } = require('node:v8');
 
 const ROOT = '.collab';
 const DEFAULT_WORKSPACE_ROOT = '/home/node/.openclaw/workspace';
@@ -9,6 +10,10 @@ function getWorkspaceRoot(explicitRoot) {
   return (
     explicitRoot ?? process.env.OPENCLAW_WORKSPACE_DIR ?? DEFAULT_WORKSPACE_ROOT
   );
+}
+
+function safeSegment(value) {
+  return String(value).replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
 // Paths
@@ -30,8 +35,12 @@ function pendingBatchStatePath(spaceId, explicitRoot) {
   return path.join(pendingDir(spaceId, explicitRoot), 'batch-state.json');
 }
 
-function safeSegment(value) {
-  return String(value).replace(/[^a-zA-Z0-9._-]/g, '_');
+function processingDir(spaceId, explicitRoot) {
+  return path.join(spaceRoot(spaceId, explicitRoot), 'processing');
+}
+
+function processingBatchPath(spaceId, batchId, explicitRoot) {
+  return path.join(processingDir(spaceId, explicitRoot), `${batchId}.jsonl`);
 }
 
 module.exports = {

@@ -2,6 +2,7 @@
 'use strict';
 
 const { appendPendingMessageTool } = require('./tools/append-pending-message');
+const { claimPendingBatchTool } = require('./tools/claim-pending-batch');
 
 const { webexPlugin } = require('./channel');
 const { webhookRouter } = require('./webhook');
@@ -23,6 +24,7 @@ function register(api) {
 
   // Tools
   api.registerTool(appendPendingMessageTool());
+  api.registerTool(claimPendingBatchTool());
 }
 
 module.exports = register;
