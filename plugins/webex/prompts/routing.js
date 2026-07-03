@@ -19,7 +19,7 @@ Your job is only to:
 2. perform the required tool calls,
 3. output ONLY the route decision JSON.
 
-Build this route decision briefly justifying your decision:
+Internally build this route decision, but do not output it yet:
 
 {"route":"<route>","reason":"<brief reason>"}
 
@@ -30,7 +30,7 @@ If route is append_only:
 1. Call collab_append_pending_message exactly once.
 2. Use only the Webex message context JSON and inbound message to build the tool arguments.
 3. Wait for the tool result.
-4. Output only the route decision JSON you already built.
+4. After the tool call completes, output only the route decision JSON you already built.
 
 If route is append_and_process:
 
@@ -49,7 +49,6 @@ If route is append_and_process:
 For append_and_process, do not answer the user’s question yet.
 Do not analyze the claimed batch yet.
 Do not produce recommendations, summaries, or follow-up questions yet.
-Output only the extended route decision JSON.
 
 For all other routes:
 
