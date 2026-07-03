@@ -26,5 +26,5 @@ Do not invent message metadata. Use only the Webex message context and inbound m
 }
 
 module.exports = {
-  build,
+  buildRoutingInstruction,
 };
