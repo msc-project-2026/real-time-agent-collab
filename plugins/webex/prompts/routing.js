@@ -38,6 +38,11 @@ If route is append_and_process:
    }
 7. Output only the updated route decision JSON.
 
+For append_and_process, do not answer the user’s question yet.
+Do not analyze the claimed batch yet.
+Do not produce recommendations, summaries, or follow-up questions yet.
+Output only the extended route decision JSON.
+
 For all other routes:
 
 1. Do not call any tools.
