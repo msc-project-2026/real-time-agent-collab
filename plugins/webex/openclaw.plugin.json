@@ -17,7 +17,7 @@
       },
       "webhookUrl": {
         "type": "string",
-        "description": "Public URL for receiving Webex webhook POSTs"
+        "description": "Public URL for receiving Webex webhook POSTs (messages and meeting started/ended events)"
       },
       "webhookSecret": {
         "type": "string",
@@ -49,14 +49,6 @@
       "clientSecret": {
         "type": "string",
         "description": "Webex Integration client secret"
-      },
-      "meetingWebhookUrl": {
-        "type": "string",
-        "description": "Public URL for receiving Webex meeting-started/ended webhook POSTs"
-      },
-      "meetingWebhookSecret": {
-        "type": "string",
-        "description": "HMAC-SHA1 secret for verifying meeting webhook signatures"
       }
     }
   }

@@ -17,12 +17,6 @@ function register(api) {
     match: 'prefix',
     handler: webhookRouter,
   });
-  api.registerHttpRoute({
-    path: '/webhooks/webex-meetings/',
-    auth: 'plugin',
-    match: 'prefix',
-    handler: webhookRouter,
-  });
 }
 
 module.exports = register;

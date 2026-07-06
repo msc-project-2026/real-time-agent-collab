@@ -348,30 +348,28 @@ const webexPlugin = {
         }, TWELVE_DAYS_MS);
       }
 
-      // Register (or refresh) the Webex webhook for this account
+      // Register (or refresh) the Webex message webhook for this account
       await ensureWebhook(cfg);
-      log?.info?.(`[webex:${account.accountId}] Webex webhook registered`);
+      log?.info?.(`[webex:${account.accountId}] Webex message webhook registered`);
 
-      // Register the HTTP dispatch target for incoming POSTs
+      // Register (or refresh) the meeting started/ended webhooks — same
+      // targetUrl as the message webhook (see token.js), so both land on
+      // the single HTTP target registered below.
+      await ensureMeetingWebhook(cfg);
+      log?.info?.(`[webex:${account.accountId}] Webex meeting webhooks registered`);
+
+      // Register the single HTTP dispatch target for incoming POSTs —
+      // handles both `messages` and `meetings` payloads, branching on
+      // payload.resource.
       const webhookPath = normPath(`/webhooks/webex/${account.accountId}`);
       targets.set(webhookPath, {
         account,
-        handle: (payload) =>
-          handleInbound(payload, { botId, cfg, account, log }),
-      });
-      log?.info?.(`[webex:${account.accountId}] ready at ${webhookPath}`);
+        handle: async (payload) => {
+          if (payload.resource === 'messages') {
+            return handleInbound(payload, { botId, cfg, account, log });
+          }
 
-      // ── Meeting started/ended webhook ────────────────────────────────────────
-      let meetingWebhookPath = null;
-      if (cfg.meetingWebhookUrl) {
-        await ensureMeetingWebhook(cfg);
-        log?.info?.(`[webex:${account.accountId}] meeting webhooks registered`);
-
-        meetingWebhookPath = normPath(`/webhooks/webex-meetings/${account.accountId}`);
-        targets.set(meetingWebhookPath, {
-          account,
-          handle: async (payload) => {
-            if (payload.resource !== 'meetings') return;
+          if (payload.resource === 'meetings') {
             const meetingId = payload.data?.id;
             if (!meetingId) return;
 
@@ -388,13 +386,13 @@ const webexPlugin = {
               await leaveMeeting(meetingId);
               log?.info?.(`[webex:${account.accountId}] left meetingId=${meetingId} (meeting ended)`);
             }
-          },
-        });
-        log?.info?.(`[webex:${account.accountId}] meeting hook ready at ${meetingWebhookPath}`);
-      }
+          }
+        },
+      });
+      log?.info?.(`[webex:${account.accountId}] ready at ${webhookPath}`);
 
       // The channel must stay alive until the gateway stops it.
-      // On shutdown the finally block deregisters the target and Webex webhook.
+      // On shutdown the finally block deregisters the target and Webex webhooks.
       try {
         await new Promise(() => {}); // never resolves
       } finally {
@@ -406,15 +404,11 @@ const webexPlugin = {
             `[webex:${account.accountId}] webhook deregister failed: ${err?.message}`
           )
         );
-
-        if (meetingWebhookPath) {
-          targets.delete(meetingWebhookPath);
-          await deregisterMeetingWebhook(cfg).catch((err) =>
-            log?.warn?.(
-              `[webex:${account.accountId}] meeting webhook deregister failed: ${err?.message}`
-            )
-          );
-        }
+        await deregisterMeetingWebhook(cfg).catch((err) =>
+          log?.warn?.(
+            `[webex:${account.accountId}] meeting webhook deregister failed: ${err?.message}`
+          )
+        );
       }
     },
   },
