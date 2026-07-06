@@ -1,9 +1,18 @@
-// Runs inside the headless page loaded by meeting-runtime.js — bundle this
-// with webpack/esbuild alongside the `webex` npm package into
-// meeting-client.html. This file needs real browser WebRTC APIs; it will not
-// run under plain Node.
+// Runs inside the headless page loaded by meetingRuntime.js — this file
+// itself gets bundled by esbuild (see package.json's build:meeting-client),
+// but it does NOT import the `webex` package directly. The Webex SDK is
+// loaded separately in meeting-client.html via a plain <script> tag pointing
+// at the prebuilt UMD bundle (webex-sdk.min.js, copied from node_modules by
+// copy-webex-sdk.js), which sets window.Webex.
+//
+// Why: esbuild trying to bundle the raw `webex` package pulls in the SDK's
+// internal dependencies, several of which require Node built-ins (url,
+// util, querystring) that esbuild doesn't polyfill by default. The prebuilt
+// UMD bundle already handles all of that internally — it's the same
+// artifact Cisco's own browser-usage docs recommend loading via <script>.
+// Bundling only this thin glue file avoids the problem entirely.
 
-import Webex from 'webex';
+/* global Webex */
 
 let webex = null;
 let currentMeeting = null;
