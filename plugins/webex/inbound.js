@@ -10,6 +10,8 @@ const { recordMessage: ctxRecord, getRecentMessages } = require('./context');
 const { tryAccept } = require('./debounce');
 const { logDecision } = require('./audit');
 const prefs = require('./prefs');
+const { bind: bindMeeting } = require('./roomMap');
+
 
 let pluginRuntime = null;
 function setRuntime(r) {
@@ -138,6 +140,14 @@ async function handleCommand(text, { roomId, personId, token, proactivity, log }
   } else if (sub === 'reset') {
     prefs.clearOverride(roomId);
     reply = '↩️ Proactivity threshold reset to config default for this space.';
+  } else if (sub === 'bind-meeting') {
+    const meetingId = parts[1];
+    if (!meetingId) {
+      reply = '⚠️ Usage: `/collab bind-meeting <meetingId>` — run this in the space you want replies posted to.';
+    } else {
+      bindMeeting(meetingId, roomId);
+      reply = `🔗 Bound meeting \`${meetingId}\` to this space. Live reactions will post here.`;
+    }
   } else if (sub === 'status') {
     const { effective, source, ratioStr } = prefs.getStatus(
       roomId,
@@ -156,6 +166,7 @@ async function handleCommand(text, { roomId, personId, token, proactivity, log }
       '• `/collab active` — lower threshold to 0.3 (more proactive)',
       '• `/collab threshold <0.0–1.0>` — set a specific room threshold',
       '• `/collab reset` — restore config default for this space',
+      '• `/collab bind-meeting <meetingId>` — link a live meeting to this space',
       '• `/collab status` — show current threshold and engagement stats',
       '• `/collab me quiet/active/threshold/reset` — personal preferences',
     ].join('\n');

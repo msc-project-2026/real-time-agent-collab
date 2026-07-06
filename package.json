@@ -5,6 +5,7 @@
   "workspaces": [
     "lib",
     "plugins/source-observer",
+    "plugins/webex",
     "services/setup-ui"
   ],
   "scripts": {

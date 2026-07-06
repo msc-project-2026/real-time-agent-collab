@@ -18,6 +18,15 @@
       ]
     }
   },
+  "dependencies": {
+    "puppeteer": "^23.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  },
+  "scripts": {
+    "build:meeting-client": "esbuild client.js --bundle --outfile=meeting-client.bundle.js"
+  },
   "engines": {
     "node": ">=24.0.0"
   }

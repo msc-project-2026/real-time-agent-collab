@@ -62,4 +62,44 @@ async function deregisterWebhooks(cfg) {
   );
 }
 
-module.exports = { getAccessToken, setAccessToken, refreshAccessToken, ensureWebhook, deregisterWebhooks };
+// Registers TWO webhooks against cfg.meetingWebhookUrl — one for `started`,
+// one for `ended` — since Webex's Create a Webhook API takes a single event
+// per webhook. Both point at the same targetUrl; channel.js's handler
+// branches on payload.event to decide whether to join or leave.
+async function ensureMeetingWebhook(cfg) {
+  const token = currentAccessToken ?? cfg.token;
+  const data = await webexFetch(token, '/webhooks');
+  await Promise.all(
+    (data?.items ?? [])
+      .filter((w) => w.targetUrl === cfg.meetingWebhookUrl)
+      .map((w) => webexFetch(token, `/webhooks/${w.id}`, { method: 'DELETE' }))
+  );
+
+  await Promise.all(
+    ['started', 'ended'].map((event) =>
+      webexFetch(token, '/webhooks', {
+        method: 'POST',
+        body: {
+          name: `OpenClaw Meeting ${event === 'started' ? 'Started' : 'Ended'} Handler`,
+          targetUrl: cfg.meetingWebhookUrl,
+          resource: 'meetings',
+          event,
+          ...(cfg.meetingWebhookSecret ? { secret: cfg.meetingWebhookSecret } : {}),
+        },
+      })
+    )
+  );
+}
+
+async function deregisterMeetingWebhook(cfg) {
+  const token = currentAccessToken ?? cfg.token;
+  const data = await webexFetch(token, '/webhooks');
+  await Promise.all(
+    (data?.items ?? [])
+      .filter((w) => w.targetUrl === cfg.meetingWebhookUrl)
+      .map((w) => webexFetch(token, `/webhooks/${w.id}`, { method: 'DELETE' }))
+  );
+}
+
+module.exports = {getAccessToken, setAccessToken, refreshAccessToken, ensureWebhook, deregisterWebhooks, 
+  ensureMeetingWebhook, deregisterMeetingWebhook,};

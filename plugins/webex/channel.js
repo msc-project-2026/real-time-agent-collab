@@ -8,10 +8,13 @@ const {
   refreshAccessToken,
   ensureWebhook,
   deregisterWebhooks,
+  ensureMeetingWebhook,
+  deregisterMeetingWebhook,
 } = require('./token');
 const { buildMsgBody } = require('./send');
 const { handleInbound } = require('./inbound');
 const { targets, normPath } = require('./webhook');
+const { joinMeeting, leaveMeeting } = require('./meetingRuntime');
 
 const DEFAULT_ACCOUNT = 'default';
 
@@ -358,6 +361,38 @@ const webexPlugin = {
       });
       log?.info?.(`[webex:${account.accountId}] ready at ${webhookPath}`);
 
+      // ── Meeting started/ended webhook ────────────────────────────────────────
+      let meetingWebhookPath = null;
+      if (cfg.meetingWebhookUrl) {
+        await ensureMeetingWebhook(cfg);
+        log?.info?.(`[webex:${account.accountId}] meeting webhooks registered`);
+
+        meetingWebhookPath = normPath(`/webhooks/webex-meetings/${account.accountId}`);
+        targets.set(meetingWebhookPath, {
+          account,
+          handle: async (payload) => {
+            if (payload.resource !== 'meetings') return;
+            const meetingId = payload.data?.id;
+            if (!meetingId) return;
+
+            if (payload.event === 'started') {
+              await joinMeeting({
+                meetingId,
+                destination: meetingId,
+                accessToken: getAccessToken() ?? cfg.token,
+                cfg,
+                account,
+                log,
+              });
+            } else if (payload.event === 'ended') {
+              await leaveMeeting(meetingId);
+              log?.info?.(`[webex:${account.accountId}] left meetingId=${meetingId} (meeting ended)`);
+            }
+          },
+        });
+        log?.info?.(`[webex:${account.accountId}] meeting hook ready at ${meetingWebhookPath}`);
+      }
+
       // The channel must stay alive until the gateway stops it.
       // On shutdown the finally block deregisters the target and Webex webhook.
       try {
@@ -371,6 +406,15 @@ const webexPlugin = {
             `[webex:${account.accountId}] webhook deregister failed: ${err?.message}`
           )
         );
+
+        if (meetingWebhookPath) {
+          targets.delete(meetingWebhookPath);
+          await deregisterMeetingWebhook(cfg).catch((err) =>
+            log?.warn?.(
+              `[webex:${account.accountId}] meeting webhook deregister failed: ${err?.message}`
+            )
+          );
+        }
       }
     },
   },
