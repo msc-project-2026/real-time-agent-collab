@@ -355,8 +355,17 @@ const webexPlugin = {
       // Register (or refresh) the meeting started/ended webhooks — same
       // targetUrl as the message webhook (see token.js), so both land on
       // the single HTTP target registered below.
-      await ensureMeetingWebhook(cfg);
-      log?.info?.(`[webex:${account.accountId}] Webex meeting webhooks registered`);
+      // Non-fatal: if the account lacks meeting-webhook permissions (e.g.
+      // insufficient OAuth scopes or no Meetings license), log and continue
+      // rather than taking down message handling, which already works.
+      try {
+        await ensureMeetingWebhook(cfg);
+        log?.info?.(`[webex:${account.accountId}] Webex meeting webhooks registered`);
+      } catch (err) {
+        log?.warn?.(
+          `[webex:${account.accountId}] meeting webhook registration failed (meeting-join feature disabled): ${err?.message}`
+        );
+      }
 
       // Register the single HTTP dispatch target for incoming POSTs —
       // handles both `messages` and `meetings` payloads, branching on
