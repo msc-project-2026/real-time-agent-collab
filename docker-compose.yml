@@ -35,6 +35,8 @@ services:
     # (On Railway this was done with RAILWAY_RUN_UID=0.)
     user: "0:0"
     shm_size: '1gb'
+    cap_add:
+      - SYS_ADMIN # needed for Chromium sandboxing in the headless Webex meeting client
     volumes:
       - openclaw_state:/home/node/.openclaw
       # GitHub App private key mounted read-only; referenced via
