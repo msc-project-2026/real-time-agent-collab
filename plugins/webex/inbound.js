@@ -72,6 +72,10 @@ function enqueueSpaceDispatch(spaceId, job) {
 }
 
 async function dispatchWithSessionConflictRetry(dispatchJob) {
+  // On gateway restart, an existing OpenClaw reply session can transiently
+  // fail initialization for the canonical room SessionKey. Retry once with a
+  // temporary recovery SessionKey so the inbound message is not lost. Later
+  // messages still use the canonical SessionKey.
   try {
     return await dispatchJob();
   } catch (err) {
@@ -91,10 +95,52 @@ async function dispatchWithSessionConflictRetry(dispatchJob) {
       }
     );
 
-    await sleep(1000);
+    await sleep(500);
 
     return await dispatchJob(recoverySuffix);
   }
+}
+
+// Dispatch to agent for space
+async function dispatchToAgentForSpace({
+  spaceId,
+  account,
+  log,
+  buildCtxPayload,
+}) {
+  const dispatch =
+    pluginRuntime?.channel?.reply?.dispatchReplyWithBufferedBlockDispatcher;
+  if (!dispatch) {
+    log?.warn?.(
+      `[webex:${account.accountId}] agent pipeline dispatch unavailable`
+    );
+    return;
+  }
+
+  const loadedCfg = pluginRuntime.config?.current?.() ?? {};
+
+  await enqueueSpaceDispatch(spaceId, () =>
+    dispatchWithSessionConflictRetry((sessionKeySuffix) =>
+      dispatch({
+        ctx: buildCtxPayload(sessionKeySuffix),
+        cfg: loadedCfg,
+        dispatcherOptions: {
+          deliver: async (out) => {
+            if (!out.text) return;
+            log?.info?.(
+              `[webex:${account.accountId}] agent output suppressed: ${out.text}`
+            );
+          },
+          onError: (err) => {
+            log?.error?.(
+              `[webex:${account.accountId}] reply dispatch error: ${err?.message ?? err}`
+            );
+          },
+        },
+        replyOptions: {},
+      })
+    )
+  );
 }
 
 // Called asynchronously after the webhook POST is acknowledged.  Filters,
@@ -146,7 +192,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
   const routingInstruction = buildRoutingInstruction();
 
   // Build context payload
-  function buildCtxPayload(sessionKeySuffix) {
+  function buildRealWebexCtxPayload(sessionKeySuffix) {
     return {
       Body: msg.text ?? '',
       RawBody: msg.text ?? '',
@@ -185,44 +231,116 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
     };
   }
 
-  const dispatch =
-    pluginRuntime?.channel?.reply?.dispatchReplyWithBufferedBlockDispatcher;
-  if (!dispatch) {
-    log?.warn?.(
-      `[webex:${account.accountId}] agent pipeline dispatch unavailable`
-    );
-    return;
-  }
+  await dispatchToAgentForSpace({
+    spaceId: msg.roomId,
+    account,
+    log,
+    buildCtxPayload: buildRealWebexCtxPayload,
+  });
 
-  const loadedCfg = pluginRuntime.config?.current?.() ?? {};
-  await enqueueSpaceDispatch(msg.roomId, () =>
-    dispatchWithSessionConflictRetry((sessionKeySuffix) =>
-      dispatch({
-        ctx: buildCtxPayload(sessionKeySuffix),
-        cfg: loadedCfg,
-        dispatcherOptions: {
-          deliver: async (out) => {
-            if (!out.text) return;
-            log?.info?.(
-              `[webex:${account.accountId}] agent output suppressed: ${out.text}`
-            );
-            /*        
-          await webexFetch(cfg.token, '/messages', {
-            method: 'POST',
-            body: buildMsgBody(msg.roomId, { text: out.text }, msg.parentId),
-          });
-          */
-          },
-          onError: (err) => {
-            log?.error?.(
-              `[webex:${account.accountId}] reply dispatch error: ${err?.message ?? err}`
-            );
-          },
-        },
-        replyOptions: {},
-      })
-    )
-  );
+  schedulePendingBatchProcessing({
+    spaceId: msg.roomId,
+    account,
+    log,
+  });
 }
 
-module.exports = { handleInbound, isDmAllowed, setRuntime };
+async function handleTriggerProcessingPendingBatch({ spaceId, account, log }) {
+  if (!spaceId) throw new Error('spacedId is required');
+
+  const routingInstruction = buildRoutingInstruction();
+
+  function buildSyntheticProcessPendingBatchCtxPayload(sessionKeySuffix) {
+    const syntheticContext = {
+      eventType: 'process_pending_batch',
+      synthetic: true,
+      spaceId,
+      createdAt: new Date().toISOString(),
+    };
+
+    return {
+      Body: '',
+      RawBody: '',
+      CommandBody: [
+        routingInstruction,
+        '',
+        'Internal synthetic Webex collaboration event:',
+        '',
+        '```json',
+        JSON.stringify(syntheticContext, null, 2),
+        '```',
+        '',
+        'Route this event as process_pending_batch.',
+      ].join('\n'),
+
+      From: 'webex:internal-scheduler',
+      To: `webex:${spaceId}`,
+
+      SessionKey: sessionKeySuffix
+        ? `agent:main:webex:${spaceId}:${sessionKeySuffix}`
+        : `agent:main:webex:${spaceId}`,
+
+      WebexRoomId: spaceId,
+      AccountId: account.accountId,
+      ChatType: 'group',
+      SenderName: 'internal-scheduler',
+      SenderId: 'internal-scheduler',
+      Provider: 'webex',
+      Surface: 'webex',
+      MessageSid: `synthetic:process_pending_batch:${spaceId}:${Date.now()}`,
+      Timestamp: syntheticContext.createdAt,
+      OriginatingChannel: 'webex',
+      OriginatingTo: `webex:${spaceId}`,
+      MessageThreadId: null,
+    };
+  }
+
+  await dispatchToAgentForSpace({
+    spaceId,
+    account,
+    log,
+    buildCtxPayload: buildSyntheticProcessPendingBatchCtxPayload,
+  });
+}
+
+// ****** Scheduler
+// Note: timers are in-memory only. They are lost on gateway restart/deploy.
+// Recovery scanner to be added later.
+
+const pendingBatchTimers = new Map();
+const PENDING_BATCH_DEBOUNCE_MS = 30_000;
+
+function schedulePendingBatchProcessing({ spaceId, account, log }) {
+  if (!spaceId) throw new Error('spaceId is required');
+
+  const existing = pendingBatchTimers.get(spaceId);
+  if (existing) {
+    clearTimeout(existing);
+  }
+
+  const timer = setTimeout(async () => {
+    pendingBatchTimers.delete(spaceId);
+
+    try {
+      await handleTriggerProcessingPendingBatch({
+        spaceId,
+        account,
+        log,
+      });
+    } catch {
+      log?.error?.(
+        `[webex:${account.accountId}] pending batch trigger failed: ${err?.message ?? err}`
+      );
+    }
+  }, PENDING_BATCH_DEBOUNCE_MS);
+
+  pendingBatchTimers.set(spaceId, timer);
+}
+
+module.exports = {
+  setRuntime,
+  isDmAllowed,
+  handleInbound,
+  dispatchToAgentForSpace,
+  handleTriggerProcessingPendingBatch,
+};

@@ -8,8 +8,8 @@ First classify the message into exactly one route:
 - append_and_process: the agent is directly addressed, mentioned, asked a question, or asked to help now.
 - config_setup: the user wants to set up this Webex space for a project or repository.
 - config_update: the user wants to change an existing project, repository, or configuration for this space.
-- process_pending_batch: the message is an internal synthetic event asking to process the pending message batch.
-- ignore: irrelevant noise, bot/self messages, empty messages, or messages that should not be handled.
+- process_pending_batch: the message is an internal synthetic event asking to process the pending message batch (eventType: process_pending_batch).
+- ignore: irrelevant noise, bot/self messages, or empty messages.
 
 Current implementation stage: routing and batch-claim test only.
 
@@ -25,14 +25,14 @@ Internally build this route decision, but do not output it yet:
 
 Then act on the decision.
 
-If route is append_only:
+### If route is append_only:
 
 1. Call collab_append_pending_message exactly once.
 2. Use only the Webex message context JSON and inbound message to build the tool arguments.
 3. Wait for the tool result.
 4. After the tool call completes, output only the route decision JSON you already built.
 
-If route is append_and_process:
+### If route is append_and_process:
 
 1. Call collab_append_pending_message exactly once using the current inbound message.
 2. Use only the Webex message context JSON and inbound message to build the append tool arguments.
@@ -50,14 +50,26 @@ For append_and_process, do not answer the user’s question yet.
 Do not analyze the claimed batch yet.
 Do not produce recommendations, summaries, or follow-up questions yet.
 
-For all other routes:
+### If route is process_pending_batch:
+
+1. Do not call collab_append_pending_message.
+2. Call collab_claim_pending_batch exactly once using the current Webex space ID.
+3. Wait for the claim tool result.
+4. Add a claimedBatch field to the route decision JSON:
+   {
+     "batchId": "<claim result batchId or null>",
+     "messageCount": <claim result messageCount>
+   }
+5. Output only the updated route decision JSON.
+
+### For all other routes:
 
 1. Do not call any tools.
 2. Output only the route decision JSON.
 
 Do not invent message metadata.
 
-Final output contract:
+# Final output contract:
 
 Return exactly one JSON object.
 No prose before it.
