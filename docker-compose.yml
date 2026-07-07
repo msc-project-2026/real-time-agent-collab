@@ -34,6 +34,7 @@ services:
     # Run as root so the entrypoint can write into the named volume.
     # (On Railway this was done with RAILWAY_RUN_UID=0.)
     user: "0:0"
+    shm_Size: '1gb'
     volumes:
       - openclaw_state:/home/node/.openclaw
       # GitHub App private key mounted read-only; referenced via

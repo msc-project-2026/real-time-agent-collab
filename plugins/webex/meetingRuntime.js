@@ -39,6 +39,7 @@ async function joinMeeting({ meetingId, destination, accessToken, cfg, account, 
       '--use-fake-device-for-media-stream', // no real mic/camera needed for join
       '--autoplay-policy=no-user-gesture-required',
       '--no-sandbox', // needed in most container runtimes; drop if your VPS setup allows otherwise
+      '--disable-dev-shm-usage', // Docker's default 64MB /dev/shm is too small for Chromium; this makes it use /tmp instead
     ],
   });
 
