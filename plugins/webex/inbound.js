@@ -316,10 +316,23 @@ function schedulePendingBatchProcessing({ spaceId, account, log }) {
   const existing = pendingBatchTimers.get(spaceId);
   if (existing) {
     clearTimeout(existing);
+    log?.info?.(`[webex:${account.accountId}] pending batch timer reset`, {
+      spaceId,
+      debounceMs: PENDING_BATCH_DEBOUNCE_MS,
+    });
+  } else {
+    log?.info?.(`[webex:${account.accountId}] pending batch timer scheduled`, {
+      spaceId,
+      debounceMs: PENDING_BATCH_DEBOUNCE_MS,
+    });
   }
 
   const timer = setTimeout(async () => {
     pendingBatchTimers.delete(spaceId);
+
+    log?.info?.(`[webex:${account.accountId}] pending batch timer fired`, {
+      spaceId,
+    });
 
     try {
       await handleTriggerProcessingPendingBatch({
@@ -327,6 +340,13 @@ function schedulePendingBatchProcessing({ spaceId, account, log }) {
         account,
         log,
       });
+
+      log?.info?.(
+        `[webex:${account.accountId}] pending batch trigger completed`,
+        {
+          spaceId,
+        }
+      );
     } catch {
       log?.error?.(
         `[webex:${account.accountId}] pending batch trigger failed: ${err?.message ?? err}`
