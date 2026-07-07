@@ -106,6 +106,7 @@ async function scanOverduePendingBatches({ account, log, batchProcessor }) {
       log?.info?.(`[webex:${account.accountId}] overdue pending batch found`, {
         spaceId,
         scheduledRunAfter: state.scheduledRunAfter,
+        messageCount: state.messageCount,
       });
 
       await batchProcessor({ spaceId, account, log });
