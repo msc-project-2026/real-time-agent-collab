@@ -19,20 +19,18 @@ let currentMeeting = null;
 
 window.__startMeetingClient = async function (accessToken, refreshToken, destination) {
   webex = Webex.init({
+    // credentials must be top-level — every official SDK example
+    // (Node.js docs, Browser SDK quickstart) uses Webex.init({ credentials: {...} }),
+    // NOT Webex.init({ config: { credentials: {...} } }). Nesting it under
+    // config was silently causing the SDK to never receive a real
+    // access_token at all, which is what "SDK cannot authorize" traced
+    // back to — a local, synchronous check, not a network/auth failure.
+    credentials: {
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    },
+    // Plugin-config overrides (like logger) DO belong under config.
     config: {
-      credentials: {
-        access_token: accessToken,
-        // Passed through in case the SDK's internal canAuthorize check
-        // needs a refresh_token present even when the access_token is
-        // still valid — added to diagnose a "SDK cannot authorize" error
-        // that occurred with access_token alone.
-        refresh_token: refreshToken,
-      },
-      // Verbose SDK logging — surfaces the SDK's own internal reason for
-      // any auth/registration failure, rather than the generic top-level
-      // error message alone. Forwarded to Node logs via the page 'console'
-      // listener in meetingRuntime.js — set back to 'error' once the
-      // current auth issue is resolved, since debug level is noisy.
       logger: {
         level: 'debug',
       },
