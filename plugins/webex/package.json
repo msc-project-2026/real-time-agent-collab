@@ -19,7 +19,7 @@
     }
   },
   "dependencies": {
-    "puppeteer": "^23.0.0",
+    "playwright": "^1.61.1",
     "esbuild": "^0.24.0",
     "webex": "^3.12.0"
   },

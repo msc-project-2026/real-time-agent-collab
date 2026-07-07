@@ -4,19 +4,22 @@
 # Kept as-is so tini remains PID 1 for signal handling.
 FROM ghcr.io/openclaw/openclaw:latest
 
-# Puppeteer (used by the Webex plugin's meeting-join feature) normally
-# auto-downloads its own bundled Chromium via an npm postinstall script.
-# --ignore-scripts below skips that, so Chromium is installed from Debian's
-# own package repo instead and puppeteer is pointed at it directly. This
-# also pulls in the shared libraries Chromium needs to run headless (nss,
-# gbm, alsa, fonts, etc.) as ordinary apt dependencies.
+# The Webex plugin's meeting-join feature uses Playwright's Chromium, not
+# Puppeteer's — Puppeteer bundles "Chrome for Testing", which has no official
+# Linux ARM64 build at all (https://pptr.dev/guides/system-requirements).
+# Playwright maintains its own separately-built Chromium with confirmed
+# Debian 12 Bookworm arm64 support, which is what makes this actually work
+# on an ARM VPS.
+#
+# Playwright's own installer (`playwright install --with-deps`) downloads
+# the browser AND installs the exact OS packages it needs via apt — more
+# reliable than us guessing at a generic `apt-get install chromium` package,
+# which is what the earlier Puppeteer-based approach did.
+#
+# This needs root (apt access) and needs to run AFTER npm install (below),
+# since the `playwright` package must already be in node_modules for its own
+# CLI to exist.
 USER root
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      chromium \
-    && rm -rf /var/lib/apt/lists/*
-
-ENV PUPPETEER_SKIP_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 # Versioned config is the source of truth. Copied into /app/config at build
 # time, then synced into the mounted volume at container start (volumes mask
@@ -34,13 +37,19 @@ RUN chmod +x /app/docker-entrypoint.sh
 # so plugins can import shared packages (e.g. @collab/github) at runtime.
 COPY --chown=root:root plugins/ /app/plugins/
 COPY --chown=root:root lib/ /app/lib/
-COPY --chown=root:root package.json /app/package.json 
+COPY --chown=root:root package.json /app/package.json
 RUN npm install --workspaces --ignore-scripts
 
+# Download Playwright's Chromium build + its required OS packages for this
+# workspace. Downloads to root's cache (/root/.cache/ms-playwright by
+# default) — fine here since the container runs as root at runtime too
+# (see docker-compose.yml's `user: "0:0"`), so chromium.launch() in
+# meetingRuntime.js finds it without needing an explicit executablePath.
+RUN cd plugins/webex && npx playwright install --with-deps chromium
+
 # Build the meeting-client bundle (esbuild) that meetingRuntime.js's headless
-# page loads. Runs after npm install so the webex plugin's devDependencies
-# (esbuild) are present. If your workspace layout builds each plugin
-# separately, adjust the --workspace path below to match.
+# page loads. If your workspace layout builds each plugin separately, adjust
+# the --workspace path below to match.
 RUN npm run build:meeting-client --workspace=plugins/webex
 
 # Overrides the base CMD only; ENTRYPOINT (tini) is inherited.
