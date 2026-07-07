@@ -387,6 +387,7 @@ const webexPlugin = {
                 meetingId,
                 destination: meetingId,
                 accessToken: getAccessToken() ?? cfg.token,
+                refreshToken: cfg.refreshToken,
                 cfg,
                 account,
                 log,

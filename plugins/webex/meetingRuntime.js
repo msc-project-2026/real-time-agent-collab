@@ -3,7 +3,14 @@
 // Joins a Webex meeting headlessly and forwards final transcription segments
 // into bridge.js's ingestTranscript().
 //
-
+// Uses Playwright's Chromium rather than Puppeteer's Chrome for Testing.
+// Chrome for Testing (what Puppeteer bundles) has no official Linux ARM64
+// build at all — see https://pptr.dev/guides/system-requirements. Playwright
+// maintains its own separately-built Chromium and explicitly documents
+// Debian 12 Bookworm arm64 support, which is what actually let this run on
+// an Ampere ARM VPS. See openclaw.Dockerfile for the `playwright install
+// --with-deps chromium` build step that downloads this browser.
+//
 // Also required before this works at all:
 //   - Webex Assistant must be enabled on the meeting (host/account setting,
 //     not settable via this code — see Webex's meetingsPreferences API for
@@ -18,7 +25,7 @@ const { ingestTranscript } = require('./bridge');
 // One browser/page per active meeting join.
 const activeSessions = new Map(); // Map<meetingId, { browser, page }>
 
-async function joinMeeting({ meetingId, destination, accessToken, cfg, account, log }) {
+async function joinMeeting({ meetingId, destination, accessToken, refreshToken, cfg, account, log }) {
   if (activeSessions.has(meetingId)) {
     log?.warn?.(`[webex:meeting] already joined meetingId=${meetingId}`);
     return;
@@ -36,6 +43,16 @@ async function joinMeeting({ meetingId, destination, accessToken, cfg, account, 
   });
 
   const page = await browser.newPage();
+
+  // Forward the page's own console output to our logs — without this,
+  // client.js's SDK debug logging (see its logger.level: 'debug' config)
+  // would only print inside the headless browser, invisible to us.
+  page.on('console', (msg) => {
+    log?.info?.(`[webex:meeting:console] ${msg.text()}`);
+  });
+  page.on('pageerror', (err) => {
+    log?.error?.(`[webex:meeting:pageerror] ${err?.message ?? err}`);
+  });
 
   // Bridge: browser-context transcription events → Node → ingestTranscript()
   // Playwright's exposeFunction has the same signature/behavior as Puppeteer's.
@@ -58,8 +75,8 @@ async function joinMeeting({ meetingId, destination, accessToken, cfg, account, 
   await page.goto(`file://${path.join(__dirname, 'meeting-client.html')}`);
 
   await page.evaluate(
-    ([token, dest]) => window.__startMeetingClient(token, dest),
-    [accessToken, destination]
+    ([token, refresh, dest]) => window.__startMeetingClient(token, refresh, dest),
+    [accessToken, refreshToken, destination]
   );
 
   activeSessions.set(meetingId, { browser, page });
