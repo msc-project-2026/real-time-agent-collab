@@ -4,7 +4,7 @@
 const fs = require('node:fs/promises');
 const { spacesRoot, pendingBatchStatePath } = require('../storage/paths');
 
-// ****** Scheduler
+// *** Scheduler
 // Note: timers are in-memory (map) only. They are lost on gateway restart/deploy.
 // Recovery scanner to be added later.
 
@@ -63,8 +63,7 @@ function schedulePendingBatchProcessing({
   pendingBatchTimers.set(spaceId, timer);
 }
 
-// ****** On-restart Scan
-//
+// *** On-restart Scan
 
 async function scanOverduePendingBatches({ account, log, batchProcessor }) {
   const root = spacesRoot();
@@ -74,6 +73,7 @@ async function scanOverduePendingBatches({ account, log, batchProcessor }) {
     entries = await fs.readdir(root, { withFileTypes: true });
   } catch (err) {
     if (err?.code === 'ENOENT') return;
+    throw err;
   }
 
   const now = Date.now();
@@ -82,8 +82,8 @@ async function scanOverduePendingBatches({ account, log, batchProcessor }) {
     if (!entry.isDirectory()) continue;
 
     // Valid assumption that safeSegment(spaceId) at write time is identical to spaceId
-    const spacedId = entry.name;
-    const statePath = pendingBatchStatePath(spacedId);
+    const spaceId = entry.name;
+    const statePath = pendingBatchStatePath(spaceId);
 
     let state;
     try {
@@ -113,7 +113,28 @@ async function scanOverduePendingBatches({ account, log, batchProcessor }) {
   }
 }
 
+// *** Run Scan
+async function runPendingBatchRecoveryScan({ account, log, batchProcessor }) {
+  const accountId = account?.accountId ?? 'default';
+
+  log?.info?.(`[webex:${accountId}] running pending batch recovery scan`);
+
+  try {
+    await scanOverduePendingBatches({
+      account,
+      log,
+      batchProcessor,
+    });
+
+    log?.info?.(`[webex:${accountId}] pending batch recovery scan completed`);
+  } catch (err) {
+    log?.error?.(
+      `[webex:${accountId}] pending batch recovery scan failed: ${err?.message ?? err}`
+    );
+  }
+}
+
 module.exports = {
   schedulePendingBatchProcessing,
-  scanOverduePendingBatches,
+  runPendingBatchRecoveryScan,
 };

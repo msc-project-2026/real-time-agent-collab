@@ -1,5 +1,7 @@
-// Webex channel plugin object implementing the OpenClaw channel contract.
+// ********* CHANNEL.JS *********
 'use strict';
+
+// Webex channel plugin object implementing the OpenClaw channel contract.
 
 const { WEBEX_API, webexFetch } = require('./api');
 const {
@@ -10,8 +12,12 @@ const {
   deregisterWebhooks,
 } = require('./token');
 const { buildMsgBody } = require('./send');
-const { handleInbound } = require('./inbound');
+const {
+  handleInbound,
+  handleTriggerProcessingPendingBatch,
+} = require('./inbound');
 const { targets, normPath } = require('./webhook');
+const { runPendingBatchRecoveryScan } = require('./scheduling/schedule-batch');
 
 const DEFAULT_ACCOUNT = 'default';
 
@@ -372,6 +378,13 @@ const webexPlugin = {
           handleInbound(payload, { botId, cfg, account, log }),
       });
       log?.info?.(`[webex:${account.accountId}] ready at ${webhookPath}`);
+
+      // *** Batch recovery scan run
+      void runPendingBatchRecoveryScan({
+        account,
+        log,
+        batchProcessor: handleTriggerProcessingPendingBatch,
+      });
 
       // The channel must stay alive until the gateway stops it.
       // On shutdown the finally block deregisters the target and Webex webhook.
