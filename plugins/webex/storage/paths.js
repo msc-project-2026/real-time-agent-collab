@@ -1,3 +1,6 @@
+// ********* PATHS.JS *********
+'use strict';
+
 const path = require('node:path');
 const { getHeapSpaceStatistics } = require('node:v8');
 
@@ -17,6 +20,11 @@ function safeSegment(value) {
 }
 
 // Paths
+
+function spacesRoot(explicitRoot) {
+  const workspaceRoot = getWorkspaceRoot(explicitRoot);
+  return path.join(workspaceRoot, ROOT, 'spaces');
+}
 
 function spaceRoot(spaceId, explicitRoot) {
   const workspaceRoot = getWorkspaceRoot(explicitRoot);
@@ -46,6 +54,7 @@ function processingBatchPath(spaceId, batchId, explicitRoot) {
 module.exports = {
   getWorkspaceRoot,
   spaceRoot,
+  spacesRoot,
   pendingDir,
   pendingMessagesPath,
   pendingBatchStatePath,

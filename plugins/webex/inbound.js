@@ -1,11 +1,15 @@
-// Inbound message filtering, membership checks, and agent pipeline dispatch.
+// ********* INBOUND.JS *********
 'use strict';
 
+// Inbound message filtering, membership checks, and agent pipeline dispatch.
 const { webexFetch } = require('./api');
 const { getAccessToken } = require('./token');
 const { buildMsgBody } = require('./send');
-
 const { buildRoutingInstruction } = require('./prompts/routing');
+const { dispatchToAgentForSpace } = require('./dispatch');
+const {
+  schedulePendingBatchProcessing,
+} = require('./scheduling/schedule-batch');
 
 // Holds the OpenClaw plugin runtime (set via setRuntime() by register() in index.js).
 let pluginRuntime = null;
@@ -26,121 +30,6 @@ function isDmAllowed(cfg, personId, personEmail) {
     default:
       return false;
   }
-}
-
-// Serialise dispatch per Webex space
-const dispatchQueues = new Map();
-const DISPATCH_SETTLE_DELAY_MS = 500;
-
-function sleep(ms = DISPATCH_SETTLE_DELAY_MS) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function enqueueSpaceDispatch(spaceId, job) {
-  const previous = dispatchQueues.get(spaceId) ?? Promise.resolve();
-
-  console.log('[webex] enqueue dispatch', {
-    spaceId,
-    alreadyQueued: dispatchQueues.has(spaceId),
-  });
-
-  const next = previous
-    .catch((err) => {
-      // Keep the queue alive even if the previous dispatch failed.
-      console.warn('[webex] previous dispatch failed; continuing queue', {
-        spaceId,
-        error: err?.message ?? String(err),
-      });
-    })
-    .then(async () => {
-      console.log('[webex] start dispatch', { spaceId });
-      try {
-        return await job();
-      } finally {
-        await sleep();
-      }
-    })
-    .finally(() => {
-      console.log('[webex] finish dispatch', { spaceId });
-      if (dispatchQueues.get(spaceId) === next) {
-        dispatchQueues.delete(spaceId);
-      }
-    });
-
-  dispatchQueues.set(spaceId, next);
-  return next;
-}
-
-async function dispatchWithSessionConflictRetry(dispatchJob) {
-  // On gateway restart, an existing OpenClaw reply session can transiently
-  // fail initialization for the canonical room SessionKey. Retry once with a
-  // temporary recovery SessionKey so the inbound message is not lost. Later
-  // messages still use the canonical SessionKey.
-  try {
-    return await dispatchJob();
-  } catch (err) {
-    const message = err?.message ?? String(err);
-
-    if (!message.includes('reply session initialization conflicted')) {
-      throw err;
-    }
-
-    const recoverySuffix = `recovery-${Date.now()}`;
-
-    console.warn(
-      '[webex] reply session conflict; retrying once with recovery session key',
-      {
-        error: message,
-        recoverySuffix,
-      }
-    );
-
-    await sleep(500);
-
-    return await dispatchJob(recoverySuffix);
-  }
-}
-
-// Dispatch to agent for space
-async function dispatchToAgentForSpace({
-  spaceId,
-  account,
-  log,
-  buildCtxPayload,
-}) {
-  const dispatch =
-    pluginRuntime?.channel?.reply?.dispatchReplyWithBufferedBlockDispatcher;
-  if (!dispatch) {
-    log?.warn?.(
-      `[webex:${account.accountId}] agent pipeline dispatch unavailable`
-    );
-    return;
-  }
-
-  const loadedCfg = pluginRuntime.config?.current?.() ?? {};
-
-  await enqueueSpaceDispatch(spaceId, () =>
-    dispatchWithSessionConflictRetry((sessionKeySuffix) =>
-      dispatch({
-        ctx: buildCtxPayload(sessionKeySuffix),
-        cfg: loadedCfg,
-        dispatcherOptions: {
-          deliver: async (out) => {
-            if (!out.text) return;
-            log?.info?.(
-              `[webex:${account.accountId}] agent output suppressed: ${out.text}`
-            );
-          },
-          onError: (err) => {
-            log?.error?.(
-              `[webex:${account.accountId}] reply dispatch error: ${err?.message ?? err}`
-            );
-          },
-        },
-        replyOptions: {},
-      })
-    )
-  );
 }
 
 // Called asynchronously after the webhook POST is acknowledged.  Filters,
@@ -232,6 +121,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
   }
 
   await dispatchToAgentForSpace({
+    pluginRuntime,
     spaceId: msg.roomId,
     account,
     log,
@@ -242,6 +132,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
     spaceId: msg.roomId,
     account,
     log,
+    batchProcessor: handleTriggerProcessingPendingBatch,
   });
 }
 
@@ -296,6 +187,7 @@ async function handleTriggerProcessingPendingBatch({ spaceId, account, log }) {
   }
 
   await dispatchToAgentForSpace({
+    pluginRuntime,
     spaceId,
     account,
     log,
@@ -303,64 +195,9 @@ async function handleTriggerProcessingPendingBatch({ spaceId, account, log }) {
   });
 }
 
-// ****** Scheduler
-// Note: timers are in-memory only. They are lost on gateway restart/deploy.
-// Recovery scanner to be added later.
-
-const pendingBatchTimers = new Map();
-const PENDING_BATCH_DEBOUNCE_MS = 30_000;
-
-function schedulePendingBatchProcessing({ spaceId, account, log }) {
-  if (!spaceId) throw new Error('spaceId is required');
-
-  const existing = pendingBatchTimers.get(spaceId);
-  if (existing) {
-    clearTimeout(existing);
-    log?.info?.(`[webex:${account.accountId}] pending batch timer reset`, {
-      spaceId,
-      debounceMs: PENDING_BATCH_DEBOUNCE_MS,
-    });
-  } else {
-    log?.info?.(`[webex:${account.accountId}] pending batch timer scheduled`, {
-      spaceId,
-      debounceMs: PENDING_BATCH_DEBOUNCE_MS,
-    });
-  }
-
-  const timer = setTimeout(async () => {
-    pendingBatchTimers.delete(spaceId);
-
-    log?.info?.(`[webex:${account.accountId}] pending batch timer fired`, {
-      spaceId,
-    });
-
-    try {
-      await handleTriggerProcessingPendingBatch({
-        spaceId,
-        account,
-        log,
-      });
-
-      log?.info?.(
-        `[webex:${account.accountId}] pending batch trigger completed`,
-        {
-          spaceId,
-        }
-      );
-    } catch {
-      log?.error?.(
-        `[webex:${account.accountId}] pending batch trigger failed: ${err?.message ?? err}`
-      );
-    }
-  }, PENDING_BATCH_DEBOUNCE_MS);
-
-  pendingBatchTimers.set(spaceId, timer);
-}
-
 module.exports = {
   setRuntime,
   isDmAllowed,
   handleInbound,
-  dispatchToAgentForSpace,
   handleTriggerProcessingPendingBatch,
 };
