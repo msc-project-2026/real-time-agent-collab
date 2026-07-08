@@ -4,6 +4,13 @@
 # Kept as-is so tini remains PID 1 for signal handling.
 FROM ghcr.io/openclaw/openclaw:latest
 
+# The deploy-agent plugin reaches the hosting VPS over SSH (it shells out to the
+# `ssh` client), which the slim base image does not ship. Install it here.
+USER root
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends openssh-client \
+	&& rm -rf /var/lib/apt/lists/*
+
 # Versioned config is the source of truth. Copied into /app/config at build
 # time, then synced into the mounted volume at container start (volumes mask
 # image-layer files, so build-time COPY alone isn't enough).

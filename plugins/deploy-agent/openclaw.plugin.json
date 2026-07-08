@@ -1,0 +1,16 @@
+{
+  "id": "deploy-agent",
+  "name": "Deployment Agent",
+  "description": "Registers deploy-cli tools and deployment orchestration channels. The main agent hands deployments to a cheap deployer agent; failures escalate to an expensive debugger agent.",
+  "channels": ["deploy", "deploy-debug"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "default": true
+      }
+    }
+  }
+}

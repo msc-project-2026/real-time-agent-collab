@@ -52,6 +52,18 @@
         "model": {
           "primary": "cisco/bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0"
         }
+      },
+      {
+        "id": "deployer",
+        "model": {
+          "primary": "cisco/bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0"
+        }
+      },
+      {
+        "id": "deploy-debugger",
+        "model": {
+          "primary": "cisco/bedrock/global.anthropic.claude-sonnet-4-6"
+        }
       }
     ]
   },
@@ -63,10 +75,24 @@
     {
       "agentId": "observer",
       "match": { "channel": "source-observer" }
+    },
+    {
+      "agentId": "deployer",
+      "match": { "channel": "deploy" }
+    },
+    {
+      "agentId": "deploy-debugger",
+      "match": { "channel": "deploy-debug" }
     }
   ],
   "channels": {
     "source-observer": {
+      "enabled": true
+    },
+    "deploy": {
+      "enabled": true
+    },
+    "deploy-debug": {
       "enabled": true
     },
     "webex": {
@@ -117,7 +143,12 @@
   },
   "plugins": {
     "load": {
-      "paths": ["plugins/webex", "plugins/openclaw", "plugins/source-observer"]
+      "paths": [
+        "plugins/webex",
+        "plugins/openclaw",
+        "plugins/source-observer",
+        "plugins/deploy-agent"
+      ]
     },
     "entries": {
       "source-observer": {
@@ -127,6 +158,9 @@
         "enabled": true
       },
       "collab-writer": {
+        "enabled": true
+      },
+      "deploy-agent": {
         "enabled": true
       }
     }

@@ -1,0 +1,41 @@
+# Reverse-proxy stack for the TARGET VPS (the box that hosts deployed apps).
+# This is separate from the main openclaw stack — it runs on the deployment
+# host and does nothing but route/TLS-terminate for app containers that
+# deploy-cli launches with caddy labels.
+#
+# caddy-docker-proxy watches the Docker socket and builds Caddy config from the
+# labels deploy-cli attaches to each app container (host + reverse_proxy). Certs
+# are issued automatically per host via Let's Encrypt HTTP-01 — every app
+# hostname is explicit in a label, so no on-demand TLS is needed.
+
+services:
+  caddy:
+    image: lucaslorentz/caddy-docker-proxy:2.9-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Merge a base Caddyfile (global options: ACME email) with label config.
+      CADDY_DOCKER_CADDYFILE_PATH: /etc/caddy/Caddyfile.base
+      # Only watch the shared app network.
+      CADDY_INGRESS_NETWORKS: caddy
+      # Consumed by {$ACME_EMAIL} in Caddyfile.base for Let's Encrypt.
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./Caddyfile.base:/etc/caddy/Caddyfile.base:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - caddy
+
+networks:
+  caddy:
+    name: caddy
+    external: true
+
+volumes:
+  caddy_data:
+  caddy_config:

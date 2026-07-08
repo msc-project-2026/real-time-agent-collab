@@ -5,3 +5,5 @@ package-lock.json
 .env.*
 !.env.example
 services/setup-ui/dist/
+# Compiled deploy-cli binary (built on the target VPS by bootstrap).
+deploy-cli/deploy-cli

@@ -42,6 +42,13 @@ services:
       # Collab agent behaviour as an always-injected system prompt (bootstrap
       # file) rather than an optional skill the model has to choose to load.
       - ./AGENTS.md:/home/node/.openclaw/workspace/AGENTS.md
+      # Workspace skills the agent loads on demand (e.g. deploy-app). OpenClaw
+      # auto-discovers SKILL.md files under <workspace>/skills.
+      - ./skills:/home/node/.openclaw/workspace/skills:ro
+      # SSH private key the deploy-agent plugin uses to reach the hosting VPS.
+      # Restricted on the target to a forced command (deploy-cli only).
+      # Referenced via DEPLOY_VPS_KEY in .env. Keep this file chmod 600.
+      - ./secrets/deploy-vps-key:/run/secrets/deploy-vps-key:ro
     expose:
       - "18789"
     networks:
