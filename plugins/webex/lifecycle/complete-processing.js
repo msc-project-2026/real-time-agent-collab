@@ -3,6 +3,7 @@
 
 const fs = require('node:fs/promises');
 const {
+  processingBatchPath,
   processedDir,
   processedBatchPath,
   processedBatchMetaPath,

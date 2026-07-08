@@ -14,14 +14,21 @@ Do not send a Webex message yet.
 Do not call append or stage tools.
 
 Use the batchId and spaceId from the internal event.
-After completing the batch, output exactly one JSON object:
+After attempting to complete the batch, output exactly one JSON object:
 
 {
   "eventType": "process_staged_batch",
-  "status": "completed",
+  "status": "completed" | "failed",
   "batchId": "<batchId>",
   "messageCount": <messageCount>
 }
+
+Set "status" to "completed" only if:
+- collab_read_processing_batch succeeds, and
+- collab_complete_processing_batch succeeds.
+
+If either tool call fails or returns an error, set "status" to "failed".
+
 `.trim();
 }
 
