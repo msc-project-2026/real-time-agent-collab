@@ -19,7 +19,7 @@ function readProcessingBatchTool() {
     },
     async execute(toolUseId, params) {
       const { spaceId, batchId } = params ?? {};
-      const result = await readProcessingBatchTool({ spaceId, batchId });
+      const result = await readProcessingBatch({ spaceId, batchId });
 
       console.info('[webex] collab_read_processing_batch result', {
         spaceId,
