@@ -26,5 +26,5 @@ After completing the batch, output exactly one JSON object:
 }
 
 module.exports = {
-  buildProcessStagedBatchInstruction,
+  buildProcessingInstruction,
 };
