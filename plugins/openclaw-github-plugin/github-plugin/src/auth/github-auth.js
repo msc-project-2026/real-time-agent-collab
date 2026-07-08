@@ -161,6 +161,36 @@ export async function getInstallationToken(config) {
 }
 
 /**
+ * Calls a GitHub REST API endpoint using the installation access token.
+ *
+ * Tool handlers should use this for repo, issue, pull request, and workflow
+ * operations so token exchange and standard headers stay in one place.
+ *
+ * @param {object} config
+ * @param {string} method - HTTP method, e.g. "GET", "POST", "PATCH", "PUT", "DELETE"
+ * @param {string} route  - GitHub REST route, e.g. "/repos/{owner}/{repo}/contents/{path}"
+ * @param {object} [params] - Octokit request params, including path/query/body fields
+ * @returns {Promise<any>} - GitHub response data
+ */
+export async function githubRequest(config, method, route, params = {}) {
+  const token = await getInstallationToken(config);
+  const normalizedMethod = method.toUpperCase();
+  const normalizedRoute = route.startsWith("/") ? route : `/${route}`;
+  const headers = {
+    ...(params.headers ?? {}),
+    authorization: `Bearer ${token}`,
+    "x-github-api-version": "2022-11-28",
+  };
+
+  const response = await request(`${normalizedMethod} ${normalizedRoute}`, {
+    ...params,
+    headers,
+  });
+
+  return response.data;
+}
+
+/**
  * Clears the token cache for a specific installation, or all installations.
  * Useful in tests or when you know a token has been revoked.
  *

@@ -1,6 +1,14 @@
 import { Type } from "typebox";
 import { defineToolPlugin } from "openclaw/plugin-sdk/tool-plugin";
-import { getInstallationToken, resolvePrivateKey, createJwt, getInstallationDetails } from "./auth/github-auth.js";
+import { githubCreateBranchTool } from "./tools/github-create-branch.js";
+import { githubGetFileTool } from "./tools/github-get-file.js";
+import { githubGetRepositoryTool } from "./tools/github-get-repository.js";
+import { githubListReposTool } from "./tools/github-list-repos.js";
+import { githubListBranchesTool } from "./tools/github-list-branches.js";
+import { githubListTreeTool } from "./tools/github-list-tree.js";
+import { githubOpenPullRequestTool } from "./tools/github-open-pull-request.js";
+import { githubUpsertFileTool } from "./tools/github-upsert-file.js";
+import { githubWhoamiTool } from "./tools/github-whoami.js";
 
 
 
@@ -27,61 +35,14 @@ export default defineToolPlugin({
   }),
 
   tools: (tool) => [
-    // -----------------------------------------------------------------------
-    // github_whoami
-    // A minimal smoke-test tool. Verifies the full auth chain works by
-    // fetching installation details from GitHub and returning them to the agent.
-    // Once this passes, we know JWT → Installation Token → API call all work.
-    // -----------------------------------------------------------------------
-    tool({
-      name: "github_whoami",
-      label: "GitHub: Verify Connection",
-      description:
-        "Verify the GitHub connection is working. Fetches the GitHub App installation details and returns the authenticated account name and permissions.",
-      parameters: Type.Object({}),
-
-
-
-
-      async execute(_params, config) {
-        // Step 1: create JWT for app-level authentication
-        const privateKey = resolvePrivateKey(config);
-        const appJwt = createJwt(config.appId, privateKey);
-
-        // Step 2: use JWT to call the app installation endpoint
-        const data = await getInstallationDetails(appJwt, config.installationId);
-
-        // Step 3: also verify installation token exchange works
-        let installTokenOk = false;
-        let tokenErrorMessage = "";
-        try {
-          const installToken = await getInstallationToken(config);
-          installTokenOk = typeof installToken === "string" && installToken.length > 0;
-        } catch (err) {
-          tokenErrorMessage = err instanceof Error ? err.message : String(err);
-        }
-
-        // Step 4: return a clean summary — this is what the agent will see
-        const result: any = {
-          // If token exchange fails, we treat it as not fully authenticated
-          // because we can't perform any actual repo operations.
-          authenticated: installTokenOk, 
-          account: data.account?.login,
-          accountType: data.account?.type,
-          appId: data.app_id,
-          repositorySelection: data.repository_selection,
-          permissions: data.permissions,
-          installationTokenWorks: installTokenOk,
-        };
-
-        // LLM Friendly Warning
-        if (!installTokenOk) {
-          result.warning = `CRITICAL: JWT was valid, but generating an Installation Access Token failed. 
-          You CANNOT read or write repositories. Error details: ${tokenErrorMessage}`;
-        }
-
-        return result;
-      },
-    }),
+    githubWhoamiTool(tool),
+    githubListReposTool(tool),
+    githubGetRepositoryTool(tool),
+    githubListBranchesTool(tool),
+    githubListTreeTool(tool),
+    githubGetFileTool(tool),
+    githubCreateBranchTool(tool),
+    githubUpsertFileTool(tool),
+    githubOpenPullRequestTool(tool),
   ],
 });
