@@ -94,7 +94,15 @@ dist/
 "tools": {
   "profile": "coding",
   "alsoAllow": [
-    "github_whoami"
+    "github_whoami"，
+    "github_list_repos",
+    "github_get_repository",
+    "github_list_branches",
+    "github_get_file",
+    "github_create_branch",
+    "github_upsert_file",
+    "github_open_pull_request"，
+    "github_list_tree"
   ]
 },
 
