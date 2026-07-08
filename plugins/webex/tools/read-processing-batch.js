@@ -33,5 +33,5 @@ function readProcessingBatchTool() {
 }
 
 module.exports = {
-  claimPendingBatchTool,
+  readProcessingBatchTool,
 };
