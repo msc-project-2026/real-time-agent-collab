@@ -6,7 +6,7 @@
   "contracts": {
     "tools": [
       "collab_append_pending_message",
-      "collab_claim_pending_batch",
+      "collab_stage_pending_batch",
       "collab_read_processing_batch",
       "collab_complete_processing_batch"
     ]

@@ -1,13 +1,13 @@
 // ********* READ_PROCESSING-BATCH.JS *********
 'use strict';
 
-const { readProcessingBatch } = require('../lifecycle/read');
+const { readProcessingBatch } = require('../lifecycle/read-processing');
 
 function readProcessingBatchTool() {
   return {
     name: 'collab_read_processing_batch',
     description:
-      'Read a claimed processing batch for a Webex space. Returns the normalized messages from processing/<batchId>.jsonl.',
+      'Read a staged processing batch for a Webex space. Returns the normalized messages from processing/<batchId>.jsonl.',
     parameters: {
       type: 'object',
       properties: {

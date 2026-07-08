@@ -1,4 +1,4 @@
-// ********* CLAIM-BATCH.JS *********
+// ********* STAGE-PENDING.JS *********
 'use strict';
 
 const fs = require('node:fs/promises');
@@ -11,7 +11,7 @@ const {
   processingBatchPath,
 } = require('./paths.js');
 
-async function claimPendingBatch({ spaceId, explicitRoot }) {
+async function stagePendingBatch({ spaceId, explicitRoot }) {
   if (!spaceId) throw new Error('spaceId is required');
 
   const state = await readPendingBatchState(spaceId, explicitRoot);
@@ -19,7 +19,7 @@ async function claimPendingBatch({ spaceId, explicitRoot }) {
   if (!state?.messageCount) {
     return {
       ok: true,
-      claimed: false,
+      staged: false,
       spaceId,
       batchId: null,
       messageCount: 0,
@@ -42,7 +42,7 @@ async function claimPendingBatch({ spaceId, explicitRoot }) {
   // return batchId + messages
   return {
     ok: true,
-    claimed: true,
+    staged: true,
     spaceId,
     batchId,
     messageCount: state.messageCount,
@@ -70,5 +70,5 @@ function createBatchId() {
 }
 
 module.exports = {
-  claimPendingBatch,
+  stagePendingBatch,
 };

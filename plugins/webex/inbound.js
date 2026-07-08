@@ -7,9 +7,7 @@ const { getAccessToken } = require('./token');
 const { buildMsgBody } = require('./send');
 const { buildRoutingInstruction } = require('./prompts/routing');
 const { dispatchToAgentForSpace } = require('./dispatch');
-const {
-  schedulePendingBatchProcessing,
-} = require('./scheduling/schedule-batch');
+const { schedulePendingBatchStaging } = require('./lifecycle/schedule-pending');
 
 // Holds the OpenClaw plugin runtime (set via setRuntime() by register() in index.js).
 let pluginRuntime = null;
@@ -34,7 +32,10 @@ function isDmAllowed(cfg, personId, personEmail) {
 
 // Called asynchronously after the webhook POST is acknowledged.  Filters,
 // fetches full message details, then delivers to the OpenClaw agent pipeline.
-async function handleInbound(payload, { botId, cfg, account, log }) {
+async function handleInboundWebexMessage(
+  payload,
+  { botId, cfg, account, log }
+) {
   if (payload.resource !== 'messages' || payload.event !== 'created') return;
 
   // Ignore messages sent by the bot itself
@@ -128,22 +129,23 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
     buildCtxPayload: buildRealWebexCtxPayload,
   });
 
-  schedulePendingBatchProcessing({
+  schedulePendingBatchStaging({
     spaceId: msg.roomId,
     account,
     log,
-    batchProcessor: handleTriggerProcessingPendingBatch,
+    batchStagingHandler: handleStagePendingBatchRequest,
   });
 }
 
-async function handleTriggerProcessingPendingBatch({ spaceId, account, log }) {
+// Move out of inbound?
+async function handleStagePendingBatchRequest({ spaceId, account, log }) {
   if (!spaceId) throw new Error('spacedId is required');
 
   const routingInstruction = buildRoutingInstruction();
 
-  function buildSyntheticProcessPendingBatchCtxPayload(sessionKeySuffix) {
-    const syntheticContext = {
-      eventType: 'process_pending_batch',
+  function buildStagePendingBatchCtxPayload(sessionKeySuffix) {
+    const context = {
+      eventType: 'stage_pending_batch',
       synthetic: true,
       spaceId,
       createdAt: new Date().toISOString(),
@@ -158,10 +160,10 @@ async function handleTriggerProcessingPendingBatch({ spaceId, account, log }) {
         'Internal synthetic Webex collaboration event:',
         '',
         '```json',
-        JSON.stringify(syntheticContext, null, 2),
+        JSON.stringify(context, null, 2),
         '```',
         '',
-        'Route this event as process_pending_batch.',
+        'Route this event as stage_pending_batch.',
       ].join('\n'),
 
       From: 'webex:internal-scheduler',
@@ -178,8 +180,8 @@ async function handleTriggerProcessingPendingBatch({ spaceId, account, log }) {
       SenderId: 'internal-scheduler',
       Provider: 'webex',
       Surface: 'webex',
-      MessageSid: `synthetic:process_pending_batch:${spaceId}:${Date.now()}`,
-      Timestamp: syntheticContext.createdAt,
+      MessageSid: `stage_pending_batch:${spaceId}:${Date.now()}`,
+      Timestamp: context.createdAt,
       OriginatingChannel: 'webex',
       OriginatingTo: `webex:${spaceId}`,
       MessageThreadId: null,
@@ -191,13 +193,16 @@ async function handleTriggerProcessingPendingBatch({ spaceId, account, log }) {
     spaceId,
     account,
     log,
-    buildCtxPayload: buildSyntheticProcessPendingBatchCtxPayload,
+    buildCtxPayload: buildStagePendingBatchCtxPayload,
   });
 }
+
+async function handleProcessStagedBatchRequest({ spaceId, account, log }) {}
 
 module.exports = {
   setRuntime,
   isDmAllowed,
-  handleInbound,
-  handleTriggerProcessingPendingBatch,
+  handleInboundWebexMessage,
+  handleStagePendingBatchRequest,
+  handleProcessStagedBatchRequest,
 };

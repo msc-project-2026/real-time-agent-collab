@@ -1,8 +1,8 @@
-// ********* SCHEDULE-BATCH.JS *********
+// ********* SCHEDULE-PENDING.JS *********
 'use strict';
 
 const fs = require('node:fs/promises');
-const { spacesRoot, pendingBatchStatePath } = require('../lifecycle/paths');
+const { spacesRoot, pendingBatchStatePath } = require('./paths');
 
 // *** Scheduler
 // Note: timers are in-memory (map) only. They are lost on gateway restart/deploy.
@@ -11,11 +11,11 @@ const { spacesRoot, pendingBatchStatePath } = require('../lifecycle/paths');
 const pendingBatchTimers = new Map();
 const PENDING_BATCH_DEBOUNCE_MS = 30_000;
 
-function schedulePendingBatchProcessing({
+function schedulePendingBatchStaging({
   spaceId,
   account,
   log,
-  batchProcessor,
+  batchStagingHandler,
 }) {
   if (!spaceId) throw new Error('spaceId is required');
 
@@ -41,7 +41,7 @@ function schedulePendingBatchProcessing({
     });
 
     try {
-      await batchProcessor({
+      await batchStagingHandler({
         spaceId,
         account,
         log,
@@ -65,7 +65,7 @@ function schedulePendingBatchProcessing({
 
 // *** On-restart Scan
 
-async function scanOverduePendingBatches({ account, log, batchProcessor }) {
+async function scanPendingBatchStaging({ account, log, batchStagingHandler }) {
   const root = spacesRoot();
 
   let entries;
@@ -109,25 +109,29 @@ async function scanOverduePendingBatches({ account, log, batchProcessor }) {
         messageCount: state.messageCount,
       });
 
-      await batchProcessor({ spaceId, account, log });
+      await batchStagingHandler({ spaceId, account, log });
     }
   }
 }
 
 // *** Run Scan
-async function runPendingBatchRecoveryScan({ account, log, batchProcessor }) {
+async function runPendingBatchStagingRecovery({
+  account,
+  log,
+  batchStagingHandler,
+}) {
   const accountId = account?.accountId ?? 'default';
 
-  log?.info?.(`[webex:${accountId}] running pending batch recovery scan`);
+  log?.info?.(`[webex:${accountId}] running pending recovery batch scan`);
 
   try {
-    await scanOverduePendingBatches({
+    await scanPendingOverdueBatches({
       account,
       log,
-      batchProcessor,
+      batchStagingHandler,
     });
 
-    log?.info?.(`[webex:${accountId}] pending batch recovery scan completed`);
+    log?.info?.(`[webex:${accountId}] pending batch scan recovery completed`);
   } catch (err) {
     log?.error?.(
       `[webex:${accountId}] pending batch recovery scan failed: ${err?.message ?? err}`
@@ -136,6 +140,6 @@ async function runPendingBatchRecoveryScan({ account, log, batchProcessor }) {
 }
 
 module.exports = {
-  schedulePendingBatchProcessing,
-  runPendingBatchRecoveryScan,
+  schedulePendingBatchStaging,
+  runPendingBatchStagingRecovery,
 };

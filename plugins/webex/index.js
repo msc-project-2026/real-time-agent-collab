@@ -2,7 +2,7 @@
 'use strict';
 
 const { appendPendingMessageTool } = require('./tools/append-pending-message');
-const { claimPendingBatchTool } = require('./tools/claim-pending-batch');
+const { stagePendingBatchTool } = require('./tools/stage-pending-batch');
 const { readProcessingBatchTool } = require('./tools/read-processing-batch');
 const {
   completeProcessingBatchTool,
@@ -28,7 +28,7 @@ function register(api) {
 
   // Tools
   api.registerTool(appendPendingMessageTool());
-  api.registerTool(claimPendingBatchTool());
+  api.registerTool(stagePendingBatchTool());
   api.registerTool(readProcessingBatchTool());
   api.registerTool(completeProcessingBatchTool());
 }

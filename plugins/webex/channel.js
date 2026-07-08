@@ -13,11 +13,13 @@ const {
 } = require('./token');
 const { buildMsgBody } = require('./send');
 const {
-  handleInbound,
-  handleTriggerProcessingPendingBatch,
+  handleInboundWebexMessage,
+  handleStagePendingBatchRequest,
 } = require('./inbound');
 const { targets, normPath } = require('./webhook');
-const { runPendingBatchRecoveryScan } = require('./scheduling/schedule-batch');
+const {
+  runPendingBatchStagingRecovery,
+} = require('./scheduling/schedule-batch');
 
 const DEFAULT_ACCOUNT = 'default';
 
@@ -375,15 +377,15 @@ const webexPlugin = {
       targets.set(webhookPath, {
         account,
         handle: (payload) =>
-          handleInbound(payload, { botId, cfg, account, log }),
+          handleInboundWebexMessage(payload, { botId, cfg, account, log }),
       });
       log?.info?.(`[webex:${account.accountId}] ready at ${webhookPath}`);
 
       // *** Batch recovery scan run
-      void runPendingBatchRecoveryScan({
+      void runPendingBatchStagingRecovery({
         account,
         log,
-        batchProcessor: handleTriggerProcessingPendingBatch,
+        batchStagingHandler: handleStagePendingBatchRequest,
       });
 
       // The channel must stay alive until the gateway stops it.
