@@ -19,7 +19,7 @@ const {
 const { targets, normPath } = require('./webhook');
 const {
   runPendingBatchStagingRecovery,
-} = require('./scheduling/schedule-batch');
+} = require('./lifecycle/schedule-pending');
 
 const DEFAULT_ACCOUNT = 'default';
 
