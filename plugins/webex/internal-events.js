@@ -21,7 +21,7 @@ function makeStageResultHandler({ spaceId, account, log }) {
     let parsed;
     try {
       parsed = JSON.parse(text);
-    } catch {
+    } catch (err) {
       log?.warn?.(`[webex:${account.accountId}] agent output was not JSON`, {
         spaceId,
         error: err?.message ?? String(err),
@@ -38,7 +38,8 @@ function makeStageResultHandler({ spaceId, account, log }) {
     });
 
     const isStageResult =
-      parsed.route === 'stage_pending_batch' || parsed.route === 'append_stage';
+      parsed.route === 'stage_pending_batch' ||
+      parsed.route === 'append_and_stage';
 
     if (!isStageResult) {
       log?.info?.(
@@ -77,12 +78,24 @@ function makeStageResultHandler({ spaceId, account, log }) {
       }
     );
 
-    await handleProcessStagedBatchRequest({
-      spaceId,
-      batchId,
-      account,
-      log,
-    });
+    try {
+      await handleProcessStagedBatchRequest({
+        spaceId,
+        batchId,
+        account,
+        log,
+      });
+    } catch (err) {
+      log?.error?.(
+        `[webex:${account.accountId}] failed to dispatch staged batch for processing`,
+        {
+          spaceId,
+          batchId,
+          error: err?.message ?? String(err),
+        }
+      );
+      throw err;
+    }
   };
 }
 
