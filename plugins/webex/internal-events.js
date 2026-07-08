@@ -10,25 +10,65 @@ const { getPluginRuntime } = require('./runtime');
 // Make handler of staging batch result
 function makeStageResultHandler({ spaceId, account, log }) {
   return async ({ text }) => {
+    log?.info?.(
+      `[webex:${account.accountId}] inspecting agent output for staged batch`,
+      {
+        spaceId,
+        text,
+      }
+    );
+
     let parsed;
     try {
       parsed = JSON.parse(text);
     } catch {
+      log?.warn?.(`[webex:${account.accountId}] agent output was not JSON`, {
+        spaceId,
+        error: err?.message ?? String(err),
+        text,
+      });
       return;
     }
+
+    log?.info?.(`[webex:${account.accountId}] parsed agent output`, {
+      spaceId,
+      route: parsed.route,
+      hasStagedBatch: Boolean(parsed.stagedBatch),
+      stagedBatch: parsed.stagedBatch ?? null,
+    });
 
     const isStageResult =
       parsed.route === 'stage_pending_batch' || parsed.route === 'append_stage';
 
-    if (!isStageResult) return;
+    if (!isStageResult) {
+      log?.info?.(
+        `[webex:${account.accountId}] agent output is not a staging result`,
+        {
+          spaceId,
+          route: parsed.route,
+        }
+      );
+      return;
+    }
 
     const batchId = parsed.stagedBatch?.batchId;
-    const messageCount = parsed.stagedBatch?.messageCount;
+    const messageCount = parsed.stagedBatch?.messageCount ?? 0;
 
-    if (!batchId || messageCount <= 0) return;
+    if (!batchId || messageCount <= 0) {
+      log?.info?.(
+        `[webex:${account.accountId}] staged batch result has nothing to process`,
+        {
+          spaceId,
+          route: parsed.route,
+          batchId: batchId ?? null,
+          messageCount,
+        }
+      );
+      return;
+    }
 
     log?.info?.(
-      `[webex:${account.accountId}] staged batch ready for processing`,
+      `[webex:${account.accountId}] dispatching staged batch for processing`,
       {
         spaceId,
         batchId,

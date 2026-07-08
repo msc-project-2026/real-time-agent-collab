@@ -394,11 +394,13 @@ const webexPlugin = {
         if (refreshInterval) clearInterval(refreshInterval);
         log?.info?.(`[webex:${account.accountId}] stopping`);
         targets.delete(webhookPath);
+        /*
         await deregisterWebhooks(cfg).catch((err) =>
           log?.warn?.(
             `[webex:${account.accountId}] webhook deregister failed: ${err?.message}`
           )
         );
+        */
       }
     },
   },
