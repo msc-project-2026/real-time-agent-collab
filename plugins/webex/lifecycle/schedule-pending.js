@@ -125,7 +125,7 @@ async function runPendingBatchStagingRecovery({
   log?.info?.(`[webex:${accountId}] running pending recovery batch scan`);
 
   try {
-    await scanPendingOverdueBatches({
+    await scanPendingBatchStaging({
       account,
       log,
       batchStagingHandler,
