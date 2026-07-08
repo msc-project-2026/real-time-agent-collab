@@ -30,12 +30,14 @@ function makeStageResultHandler({ spaceId, account, log }) {
       return;
     }
 
-    log?.info?.(`[webex:${account.accountId}] parsed agent output`, {
-      spaceId,
-      route: parsed.route,
-      hasStagedBatch: Boolean(parsed.stagedBatch),
-      stagedBatch: parsed.stagedBatch ?? null,
-    });
+    log?.info?.(
+      `[webex:${account.accountId}] parsed agent output ${JSON.stringify({
+        spaceId,
+        route: parsed.route,
+        hasStagedBatch: Boolean(parsed.stagedBatch),
+        stagedBatch: parsed.stagedBatch ?? null,
+      })}`
+    );
 
     const isStageResult =
       parsed.route === 'stage_pending_batch' ||

@@ -108,11 +108,21 @@ async function dispatchToAgentForSpace({
               `[webex:${account.accountId}] agent output suppressed: ${out.text}`
             );
 
-            await onAgentOutput?.({
-              text: out.text,
-              spaceId,
-              account,
-              log,
+            void Promise.resolve(
+              onAgentOutput?.({
+                text: out.text,
+                spaceId,
+                account,
+                log,
+              })
+            ).catch((err) => {
+              log?.error?.(
+                `[webex:${account.accountId}] onAgentOutput handler failed: ${err?.message ?? err}`,
+                {
+                  spaceId,
+                  error: err?.message ?? String(err),
+                }
+              );
             });
           },
           onError: (err) => {
