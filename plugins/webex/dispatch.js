@@ -82,6 +82,7 @@ async function dispatchToAgentForSpace({
   account,
   log,
   buildCtxPayload,
+  onAgentOutput,
 }) {
   const dispatch =
     pluginRuntime?.channel?.reply?.dispatchReplyWithBufferedBlockDispatcher;
@@ -102,9 +103,17 @@ async function dispatchToAgentForSpace({
         dispatcherOptions: {
           deliver: async (out) => {
             if (!out.text) return;
+
             log?.info?.(
               `[webex:${account.accountId}] agent output suppressed: ${out.text}`
             );
+
+            await onAgentOutput?.({
+              text: out.text,
+              spaceId,
+              account,
+              log,
+            });
           },
           onError: (err) => {
             log?.error?.(

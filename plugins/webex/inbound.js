@@ -4,17 +4,16 @@
 // Inbound message filtering, membership checks, and agent pipeline dispatch.
 const { webexFetch } = require('./api');
 const { getAccessToken } = require('./token');
-const { buildMsgBody } = require('./send');
-const { buildRoutingInstruction } = require('./prompts/routing');
+const { buildRoutingInstruction } = require('./instructions/routing');
 const { dispatchToAgentForSpace } = require('./dispatch');
 const { schedulePendingBatchStaging } = require('./lifecycle/schedule-pending');
+const {
+  makeStageResultHandler,
+  handleStagePendingBatchRequest,
+} = require('./internal-events');
+const { getPluginRuntime } = require('./runtime');
 
-// Holds the OpenClaw plugin runtime (set via setRuntime() by register() in index.js).
-let pluginRuntime = null;
-function setRuntime(r) {
-  pluginRuntime = r;
-}
-
+// DmPolicy enforcement
 function isDmAllowed(cfg, personId, personEmail) {
   switch (cfg.dmPolicy) {
     case 'allow':
@@ -30,8 +29,9 @@ function isDmAllowed(cfg, personId, personEmail) {
   }
 }
 
+// *** Inbound Webex Message Handler
 // Called asynchronously after the webhook POST is acknowledged.  Filters,
-// fetches full message details, then delivers to the OpenClaw agent pipeline.
+// fetches full message details, then dispatches to the OpenClaw agent pipeline.
 async function handleInboundWebexMessage(
   payload,
   { botId, cfg, account, log }
@@ -122,11 +122,16 @@ async function handleInboundWebexMessage(
   }
 
   await dispatchToAgentForSpace({
-    pluginRuntime,
+    pluginRuntime: getPluginRuntime(),
     spaceId: msg.roomId,
     account,
     log,
     buildCtxPayload: buildRealWebexCtxPayload,
+    onAgentOutput: makeStageResultHandler({
+      spaceId: msg.roomId,
+      account,
+      log,
+    }),
   });
 
   schedulePendingBatchStaging({
@@ -137,72 +142,7 @@ async function handleInboundWebexMessage(
   });
 }
 
-// Move out of inbound?
-async function handleStagePendingBatchRequest({ spaceId, account, log }) {
-  if (!spaceId) throw new Error('spacedId is required');
-
-  const routingInstruction = buildRoutingInstruction();
-
-  function buildStagePendingBatchCtxPayload(sessionKeySuffix) {
-    const context = {
-      eventType: 'stage_pending_batch',
-      synthetic: true,
-      spaceId,
-      createdAt: new Date().toISOString(),
-    };
-
-    return {
-      Body: '',
-      RawBody: '',
-      CommandBody: [
-        routingInstruction,
-        '',
-        'Internal synthetic Webex collaboration event:',
-        '',
-        '```json',
-        JSON.stringify(context, null, 2),
-        '```',
-        '',
-        'Route this event as stage_pending_batch.',
-      ].join('\n'),
-
-      From: 'webex:internal-scheduler',
-      To: `webex:${spaceId}`,
-
-      SessionKey: sessionKeySuffix
-        ? `agent:main:webex:${spaceId}:${sessionKeySuffix}`
-        : `agent:main:webex:${spaceId}`,
-
-      WebexRoomId: spaceId,
-      AccountId: account.accountId,
-      ChatType: 'group',
-      SenderName: 'internal-scheduler',
-      SenderId: 'internal-scheduler',
-      Provider: 'webex',
-      Surface: 'webex',
-      MessageSid: `stage_pending_batch:${spaceId}:${Date.now()}`,
-      Timestamp: context.createdAt,
-      OriginatingChannel: 'webex',
-      OriginatingTo: `webex:${spaceId}`,
-      MessageThreadId: null,
-    };
-  }
-
-  await dispatchToAgentForSpace({
-    pluginRuntime,
-    spaceId,
-    account,
-    log,
-    buildCtxPayload: buildStagePendingBatchCtxPayload,
-  });
-}
-
-async function handleProcessStagedBatchRequest({ spaceId, account, log }) {}
-
 module.exports = {
-  setRuntime,
   isDmAllowed,
   handleInboundWebexMessage,
-  handleStagePendingBatchRequest,
-  handleProcessStagedBatchRequest,
 };

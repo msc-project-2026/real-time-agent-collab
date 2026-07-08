@@ -1,3 +1,6 @@
+// ********* ROUTING.JS *********
+'use strict';
+
 function buildRoutingInstruction() {
   return `
 You are handling an inbound Webex message for a collaboration space.
@@ -8,7 +11,7 @@ First classify the message into exactly one route:
 - append_and_stage: the agent is directly addressed, mentioned, asked a question, or asked to help now.
 - config_setup: the user wants to set up this Webex space for a project or repository.
 - config_update: the user wants to change an existing project, repository, or configuration for this space.
-- stage_pending_batch: the message is an internal synthetic event asking to stage the pending message batch (eventType: stage_pending_batch).
+- stage_pending_batch: the message is an internal event asking to stage the pending message batch (eventType: stage_pending_batch).
 - ignore: irrelevant noise, bot/self messages, or empty messages.
 
 Current implementation stage: routing and batch-stage test only.

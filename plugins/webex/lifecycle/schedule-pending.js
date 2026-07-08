@@ -64,7 +64,6 @@ function schedulePendingBatchStaging({
 }
 
 // *** On-restart Scan
-
 async function scanPendingBatchStaging({ account, log, batchStagingHandler }) {
   const root = spacesRoot();
 

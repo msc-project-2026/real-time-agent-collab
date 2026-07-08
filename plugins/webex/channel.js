@@ -12,10 +12,8 @@ const {
   deregisterWebhooks,
 } = require('./token');
 const { buildMsgBody } = require('./send');
-const {
-  handleInboundWebexMessage,
-  handleStagePendingBatchRequest,
-} = require('./inbound');
+const { handleInboundWebexMessage } = require('./inbound');
+const { handleStagePendingBatchRequest } = require('./internal-events');
 const { targets, normPath } = require('./webhook');
 const {
   runPendingBatchStagingRecovery,
