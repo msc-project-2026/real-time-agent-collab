@@ -1,4 +1,7 @@
-const { appendPendingMessage } = require('../storage/pending.js');
+// ********* APPEND-PENDING-MESSAGE.JS *********
+'use strict';
+
+const { appendPendingMessage } = require('../lifecycle/append');
 
 function appendPendingMessageTool() {
   return {

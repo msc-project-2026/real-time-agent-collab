@@ -1,4 +1,7 @@
-const { claimPendingBatch } = require('../storage/claim.js');
+// ********* CLAIM-PENDING-BATCH.JS *********
+'use strict';
+
+const { claimPendingBatch } = require('../lifecycle/claim.js');
 
 function claimPendingBatchTool() {
   return {

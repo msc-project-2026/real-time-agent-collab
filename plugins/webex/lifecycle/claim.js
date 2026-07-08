@@ -1,3 +1,6 @@
+// ********* CLAIM-BATCH.JS *********
+'use strict';
+
 const fs = require('node:fs/promises');
 const crypto = require('node:crypto');
 
@@ -11,8 +14,9 @@ const {
 async function claimPendingBatch({ spaceId, explicitRoot }) {
   if (!spaceId) throw new Error('spaceId is required');
 
-  const messages = await readMessageBatch(spaceId, explicitRoot);
-  if (!messages.length) {
+  const state = await readPendingBatchState(spaceId, explicitRoot);
+
+  if (!state?.messageCount) {
     return {
       ok: true,
       claimed: false,
@@ -24,19 +28,15 @@ async function claimPendingBatch({ spaceId, explicitRoot }) {
 
   const batchId = createBatchId();
 
-  // Write messages to processingBatchPath()/batchId
+  // Rename pending/messages.jsonl to processingBatchPath()/batchId
   await fs.mkdir(processingDir(spaceId, explicitRoot), { recursive: true });
 
-  await fs.writeFile(
-    processingBatchPath(spaceId, batchId, explicitRoot),
-    messages.map((m) => JSON.stringify(m)).join('\n') + '\n',
-    'utf-8'
+  await fs.rename(
+    pendingMessagesPath(spaceId, explicitRoot),
+    processingBatchPath(spaceId, batchId, explicitRoot)
   );
 
-  // Clear pending/messages.jsonl
-  await fs.rm(pendingMessagesPath(spaceId, explicitRoot), { force: true });
-
-  // Clear batch-state.json
+  // Clear pending/batch-state.json
   await fs.rm(pendingBatchStatePath(spaceId, explicitRoot), { force: true });
 
   // return batchId + messages
@@ -45,24 +45,20 @@ async function claimPendingBatch({ spaceId, explicitRoot }) {
     claimed: true,
     spaceId,
     batchId,
-    messageCount: messages.length,
+    messageCount: state.messageCount,
   };
 }
 
-async function readMessageBatch(spaceId, explicitRoot) {
+async function readPendingBatchState(spaceId, explicitRoot) {
   try {
     const raw = await fs.readFile(
-      pendingMessagesPath(spaceId, explicitRoot),
+      pendingBatchStatePath(spaceId, explicitRoot),
       'utf8'
     );
 
-    return raw
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => JSON.parse(line));
+    return JSON.parse(raw);
   } catch (err) {
-    if (err?.code === 'ENOENT') return [];
+    if (err?.code === 'ENOENT') return null;
     throw err;
   }
 }

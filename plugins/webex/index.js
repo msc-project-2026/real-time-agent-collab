@@ -3,6 +3,10 @@
 
 const { appendPendingMessageTool } = require('./tools/append-pending-message');
 const { claimPendingBatchTool } = require('./tools/claim-pending-batch');
+const { readProcessingBatchTool } = require('./tools/read-processing-batch');
+const {
+  completeProcessingBatchTool,
+} = require('./tools/complete-processing-batch');
 
 const { webexPlugin } = require('./channel');
 const { webhookRouter } = require('./webhook');
@@ -25,6 +29,8 @@ function register(api) {
   // Tools
   api.registerTool(appendPendingMessageTool());
   api.registerTool(claimPendingBatchTool());
+  api.registerTool(readProcessingBatchTool());
+  api.registerTool(completeProcessingBatchTool());
 }
 
 module.exports = register;

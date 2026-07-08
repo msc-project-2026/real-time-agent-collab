@@ -21,16 +21,18 @@ function safeSegment(value) {
 
 // Paths
 
-function spacesRoot(explicitRoot) {
-  const workspaceRoot = getWorkspaceRoot(explicitRoot);
-  return path.join(workspaceRoot, ROOT, 'spaces');
-}
-
+// -- .collab/space(s)
 function spaceRoot(spaceId, explicitRoot) {
   const workspaceRoot = getWorkspaceRoot(explicitRoot);
   return path.join(workspaceRoot, ROOT, 'spaces', safeSegment(spaceId));
 }
 
+function spacesRoot(explicitRoot) {
+  const workspaceRoot = getWorkspaceRoot(explicitRoot);
+  return path.join(workspaceRoot, ROOT, 'spaces');
+}
+
+// -- ./pending/
 function pendingDir(spaceId, explicitRoot) {
   return path.join(spaceRoot(spaceId, explicitRoot), 'pending');
 }
@@ -43,12 +45,26 @@ function pendingBatchStatePath(spaceId, explicitRoot) {
   return path.join(pendingDir(spaceId, explicitRoot), 'batch-state.json');
 }
 
+// -- ./processing/
 function processingDir(spaceId, explicitRoot) {
   return path.join(spaceRoot(spaceId, explicitRoot), 'processing');
 }
 
 function processingBatchPath(spaceId, batchId, explicitRoot) {
   return path.join(processingDir(spaceId, explicitRoot), `${batchId}.jsonl`);
+}
+
+// -- ./processed/
+function processedDir(spaceId, explicitRoot) {
+  return path.join(spaceRoot(spaceId, explicitRoot), 'processed');
+}
+
+function processedBatchPath(spaceId, batchId, explicitRoot) {
+  return path.join(processedDir(spaceId, explicitRoot), `${batchId}.jsonl`);
+}
+
+function processedBatchMetaPath(spaceId, batchId, explicitRoot) {
+  return path.join(processedDir(spaceId, explicitRoot), `${batchId}.meta.json`);
 }
 
 module.exports = {
@@ -60,4 +76,7 @@ module.exports = {
   pendingBatchStatePath,
   processingDir,
   processingBatchPath,
+  processedDir,
+  processedBatchPath,
+  processedBatchMetaPath,
 };
