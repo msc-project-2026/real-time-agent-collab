@@ -6,6 +6,7 @@
 
 const ssh = require('./ssh.js');
 const pendingEnv = require('./pending-env.js');
+const { toToolResult } = require('./result.js');
 
 // Optional GitHub App token minting for private repos. The agent is guaranteed
 // to have access, so this is best-effort: if the lib or app isn't configured,
@@ -71,7 +72,7 @@ function register(api) {
       },
       required: ['name', 'repo'],
     },
-    handler: (args) => deployHandler(args, false),
+    execute: async (_id, args) => toToolResult(await deployHandler(args, false)),
   });
 
   api.registerTool({
@@ -91,7 +92,7 @@ function register(api) {
       },
       required: ['name'],
     },
-    handler: (args) => deployHandler(args, true),
+    execute: async (_id, args) => toToolResult(await deployHandler(args, true)),
   });
 
   simpleTool(api, {
@@ -204,7 +205,7 @@ function simpleTool(api, { name, description, props, required, tokens }) {
     name,
     description,
     parameters: { type: 'object', properties: props, required },
-    handler: (args) => ssh.run(tokens(args || {})),
+    execute: async (_id, args) => toToolResult(await ssh.run(tokens(args || {}))),
   });
 }
 

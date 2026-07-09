@@ -10,6 +10,7 @@
 
 const channel = require('./channel.js');
 const pendingEnv = require('./pending-env.js');
+const { toToolResult } = require('./result.js');
 
 function register(api) {
   api.registerTool({
@@ -35,7 +36,7 @@ function register(api) {
       },
       required: ['name', 'repo'],
     },
-    handler: async (args, apiCtx) => {
+    execute: async (_id, args) => {
       pendingEnv.sweep();
       if (typeof args.env === 'string' && args.env.trim() !== '') {
         pendingEnv.set(args.name, args.env);
@@ -43,10 +44,9 @@ function register(api) {
       const reply = await channel.dispatch(
         channel.DEPLOY_CHANNEL,
         'deployer',
-        buildDeployerPrompt(args),
-        apiCtx?.log
+        buildDeployerPrompt(args)
       );
-      return { ok: true, agent_reply: reply };
+      return toToolResult({ ok: true, agent_reply: reply });
     },
   });
 
@@ -65,14 +65,13 @@ function register(api) {
       },
       required: ['name'],
     },
-    handler: async (args, apiCtx) => {
+    execute: async (_id, args) => {
       const reply = await channel.dispatch(
         channel.DEBUG_CHANNEL,
         'deploy-debugger',
-        buildDebuggerPrompt(args),
-        apiCtx?.log
+        buildDebuggerPrompt(args)
       );
-      return { ok: true, agent_reply: reply };
+      return toToolResult({ ok: true, agent_reply: reply });
     },
   });
 }
