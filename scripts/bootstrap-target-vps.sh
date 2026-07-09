@@ -130,8 +130,16 @@ setup_deploy_user() {
 		log "User $DEPLOY_USER already exists"
 	else
 		log "Creating user $DEPLOY_USER"
-		useradd --create-home --shell /usr/sbin/nologin "$DEPLOY_USER"
+		# Shell must be a real, executable shell (NOT nologin/false): sshd runs a
+		# forced command as `<shell> -c "<command>"`, so nologin would swallow the
+		# forced command and just print "This account is currently not available."
+		# The command=/no-pty/no-port-forwarding restrictions below are what
+		# actually confine this account to deploy-cli, not the shell.
+		useradd --create-home --shell /bin/sh "$DEPLOY_USER"
 	fi
+	# Idempotent: fix the shell even if the user already existed with the old
+	# (broken) nologin shell from a prior bootstrap run.
+	usermod -s /bin/sh "$DEPLOY_USER"
 	# The CLI needs the Docker socket to launch app containers. The forced-command
 	# restriction is what bounds this power to deploy-cli only.
 	usermod -aG docker "$DEPLOY_USER"
