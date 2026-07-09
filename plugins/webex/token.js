@@ -30,8 +30,8 @@ async function refreshAccessToken(cfg) {
   return data.access_token;
 }
 
-// Deregisters any existing webhooks pointing at cfg.webhookUrl then creates a
-// fresh one.  Idempotent — safe to call on every startAccount.
+// Deregisters existing webhooks at each target URL then recreates all specs.
+// Idempotent — safe to call on every startAccount.
 
 const WEBHOOK_SPECS = [
   { name: 'OpenClaw Message Handler', resource: 'messages', event: 'created', pathSuffix: '' },
