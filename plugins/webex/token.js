@@ -35,16 +35,21 @@ async function refreshAccessToken(cfg) {
 
 const WEBHOOK_SPECS = [
   { name: 'OpenClaw Message Handler', resource: 'messages', event: 'created', pathSuffix: '' },
+  { name: 'OpenClaw Membership Handler', resource: 'memberships', event: 'created', pathSuffix: '' },
+  { name: 'OpenClaw Card Action Handler', resource: 'attachmentActions', event: 'created', pathSuffix: '' },
   { name: 'OpenClaw Meeting Transcript Handler', resource: 'meetingTranscripts', event: 'created', pathSuffix: '/meeting-transcripts' },
+  
 ];
 
 async function ensureWebhook(cfg) {
   const token = currentAccessToken ?? cfg.token;
   const data = await webexFetch(token, '/webhooks');
-  for (const spec of WEBHOOK_SPECS){
+  const existing = data?.items ?? [];
+
+  for (const spec of WEBHOOK_SPECS) {
     const targetUrl = `${cfg.webhookUrl}${spec.pathSuffix}`;
     await Promise.all(
-      (data?.items ?? [])
+      existing
         .filter((w) => w.targetUrl === targetUrl)
         .map((w) => webexFetch(token, `/webhooks/${w.id}`, { method: 'DELETE' }))
     );
@@ -52,7 +57,7 @@ async function ensureWebhook(cfg) {
       method: 'POST',
       body: {
         name: spec.name,
-        targetUrl: targetUrl,
+        targetUrl,
         resource: spec.resource,
         event: spec.event,
         ...(cfg.webhookSecret ? { secret: cfg.webhookSecret } : {}),

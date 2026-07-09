@@ -2,6 +2,7 @@
 'use strict';
 
 const { createObserver } = require('./observer');
+const prefs = require('../webex/prefs');
 
 const CHANNEL_ID = 'source-observer';
 const DEFAULT_ACCOUNT = 'default';
@@ -93,16 +94,18 @@ const sourceObserverPlugin = {
       const observer = createObserver({
         log,
         dispatchAgentPrompt: (prompt) => dispatchAgentPrompt(prompt, log),
-        notifyRoom: async (spaceId, text) => {
+        notifyRoom: async (spaceId, text, { files = [], isBreaking = false } = {}) => {
           const token = process.env.WEBEX_BOT_TOKEN;
           if (!token) return;
+          // Mode + file watch pattern filter (respects room preset)
+          if (!prefs.shouldNotify(spaceId, files, { isBreaking })) return;
           await fetch('https://webexapis.com/v1/messages', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${token}`,
             },
-            body: JSON.stringify({ roomId: spaceId, text }),
+            body: JSON.stringify({ roomId: spaceId, markdown: text }),
           });
         },
       });

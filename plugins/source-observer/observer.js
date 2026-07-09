@@ -23,6 +23,8 @@ const SIGNIFICANT_KEYWORDS =
   /\b(breaking|deploy|revert|hotfix|rollback|critical|urgent)\b/i;
 // Conventional commit breaking-change marker (feat!: / fix!: etc.)
 const CONVENTIONAL_BREAKING = /^(fix|feat|refactor|perf|revert)!:/i;
+// Subset used to decide "breaking" for quiet-mode filtering (revert/hotfix only).
+const BREAKING_KEYWORDS = /\b(revert|hotfix|rollback)\b/i;
 const LARGE_COMMIT_FILE_COUNT = 6;
 
 function isSignificant(commitMessage, files) {
@@ -30,6 +32,12 @@ function isSignificant(commitMessage, files) {
   if (CONVENTIONAL_BREAKING.test(commitMessage)) return true;
   if (files.length >= LARGE_COMMIT_FILE_COUNT) return true;
   return false;
+}
+
+// True for the most critical subset: conventional breaking markers + revert/hotfix.
+// Used by prefs.shouldNotify() to decide what gets through in 'quiet' mode.
+function isBreaking(commitMessage) {
+  return CONVENTIONAL_BREAKING.test(commitMessage) || BREAKING_KEYWORDS.test(commitMessage);
 }
 
 function createObserver({
@@ -133,7 +141,8 @@ async function runTick({ log, dispatchAgentPrompt, github, stateFile, now, notif
       if (notifyRoom && spaceId && isSignificant(commitMessage, sourceFiles)) {
         notifyRoom(
           spaceId,
-          `📌 Notable commit in **${repoConfig.name || repo.repo}**: ${summary} (\`${shortSha}\`)`
+          `📌 Notable commit in **${repoConfig.name || repo.repo}**: ${summary} (\`${shortSha}\`)`,
+          { files: sourceFiles, isBreaking: isBreaking(commitMessage) }
         ).catch((err) =>
           log?.warn?.(`[source-observer] Webex notify failed: ${err?.message ?? err}`)
         );
@@ -383,6 +392,7 @@ module.exports = {
   parseChangedFiles,
   isCollabPath,
   isSignificant,
+  isBreaking,
   removeCollabDiffBlocks,
   buildSummaryPrompt,
   normalizeAgentSummary,
