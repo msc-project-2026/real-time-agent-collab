@@ -49,6 +49,10 @@ services:
       # Restricted on the target to a forced command (deploy-cli only).
       # Referenced via DEPLOY_VPS_KEY in .env. Keep this file chmod 600.
       - ./secrets/deploy-vps-key:/run/secrets/deploy-vps-key:ro
+      - ./sub-agents/meeting-agent/AGENTS.md:/home/node/.openclaw/workspace-meeting-notes/AGENTS.md
+      # Meeting notes skill the agent loads on demand (e.g. meeting-notes). OpenClaw
+      # auto-discovers SKILL.md files under <workspace>/skills.
+
     expose:
       - "18789"
     networks:

@@ -49,6 +49,10 @@
       "clientSecret": {
         "type": "string",
         "description": "Webex Integration client secret"
+      },
+      "defaultMeetingNotesRoomId": {
+        "type": "string",
+        "description": "Fallback Webex roomId to post meeting notes into when a transcript's meeting has no resolvable roomId"
       }
     }
   }

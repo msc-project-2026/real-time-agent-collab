@@ -10,7 +10,8 @@ function register(api) {
     description:
       'Appends a classified entry to a .collab file in the project GitHub repository. ' +
       'Use after classifying an inbound message: decisions go to context.md, ' +
-      'questions or blockers to open-questions.md, bugs or issues to issues.md.',
+      'questions or blockers to open-questions.md, bugs or issues to issues.md.'+
+      'After processing a meeting transcript, structured meeting notes go to meeting-notes.md.',
     parameters: {
       type: 'object',
       properties: {
@@ -20,7 +21,7 @@ function register(api) {
         },
         filename: {
           type: 'string',
-          enum: ['context.md', 'open-questions.md', 'issues.md'],
+          enum: ['context.md', 'open-questions.md', 'issues.md','meeting-notes.md'],
           description: 'The .collab file to append to',
         },
         entry: {

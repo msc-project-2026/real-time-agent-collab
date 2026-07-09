@@ -64,6 +64,14 @@
         "model": {
           "primary": "cisco/bedrock/global.anthropic.claude-sonnet-4-6"
         }
+      },
+      { 
+        "id": "meeting-notes", 
+        "model": { 
+          "primary": "cisco/bedrock/global.anthropic.claude-sonnet-4-6"
+           
+        },
+        "workspace": "/home/node/.openclaw/workspace-meeting-notes" 
       }
     ]
   },
@@ -83,7 +91,12 @@
     {
       "agentId": "deploy-debugger",
       "match": { "channel": "deploy-debug" }
+    },
+    { 
+      "agentId": "meeting-notes", 
+      "match": { "channel": "webex-meetings" } 
     }
+
   ],
   "channels": {
     "source-observer": {
@@ -95,6 +108,9 @@
     "deploy-debug": {
       "enabled": true
     },
+    "webex-meetings": { 
+      "enabled": true 
+    },
     "webex": {
       "enabled": true,
       "token": "${WEBEX_BOT_TOKEN}",
@@ -104,6 +120,7 @@
       "clientSecret": "${WEBEX_CLIENT_SECRET}",
       "webhookUrl": "${WEBEX_WEBHOOK_URL}",
       "webhookSecret": "${WEBEX_WEBHOOK_SECRET}",
+      "defaultMeetingNotesRoomId": "${WEBEX_DEFAULT_MEETING_NOTES_ROOM_ID}",
       "dmPolicy": "allowlisted",
       "allowFrom": [
         "ucabtg2@ucl.ac.uk",

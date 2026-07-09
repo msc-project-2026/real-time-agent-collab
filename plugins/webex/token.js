@@ -32,32 +32,42 @@ async function refreshAccessToken(cfg) {
 
 // Deregisters any existing webhooks pointing at cfg.webhookUrl then creates a
 // fresh one.  Idempotent — safe to call on every startAccount.
+
+const WEBHOOK_SPECS = [
+  { name: 'OpenClaw Message Handler', resource: 'messages', event: 'created', pathSuffix: '' },
+  { name: 'OpenClaw Meeting Transcript Handler', resource: 'meetingTranscripts', event: 'created', pathSuffix: '/meeting-transcripts' },
+];
+
 async function ensureWebhook(cfg) {
   const token = currentAccessToken ?? cfg.token;
   const data = await webexFetch(token, '/webhooks');
-  await Promise.all(
-    (data?.items ?? [])
-      .filter((w) => w.targetUrl === cfg.webhookUrl)
-      .map((w) => webexFetch(token, `/webhooks/${w.id}`, { method: 'DELETE' }))
-  );
-  await webexFetch(token, '/webhooks', {
-    method: 'POST',
-    body: {
-      name: 'OpenClaw Message Handler',
-      targetUrl: cfg.webhookUrl,
-      resource: 'messages',
-      event: 'created',
-      ...(cfg.webhookSecret ? { secret: cfg.webhookSecret } : {}),
-    },
-  });
+  for (const spec of WEBHOOK_SPECS){
+    const targetUrl = `${cfg.webhookUrl}${spec.pathSuffix}`;
+    await Promise.all(
+      (data?.items ?? [])
+        .filter((w) => w.targetUrl === targetUrl)
+        .map((w) => webexFetch(token, `/webhooks/${w.id}`, { method: 'DELETE' }))
+    );
+    await webexFetch(token, '/webhooks', {
+      method: 'POST',
+      body: {
+        name: spec.name,
+        targetUrl: targetUrl,
+        resource: spec.resource,
+        event: spec.event,
+        ...(cfg.webhookSecret ? { secret: cfg.webhookSecret } : {}),
+      },
+    });
+  }
 }
 
 async function deregisterWebhooks(cfg) {
   const token = currentAccessToken ?? cfg.token;
   const data = await webexFetch(token, '/webhooks');
+  const urls = new Set(WEBHOOK_SPECS.map((s) => `${cfg.webhookUrl}${s.pathSuffix}`));
   await Promise.all(
     (data?.items ?? [])
-      .filter((w) => w.targetUrl === cfg.webhookUrl)
+      .filter((w) => urls.has(w.targetUrl))
       .map((w) => webexFetch(token, `/webhooks/${w.id}`, { method: 'DELETE' }))
   );
 }

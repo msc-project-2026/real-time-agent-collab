@@ -12,6 +12,7 @@ const {
 const { buildMsgBody } = require('./send');
 const { handleInbound } = require('./inbound');
 const { targets, normPath } = require('./webhook');
+const{handleMeetingTranscript} = require('./meeting-transcript');
 
 const DEFAULT_ACCOUNT = 'default';
 
@@ -71,6 +72,8 @@ function resolveAccount(cfg, accountId = DEFAULT_ACCOUNT) {
         clientId: named.clientId ?? section.clientId,
         clientSecret: named.clientSecret ?? section.clientSecret,
         refreshToken: named.refreshToken ?? section.refreshToken,
+        defaultMeetingNotesRoomId: named.defaultMeetingNotesRoomId ?? section.defaultMeetingNotesRoomId,
+
       }
     : accountId === DEFAULT_ACCOUNT
       ? {
@@ -83,6 +86,7 @@ function resolveAccount(cfg, accountId = DEFAULT_ACCOUNT) {
           clientId: section.clientId,
           clientSecret: section.clientSecret,
           refreshToken: section.refreshToken,
+          defaultMeetingNotesRoomId: section.defaultMeetingNotesRoomId,
         }
       : null;
 
@@ -354,12 +358,18 @@ const webexPlugin = {
 
       // Register the HTTP dispatch target for incoming POSTs
       const webhookPath = normPath(`/webhooks/webex/${account.accountId}`);
+      const meetingWebhookPath = normPath(`/webhooks/webex/${account.accountId}/meeting-transcripts`);
       targets.set(webhookPath, {
         account,
         handle: (payload) =>
           handleInbound(payload, { botId, cfg, account, log }),
       });
-      log?.info?.(`[webex:${account.accountId}] ready at ${webhookPath}`);
+      targets.set(meetingWebhookPath, {
+        account,
+        handle: (payload) =>
+          handleMeetingTranscript(payload, { botId, cfg, account, log }),
+      });
+      log?.info?.(`[webex:${account.accountId}] ready at ${webhookPath} and ${meetingWebhookPath}`);
 
       // The channel must stay alive until the gateway stops it.
       // On shutdown the finally block deregisters the target and Webex webhook.
@@ -369,6 +379,7 @@ const webexPlugin = {
         if (refreshInterval) clearInterval(refreshInterval);
         log?.info?.(`[webex:${account.accountId}] stopping`);
         targets.delete(webhookPath);
+        targets.delete(meetingWebhookPath);
         await deregisterWebhooks(cfg).catch((err) =>
           log?.warn?.(
             `[webex:${account.accountId}] webhook deregister failed: ${err?.message}`
