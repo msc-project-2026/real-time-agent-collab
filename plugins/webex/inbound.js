@@ -165,7 +165,7 @@ async function handleCommand(text, { roomId, personId, token, proactivity, log }
 
   await webexFetch(token, '/messages', {
     method: 'POST',
-    body: buildMsgBody(roomId, { text: reply }),
+    body: buildMsgBody(roomId, { markdown: reply }),
   });
 
   return true;
@@ -358,9 +358,12 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
           });
         }
 
+        // Send as `markdown` so the agent's Markdown reply renders with
+        // formatting (bold, lists, code, links) instead of raw asterisks.
+        // Webex derives a plain-text fallback for non-rich clients.
         const sent = await webexFetch(cfg.token, '/messages', {
           method: 'POST',
-          body: buildMsgBody(roomId, { text: reply }, msg.parentId),
+          body: buildMsgBody(roomId, { markdown: reply }, msg.parentId),
         });
 
         if (sent?.id && !capturedIsMentioned) {

@@ -206,9 +206,12 @@ const webexPlugin = {
         );
       }
 
+      // Send as `markdown` so Webex renders the bot's Markdown formatting
+      // (bold, lists, code, links). Webex auto-generates a plain-text
+      // fallback from it for clients that don't support rich text.
       const msg = await webexFetch(resolvedAccount.config.token, '/messages', {
         method: 'POST',
-        body: buildMsgBody(to, { text }, replyToId),
+        body: buildMsgBody(to, { markdown: text }, replyToId),
       });
 
       return { channel: 'webex', messageId: msg.id, roomId: msg.roomId };
@@ -245,7 +248,7 @@ const webexPlugin = {
         method: 'POST',
         body: buildMsgBody(
           to,
-          { text, files: mediaUrl ? [mediaUrl] : undefined },
+          { markdown: text, files: mediaUrl ? [mediaUrl] : undefined },
           replyToId
         ),
       });
