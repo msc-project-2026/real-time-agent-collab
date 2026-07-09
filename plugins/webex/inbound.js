@@ -10,6 +10,7 @@ const { recordMessage: ctxRecord, getRecentMessages } = require('./context');
 const { tryAccept } = require('./debounce');
 const { logDecision } = require('./audit');
 const prefs = require('./prefs');
+const { buildWelcomeCard, buildPresetCard } = require('./card');
 
 let pluginRuntime = null;
 function setRuntime(r) {
@@ -82,6 +83,40 @@ function getProactivityCfg(loadedCfg) {
 
 // ── /collab command handler ────────────────────────────────────────────────────
 
+
+function buildHelp() {
+  const presetLines = Object.entries(prefs.PRESETS)
+    .map(([name, p]) => `• \`/collab ${name}\` — ${p.desc}`)
+    .join('\n');
+  return [
+    '**Set a proactivity mode for this space:**',
+    presetLines,
+    '',
+    '**Other commands:**',
+    '• `/collab settings` — open the settings card (easier than typing commands)',
+    '• `/collab threshold <0.0–1.0>` — fine-grained control (power users)',
+    '• `/collab reset` — restore config default',
+    '• `/collab status` — current mode, engagement stats, and file watches',
+    '• `/collab watch <pattern>` — notify only for matching files (e.g. `src/**`, `*.py`)',
+    '• `/collab unwatch <pattern>` — remove a file watch',
+    '• `/collab watches` — list active file watches',
+    '• `/collab me <mode>` — personal mode (overrides room setting)',
+  ].join('\n');
+}
+
+function buildMeHelp() {
+  const presetLines = Object.entries(prefs.PRESETS)
+    .map(([name, p]) => `• \`/collab me ${name}\` — ${p.desc}`)
+    .join('\n');
+  return [
+    '**Set your personal proactivity mode:**',
+    presetLines,
+    '',
+    '• `/collab me threshold <0.0–1.0>` — fine-grained control',
+    '• `/collab me reset` — restore room default',
+  ].join('\n');
+}
+
 async function handleCommand(text, { roomId, personId, token, proactivity, log }) {
   const trimmed = String(text ?? '').trim();
   if (!trimmed.toLowerCase().startsWith('/collab')) return false;
@@ -89,76 +124,108 @@ async function handleCommand(text, { roomId, personId, token, proactivity, log }
   const parts = trimmed.slice(7).trim().split(/\s+/);
   const sub = (parts[0] ?? '').toLowerCase();
 
+  const PRESET_NAMES = Object.keys(prefs.PRESETS);
   let reply;
 
   if (sub === 'me') {
-    // Per-user commands
     const meSub = (parts[1] ?? '').toLowerCase();
 
-    if (meSub === 'quiet') {
-      prefs.setUserOverride(personId, 0.9);
-      reply = '🔇 Personal proactivity set to quiet. I\'ll only respond to you when directly mentioned.';
-    } else if (meSub === 'active') {
-      prefs.setUserOverride(personId, 0.3);
-      reply = '🔊 Personal proactivity set to active for your messages.';
+    if (PRESET_NAMES.includes(meSub)) {
+      const preset = prefs.PRESETS[meSub];
+      prefs.setUserPreset(personId, meSub);
+      reply = `${preset.emoji} Your personal mode set to **${preset.label}** — ${preset.desc}.`;
     } else if (meSub === 'threshold') {
       const val = parseFloat(parts[2]);
       if (isNaN(val) || val < 0 || val > 1) {
         reply = '⚠️ Usage: `/collab me threshold <0.0–1.0>`';
       } else {
         prefs.setUserOverride(personId, val);
-        reply = `✅ Your personal proactivity threshold set to ${val.toFixed(2)}.`;
+        reply = `✅ Your personal threshold set to ${val.toFixed(2)}.`;
       }
     } else if (meSub === 'reset') {
       prefs.clearUserOverride(personId);
-      reply = '↩️ Your personal proactivity threshold reset to room default.';
+      reply = '↩️ Your personal mode reset to room default.';
     } else {
-      reply = [
-        '**Personal /collab me commands:**',
-        '• `/collab me quiet` — only respond to you when mentioned',
-        '• `/collab me active` — engage more freely with your messages',
-        '• `/collab me threshold <0.0–1.0>` — set your personal threshold',
-        '• `/collab me reset` — restore room default for your messages',
-      ].join('\n');
+      reply = buildMeHelp();
     }
-  } else if (sub === 'quiet') {
-    prefs.setOverride(roomId, 0.9);
-    reply = '🔇 Proactivity set to quiet for this space (threshold 0.9).';
-  } else if (sub === 'active') {
-    prefs.setOverride(roomId, 0.3);
-    reply = '🔊 Proactivity set to active for this space (threshold 0.3).';
+
+  } else if (PRESET_NAMES.includes(sub)) {
+    const preset = prefs.PRESETS[sub];
+    prefs.setPreset(roomId, sub);
+    reply = `${preset.emoji} Room mode set to **${preset.label}** — ${preset.desc}.`;
+
   } else if (sub === 'threshold') {
     const val = parseFloat(parts[1]);
     if (isNaN(val) || val < 0 || val > 1) {
       reply = '⚠️ Usage: `/collab threshold <0.0–1.0>`. Lower = more proactive, higher = quieter.';
     } else {
       prefs.setOverride(roomId, val);
-      reply = `✅ Proactivity threshold set to ${val.toFixed(2)} for this space.`;
+      reply = `✅ Room threshold set to ${val.toFixed(2)}.`;
     }
+
   } else if (sub === 'reset') {
     prefs.clearOverride(roomId);
-    reply = '↩️ Proactivity threshold reset to config default for this space.';
+    reply = '↩️ Room mode reset to config default.';
+
+  } else if (sub === 'watch') {
+    const pattern = parts.slice(1).join(' ').trim();
+    if (!pattern) {
+      reply = '⚠️ Usage: `/collab watch <pattern>` — e.g. `src/**`, `*.py`, `package.json`';
+    } else {
+      prefs.addWatchPattern(roomId, pattern);
+      reply = `👁 Watching \`${pattern}\` — I'll notify this space when matching files change on GitHub.`;
+    }
+
+  } else if (sub === 'unwatch') {
+    const pattern = parts.slice(1).join(' ').trim();
+    if (!pattern) {
+      reply = '⚠️ Usage: `/collab unwatch <pattern>`';
+    } else {
+      const removed = prefs.removeWatchPattern(roomId, pattern);
+      reply = removed
+        ? `✅ Removed watch pattern \`${pattern}\`.`
+        : `⚠️ Pattern \`${pattern}\` wasn't in the watch list.`;
+    }
+
+  } else if (sub === 'watches') {
+    const patterns = prefs.getWatchPatterns(roomId);
+    reply = patterns.length
+      ? `👁 **Active file watches:**\n${patterns.map((p) => `• \`${p}\``).join('\n')}`
+      : '👁 No file watches set — all significant commits notify this space.';
+
+  } else if (sub === 'settings') {
+    // Resend the preset picker card so anyone can change the mode without typing commands.
+    const currentPreset =
+      prefs.getPresetName(prefs.getOverride(roomId) ?? prefs.getEffectiveThreshold(roomId, proactivity.gateThreshold)) ??
+      'balanced';
+    log?.info?.(`[webex:cmd] sending settings card roomId=${roomId}`);
+    await webexFetch(token, '/messages', {
+      method: 'POST',
+      body: buildPresetCard(roomId, { currentPreset }),
+    });
+    return true;
+
   } else if (sub === 'status') {
-    const { effective, source, ratioStr } = prefs.getStatus(
+    const { effective, source, ratioStr, adjustStr, patterns } = prefs.getStatus(
       roomId,
       proactivity.gateThreshold,
       personId
     );
-    reply = [
+    const lines = [
       '📊 **Proactivity status:**',
-      `• Effective threshold: **${effective.toFixed(2)}** (${source})`,
+      `• Mode: **${effective.toFixed(2)}** (${source})`,
       `• Engagement: ${ratioStr}`,
-    ].join('\n');
+    ];
+    if (adjustStr) lines.push(`• Auto-adjust: ${adjustStr}`);
+    lines.push(
+      patterns.length
+        ? `• Watching: ${patterns.map((p) => `\`${p}\``).join(', ')}`
+        : '• Watching: all significant commits'
+    );
+    reply = lines.join('\n');
+
   } else {
-    reply = [
-      '**Available /collab commands:**',
-      '• `/collab quiet` — raise threshold to 0.9 (mostly silent)',
-      '• `/collab active` — lower threshold to 0.3 (more proactive)',
-      '• `/collab threshold <0.0–1.0>` — set a specific room threshold',
-      '• `/collab reset` — restore config default for this space',
-      '• `/collab status` — show current threshold and engagement stats',
-      '• `/collab me quiet/active/threshold/reset` — personal preferences',
-    ].join('\n');
+    reply = buildHelp();
   }
 
   log?.info?.(`[webex:cmd] roomId=${roomId} personId=${personId} sub=${sub}`);
@@ -173,7 +240,70 @@ async function handleCommand(text, { roomId, personId, token, proactivity, log }
 
 // ── Main inbound handler ───────────────────────────────────────────────────────
 
+// ── Card action handler ───────────────────────────────────────────────────────
+
+async function handleCardAction(payload, { botId, cfg, log }) {
+  // Fetch full action (webhook payload doesn't include inputs)
+  const action = await webexFetch(cfg.token, `/attachment/actions/${payload.data?.id}`);
+  if (!action) return;
+
+  const { personId, roomId, inputs } = action;
+  if (!personId || !roomId || personId === botId) return;
+  if (inputs?.cardAction !== 'setPreset') return;
+
+  const presetName = inputs.preset;
+  const scope = inputs.scope; // 'room' or 'me'
+  const preset = prefs.PRESETS[presetName];
+  if (!preset) return;
+
+  if (scope === 'me') {
+    prefs.setUserPreset(personId, presetName);
+    await webexFetch(cfg.token, '/messages', {
+      method: 'POST',
+      body: { roomId, markdown: `${preset.emoji} Your personal mode set to **${preset.label}** — ${preset.desc}.` },
+    });
+  } else {
+    prefs.setPreset(roomId, presetName);
+    await webexFetch(cfg.token, '/messages', {
+      method: 'POST',
+      body: {
+        roomId,
+        markdown:
+          `${preset.emoji} Room mode set to **${preset.label}** — ${preset.desc}.\n\n` +
+          `This applies to both proactive replies and GitHub commit notifications in this space.`,
+      },
+    });
+  }
+
+  log?.info?.(`[webex:card] preset=${presetName} scope=${scope} roomId=${roomId} personId=${personId}`);
+}
+
+// ── Main inbound handler ───────────────────────────────────────────────────────
+
 async function handleInbound(payload, { botId, cfg, account, log }) {
+  // Bot was added to a new space → send the welcome card.
+  if (payload.resource === 'memberships' && payload.event === 'created') {
+    if (payload.data?.personId === botId) {
+      const roomId = payload.data.roomId;
+      log?.info?.(`[webex:welcome] bot joined roomId=${roomId}`);
+      await webexFetch(cfg.token, '/messages', {
+        method: 'POST',
+        body: buildWelcomeCard(roomId),
+      }).catch((err) =>
+        log?.error?.(`[webex:welcome] could not send welcome card: ${err?.message ?? err}`)
+      );
+    }
+    return;
+  }
+
+  // Someone submitted a settings card.
+  if (payload.resource === 'attachmentActions' && payload.event === 'created') {
+    await handleCardAction(payload, { botId, cfg, log }).catch((err) =>
+      log?.error?.(`[webex:card] action handler error: ${err?.message ?? err}`)
+    );
+    return;
+  }
+
   if (payload.resource !== 'messages' || payload.event !== 'created') return;
 
   if (payload.data?.personId === botId) return;

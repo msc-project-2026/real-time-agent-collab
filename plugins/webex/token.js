@@ -30,8 +30,15 @@ async function refreshAccessToken(cfg) {
   return data.access_token;
 }
 
-// Deregisters any existing webhooks pointing at cfg.webhookUrl then creates a
-// fresh one.  Idempotent — safe to call on every startAccount.
+// Webhooks registered on every startAccount (existing ones at this URL are cleared first).
+const WEBHOOKS = [
+  { name: 'OpenClaw Message Handler',     resource: 'messages',          event: 'created' },
+  { name: 'OpenClaw Membership Handler',  resource: 'memberships',       event: 'created' },
+  { name: 'OpenClaw Card Action Handler', resource: 'attachmentActions', event: 'created' },
+];
+
+// Deregisters any existing webhooks pointing at cfg.webhookUrl then recreates all three.
+// Idempotent — safe to call on every startAccount.
 async function ensureWebhook(cfg) {
   const token = currentAccessToken ?? cfg.token;
   const data = await webexFetch(token, '/webhooks');
@@ -40,16 +47,13 @@ async function ensureWebhook(cfg) {
       .filter((w) => w.targetUrl === cfg.webhookUrl)
       .map((w) => webexFetch(token, `/webhooks/${w.id}`, { method: 'DELETE' }))
   );
-  await webexFetch(token, '/webhooks', {
-    method: 'POST',
-    body: {
-      name: 'OpenClaw Message Handler',
-      targetUrl: cfg.webhookUrl,
-      resource: 'messages',
-      event: 'created',
-      ...(cfg.webhookSecret ? { secret: cfg.webhookSecret } : {}),
-    },
-  });
+  const secret = cfg.webhookSecret ? { secret: cfg.webhookSecret } : {};
+  for (const wh of WEBHOOKS) {
+    await webexFetch(token, '/webhooks', {
+      method: 'POST',
+      body: { ...wh, targetUrl: cfg.webhookUrl, ...secret },
+    });
+  }
 }
 
 async function deregisterWebhooks(cfg) {
