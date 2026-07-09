@@ -92,10 +92,7 @@
       "agentId": "deploy-debugger",
       "match": { "channel": "deploy-debug" }
     },
-    { 
-      "agentId": "meeting-notes", 
-      "match": { "channel": "webex-meetings" } 
-    }
+
 
   ],
   "channels": {
@@ -108,9 +105,7 @@
     "deploy-debug": {
       "enabled": true
     },
-    "webex-meetings": { 
-      "enabled": true 
-    },
+
     "webex": {
       "enabled": true,
       "token": "${WEBEX_BOT_TOKEN}",
@@ -156,7 +151,16 @@
     "path": "/hooks",
     "allowRequestSessionKey": true,
     "allowedSessionKeyPrefixes": ["agent:main:webex:", "hook:"],
-    "defaultSessionKey": "hook:collab-sync"
+    "defaultSessionKey": "hook:collab-sync",
+    "mappings": [
+    {
+      "match": { "path": "meeting-notes" },
+      "action": "agent",
+      "agentId": "meeting-notes",
+      "sessionKey": "hook:meeting-notes:{{meetingId}}",
+      "deliver": true
+    }
+  ]
   },
   "plugins": {
     "load": {

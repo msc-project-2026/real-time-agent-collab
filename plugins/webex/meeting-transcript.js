@@ -2,13 +2,16 @@
 
 const { webexFetch } = require('./api');
 const { getAccessToken } = require('./token');
-const { buildMsgBody } = require('./send');
-const { dispatchWithRetry } = require('../../lib/dispatch-retry.js');
 
-let pluginRuntime = null;
-function setRuntime(r) {
-  pluginRuntime = r;
-}
+// This handler no longer calls the agent pipeline directly — it POSTs to
+// OpenClaw's own /hooks endpoint, which resolves the request through the
+// `meeting-notes` entry in hooks.mappings (config/openclaw.json) and routes
+// it to the meeting-notes agent. No pluginRuntime/setRuntime wiring needed
+// here anymore — that was only required for the old direct
+// dispatchReplyWithBufferedBlockDispatcher approach.
+
+const GATEWAY_PORT = process.env.OPENCLAW_GATEWAY_PORT || 18789;
+const HOOKS_URL = `http://127.0.0.1:${GATEWAY_PORT}/hooks/meeting-notes`;
 
 // Webex meetingTranscripts/created webhook payload.data shape, per docs:
 //   { id: transcriptId, meetingId, scheduledMeetingId, meetingSeriesId, siteUrl, ... }
@@ -58,50 +61,47 @@ async function handleMeetingTranscript(payload, { cfg, account, log }) {
     return;
   }
 
-  const ctxPayload = {
-    Body: transcriptText,
-    RawBody: transcriptText,
-    CommandBody: transcriptText,
-    From: `webex-meetings:${meetingId}`,
-    To: `webex:${roomId}`,
-    SessionKey: `agent:meeting-notes:webex:${meetingId}`,
-    WebexRoomId: roomId,
-    AccountId: account.accountId,
-    ChatType: 'meeting-transcript',
-    SenderName: meeting?.hostDisplayName ?? 'meeting',
-    Provider: 'webex-meetings',
-    Surface: 'webex-meetings',
-    OriginatingChannel: 'webex-meetings',
-    OriginatingTo: `webex:${roomId}`,
-    MeetingId: meetingId,
-    MeetingTopic: meeting?.title,
-    RoomId: roomId,
-  };
-
-  const dispatch = pluginRuntime?.channel?.reply?.dispatchReplyWithBufferedBlockDispatcher;
-  if (!dispatch) {
-    log?.warn?.(`[webex:${account.accountId}] agent pipeline unavailable for meeting notes`);
+  // Hand off to the meeting-notes agent via OpenClaw's hooks ingress.
+  // UNVERIFIED: exact required field set for a *named* mapping
+  // (POST /hooks/<name>) vs the generic /hooks/agent shape shown in the
+  // docs. This follows the generic shape ({ message, to, channel, ... })
+  // since the meeting-notes mapping doesn't define its own messageTemplate.
+  // The mapping's sessionKey template "{{meetingId}}" needs `meetingId` as
+  // a top-level field in this body to resolve correctly — confirm against
+  // real logs once this fires.
+  const hooksToken = process.env.OPENCLAW_WEBHOOK_SECRET;
+  if (!hooksToken) {
+    log?.error?.('[webex:meeting] OPENCLAW_WEBHOOK_SECRET not set, cannot dispatch to hooks');
     return;
   }
 
-  await dispatchWithRetry(dispatch, {
-    ctx: ctxPayload,
-    cfg: pluginRuntime.config?.current?.() ?? {},
-    dispatcherOptions: {
-      deliver: async (out) => {
-        const reply = (out?.text ?? '').trim();
-        if (!reply) return;
-        await webexFetch(cfg.token, '/messages', {
-          method: 'POST',
-          body: buildMsgBody(roomId, { text: reply }),
-        });
+  try {
+    const res = await fetch(HOOKS_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${hooksToken}`,
       },
-      onError: (err) => {
-        log?.error?.(`[webex:${account.accountId}] meeting-notes dispatch error: ${err?.message ?? err}`);
-      },
-    },
-    replyOptions: {},
-  });
+      body: JSON.stringify({
+        message: transcriptText,
+        meetingId,
+        roomId,
+        to: `webex:${roomId}`,
+        channel: 'webex',
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}: ${text}`);
+    }
+
+    log?.info?.(`[webex:meeting] dispatched meeting ${meetingId} to hooks/meeting-notes`);
+  } catch (err) {
+    log?.error?.(
+      `[webex:${account.accountId}] failed to dispatch meeting notes hook: ${err?.message ?? err}`
+    );
+  }
 }
 
-module.exports = { handleMeetingTranscript, setRuntime };
+module.exports = { handleMeetingTranscript };
