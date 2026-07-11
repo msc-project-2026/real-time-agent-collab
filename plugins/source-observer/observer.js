@@ -27,6 +27,11 @@ const CONVENTIONAL_BREAKING = /^(fix|feat|refactor|perf|revert)!:/i;
 const BREAKING_KEYWORDS = /\b(revert|hotfix|rollback)\b/i;
 const LARGE_COMMIT_FILE_COUNT = 6;
 
+// Open-question nudge: how old an entry must be before the first nudge,
+// and how long to wait before nudging the same question again.
+const NUDGE_AFTER_MS    = 24 * 60 * 60 * 1000;
+const NUDGE_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
 function isSignificant(commitMessage, files) {
   if (SIGNIFICANT_KEYWORDS.test(commitMessage)) return true;
   if (CONVENTIONAL_BREAKING.test(commitMessage)) return true;
@@ -199,6 +204,10 @@ async function runTick({ log, dispatchAgentPrompt, github, stateFile, now, notif
         `questions resolved=${resolvedCount}`
     );
   }
+
+  // Nudge the space for any questions that have been open too long.
+  // Must run before writeState so nudge timestamps are included in the write.
+  await checkOpenQuestions({ github, bootstrap, state, spaceId, notifyRoom, log, now });
 
   for (const [repoKey, repoState] of stateUpdates) {
     state.repos ??= {};
@@ -385,6 +394,86 @@ function firstLine(value) {
   return String(value ?? '').split('\n')[0].trim();
 }
 
+// ── Open-question nudge ───────────────────────────────────────────────────────
+
+const QUESTION_DATE_RE = /\*\*(\d{4}-\d{2}-\d{2})\*\*/;
+const RESOLVED_RE      = /\[x\]|resolved by/i;
+
+// Parses open-questions.md and returns undated questions older than NUDGE_AFTER_MS.
+function parseOpenQuestions(content) {
+  const questions = [];
+  for (const line of String(content ?? '').split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('- ')) continue;
+    if (RESOLVED_RE.test(trimmed)) continue;
+
+    const dateMatch = trimmed.match(QUESTION_DATE_RE);
+    if (!dateMatch) continue; // can't determine age without a date
+
+    const date = new Date(dateMatch[1]);
+    if (isNaN(date.getTime())) continue;
+
+    // Strip date prefix and author tag to get plain question text
+    const text = trimmed
+      .replace(/^-\s+/, '')
+      .replace(/\*\*\d{4}-\d{2}-\d{2}\*\*\s*/, '')
+      .replace(/^\[[^\]]*\]:\s*/, '')
+      .trim();
+
+    if (!text) continue;
+
+    // Stable key for the state file — normalised first 80 chars of text
+    const key = text.slice(0, 80).replace(/\s+/g, ' ').toLowerCase();
+    questions.push({ text, date, dateStr: dateMatch[1], key });
+  }
+  return questions;
+}
+
+async function checkOpenQuestions({ github, bootstrap, state, spaceId, notifyRoom, log, now }) {
+  if (!notifyRoom || !spaceId) return;
+
+  const content = await github
+    .readFile(bootstrap.owner, bootstrap.repo, QUESTIONS_PATH)
+    .catch(() => null);
+  if (!content) return;
+
+  const questions = parseOpenQuestions(content);
+  if (!questions.length) return;
+
+  const nudged = state.nudgedQuestions ?? {};
+  const nowMs  = now().getTime();
+  const stale  = [];
+
+  for (const q of questions) {
+    if (nowMs - q.date.getTime() < NUDGE_AFTER_MS) continue;
+
+    const lastNudgedAt = nudged[q.key]?.lastNudgedAt;
+    if (lastNudgedAt && nowMs - new Date(lastNudgedAt).getTime() < NUDGE_COOLDOWN_MS) continue;
+
+    stale.push(q);
+  }
+
+  if (!stale.length) return;
+
+  // Record nudge timestamps before notifying (state is written by the caller)
+  for (const q of stale) {
+    nudged[q.key] = { lastNudgedAt: now().toISOString() };
+  }
+  state.nudgedQuestions = nudged;
+
+  const lines   = stale.map((q) => `• **${q.dateStr}**: ${q.text}`).join('\n');
+  const message =
+    stale.length === 1
+      ? `❓ Still open after 24h:\n${lines}`
+      : `❓ **${stale.length} questions still open after 24h:**\n${lines}`;
+
+  notifyRoom(spaceId, message, { files: [], isBreaking: false }).catch((err) =>
+    log?.warn?.(`[source-observer] nudge notify failed: ${err?.message ?? err}`)
+  );
+
+  log?.info?.(`[source-observer] nudged ${stale.length} stale question(s) in space ${spaceId}`);
+}
+
 module.exports = {
   createObserver,
   runTick,
@@ -393,6 +482,7 @@ module.exports = {
   isCollabPath,
   isSignificant,
   isBreaking,
+  parseOpenQuestions,
   removeCollabDiffBlocks,
   buildSummaryPrompt,
   normalizeAgentSummary,
