@@ -147,6 +147,9 @@
   "browser": {
     "enabled": true,
     "evaluateEnabled": false,
+    "headless": true,
+    "noSandbox": true,
+    "defaultProfile": "meeting-join",
     "tabCleanup": {
       "enabled": false
     },
@@ -155,8 +158,7 @@
     },
     "profiles": {
       "meeting-join": {
-        "headless": true,
-        "noSandbox": true,
+        "cdpPort": 18801,
         "color": "#6D28D9"
       }
     }
