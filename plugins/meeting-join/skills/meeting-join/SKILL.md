@@ -18,6 +18,10 @@ message directly.
   visible `Join Webex meeting` action by its current snapshot ref. Do not use
   hard-coded selectors, coordinates, or a remembered ref. Take another
   snapshot after the action and report the visible status accurately.
+- Keep the returned stable tab handle consistent on every browser operation.
+  For an `act` call, when both an outer `targetId` and `request.targetId` are
+  present, set both to the same returned `tab_id` or `tab_label`. Prefer a
+  fresh snapshot over a timed `act` wait, and never mix handles from two tabs.
 - The secure local runner authenticates the Webex Meetings SDK with the
   configured human OAuth token. Never paste an OAuth token, refresh token,
   client secret, or account password into a web page.

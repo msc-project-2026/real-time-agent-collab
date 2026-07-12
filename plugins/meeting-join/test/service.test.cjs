@@ -5,7 +5,7 @@ const test = require('node:test');
 const { mkdtemp, readFile, rm } = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { createInvitation, EncryptedState } = require('../dist/service.cjs');
+const { createInvitation, EncryptedState, safeErrorCode } = require('../dist/service.cjs');
 
 const JOIN_LINK = 'https://meet1753491728593-7008.webex.com/meet1753491728593-7008/j.php?MTID=m0ceda7e17bef71adc7e2f13b63c51476';
 
@@ -18,6 +18,11 @@ test('accepts the Webex link and ordinary password supplied directly to the join
 test('rejects a non-Webex link or an empty meeting password', () => {
   assert.equal(createInvitation('https://example.com/join', 'x'), null);
   assert.equal(createInvitation(JOIN_LINK, ''), null);
+});
+
+test('reports browser-control failures separately from Webex meeting failures', () => {
+  assert.equal(safeErrorCode(Object.assign(new Error('fetch failed'), { code: 'browser_control_unavailable' })), 'browser_control_unavailable');
+  assert.equal(safeErrorCode(Object.assign(new Error('forbidden'), { code: 'browser_control_unauthorized' })), 'browser_control_unauthorized');
 });
 
 test('encrypted state keeps active-session and OAuth credentials out of plaintext storage', async () => {

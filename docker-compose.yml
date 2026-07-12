@@ -31,6 +31,11 @@ services:
       context: .
       dockerfile: openclaw.Dockerfile
     env_file: .env
+    environment:
+      # Required for the meeting-join plugin's loopback HTTP integration.
+      # Keep this in versioned Compose config because production .env files
+      # are intentionally not updated by git pulls.
+      OPENCLAW_EAGER_BROWSER_CONTROL_SERVER: "1"
     # Run as root so the entrypoint can write into the named volume.
     # (On Railway this was done with RAILWAY_RUN_UID=0.)
     user: "0:0"

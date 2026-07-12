@@ -1,12 +1,24 @@
 import { MeetingJoinService } from './service';
 
+const SERVICE_KEY = Symbol.for('openclaw.meeting-join.service');
+
 function toToolResult(value: unknown) {
   return { content: [{ type: 'text', text: JSON.stringify(value) }], details: value };
 }
 
-function register(api: any) {
-  const pluginConfig = api.config?.plugins?.entries?.['meeting-join']?.config ?? api.config ?? {};
-  const service = new MeetingJoinService(api.runtime, pluginConfig, api.logger ?? console);
+function getSharedService(api: any) {
+  const root = globalThis as any;
+  if (!root[SERVICE_KEY]) {
+    const pluginConfig = api.pluginConfig
+      ?? api.config?.plugins?.entries?.['meeting-join']?.config
+      ?? api.config
+      ?? {};
+    root[SERVICE_KEY] = new MeetingJoinService(api.runtime, pluginConfig, api.logger ?? console);
+  }
+  return root[SERVICE_KEY] as MeetingJoinService;
+}
+
+function registerTools(api: any, resolveService: () => MeetingJoinService) {
 
   api.registerTool({
     name: 'join_webex_meeting',
@@ -21,7 +33,7 @@ function register(api: any) {
       },
       required: ['room_id', 'meeting_link', 'meeting_password'],
     },
-    execute: async (_id: string, args: any) => toToolResult(await service.join(args)),
+    execute: async (_id: string, args: any) => toToolResult(await resolveService().join(args)),
   }, { optional: true });
 
   api.registerTool({
@@ -32,23 +44,37 @@ function register(api: any) {
       properties: { room_id: { type: 'string', description: 'The current Webex room ID from the inbound context.' } },
       required: ['room_id'],
     },
-    execute: async (_id: string, args: any) => toToolResult(await service.leave(String(args?.room_id ?? ''))),
+    execute: async (_id: string, args: any) => toToolResult(await resolveService().leave(String(args?.room_id ?? ''))),
   }, { optional: true });
+}
+
+function register(api: any) {
+  const mode = api.registrationMode ?? 'full';
+  if (mode !== 'full' && mode !== 'tool-discovery') return;
+
+  // Tool discovery must remain side-effect free. Resolve lazily so the full
+  // runtime registration owns initialization, while both loads still share
+  // the exact same process-wide session/nonces service.
+  let service: MeetingJoinService | undefined = mode === 'full' ? getSharedService(api) : undefined;
+  const resolveService = () => service ??= getSharedService(api);
+  registerTools(api, resolveService);
+
+  if (mode !== 'full') return;
 
   api.registerHttpRoute({
     path: '/meeting-join/runner/',
     auth: 'plugin',
     match: 'prefix',
-    handler: (req: any, res: any) => service.handleRunnerRoute(req, res),
+    handler: (req: any, res: any) => resolveService().handleRunnerRoute(req, res),
   });
 
-  api.on?.('gateway_start', async () => service.start());
-  api.on?.('gateway_stop', async () => service.stop());
+  api.on?.('gateway_start', async () => resolveService().start());
+  api.on?.('gateway_stop', async () => resolveService().stop());
 
   // Older local plugin runtimes do not dispatch gateway lifecycle hooks. Start
   // asynchronously as a compatibility fallback; the service stays fail-closed.
-  queueMicrotask(() => service.start().catch(() => undefined));
+  queueMicrotask(() => resolveService().start().catch(() => undefined));
 }
 
 export default register;
-export { register };
+export { getSharedService, register };
