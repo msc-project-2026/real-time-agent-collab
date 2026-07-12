@@ -9,10 +9,9 @@
 // would apply here (user/room override > config default).
 
 function shouldResolve(roomId, cfg) {
-  if (!roomId) return false;
   const allowlist = cfg.roomIds ?? [];
-  if (allowlist.length === 0) return true;
-  return allowlist.includes(roomId);
+  if (allowlist.length === 0) return true; // no restriction configured — allow all
+  return roomId ? allowlist.includes(roomId) : false;
 }
-
+ 
 module.exports = { shouldResolve };
