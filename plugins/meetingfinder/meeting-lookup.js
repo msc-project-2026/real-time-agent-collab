@@ -11,18 +11,23 @@ const { webexFetch } = require('./api');
 
 const RETRY_DELAY_MS = 4000;
 
-
+// CONFIRMED via live testing: the roomId filter finds meetings that were
+// SCHEDULED through the space itself. It returns nothing for meetings started
+// via the client's "Start meeting" button (confirmed empty with a bare query
+// and a real token — not a state/meetingType param issue, the room
+// association genuinely doesn't exist for that creation path). The optional
+// "Rooms" field in the scheduling UI was NOT what made this work — it was
+// never used in the test that succeeded; scheduled-through-the-space vs.
+// started-instantly is the actual distinguishing factor.
+//
+// Finds the currently active meeting in a given room, if any. Returns null if
+// nothing is found.
 async function findActiveMeetingForRoom(token, roomId) {
-  const params = new URLSearchParams({ roomId, state: 'inProgress', meetingType: 'meeting' });
+  const params = new URLSearchParams({ roomId });
   const res = await webexFetch(token, `/meetings?${params.toString()}`);
   const items = res?.items ?? [];
   if (items.length === 0) return null;
 
-  // Room-scoped ad-hoc meetings are capped at one active instance per room
-  // (Create a Meeting's docs: "There's only one ad-hoc meeting for a room at
-  // the same time"), so for the instant-meeting case this shouldn't need
-  // disambiguation. If more than one comes back, that assumption didn't hold —
-  // surface all of them rather than silently picking one.
   if (items.length > 1) {
     return { ambiguous: true, candidates: items };
   }
@@ -33,6 +38,7 @@ async function findActiveMeetingForRoom(token, roomId) {
     meetingId: meeting.id,
     meetingNumber: meeting.meetingNumber,
     hostEmail: meeting.hostEmail,
+    state: meeting.state,
     webLink: meeting.webLink ?? (await resolveWebLink(token, meeting.id).catch(() => null)),
   };
 }
@@ -51,4 +57,30 @@ async function resolveWebLink(token, meetingId, { retried = false } = {}) {
   }
 }
 
-module.exports = { resolveWebLink, findActiveMeetingForRoom };
+// There is no meeting→roomId field anywhere in the Meetings API — confirmed:
+// GET /meetings/{meetingId} doesn't return roomId even for a meeting that WAS
+// found via the roomId filter above. The only direction that works is
+// roomId→meeting, and only for meetings scheduled through a space.
+//
+// So this reverses it the only way possible: check each candidate room's
+// active meeting and see if its id matches. O(n) in the number of candidate
+// rooms — only practical with a small, explicit room list (cfg.roomIds), not
+// "every room the account can see". Returns null if no candidate room's
+// active meeting matches — the expected/normal outcome for a meeting that was
+// started instantly rather than scheduled through a space.
+async function findRoomIdForMeeting(token, meetingId, candidateRoomIds) {
+  for (const roomId of candidateRoomIds) {
+    let result;
+    try {
+      result = await findActiveMeetingForRoom(token, roomId);
+    } catch {
+      continue; // one room's query failing shouldn't abort the scan
+    }
+    if (result && !result.ambiguous && result.meetingId === meetingId) {
+      return roomId;
+    }
+  }
+  return null;
+}
+
+module.exports = { resolveWebLink, findActiveMeetingForRoom, findRoomIdForMeeting };
