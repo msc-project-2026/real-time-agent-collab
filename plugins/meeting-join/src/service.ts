@@ -47,6 +47,10 @@ function nowIso() {
 }
 
 function safeErrorCode(error: unknown) {
+  const explicitCode = String((error as any)?.code ?? '');
+  if (explicitCode === 'browser_control_unavailable' || explicitCode === 'browser_control_unauthorized') {
+    return explicitCode;
+  }
   const message = String((error as any)?.message ?? error ?? '').toLowerCase();
   if (message.includes('captcha')) return 'captcha_required';
   if (message.includes('password')) return 'meeting_password_rejected';
@@ -164,16 +168,26 @@ class BrowserControl {
 
   private async request(method: string, pathname: string, body?: unknown) {
     const token = process.env.OPENCLAW_GATEWAY_TOKEN;
-    if (!token) throw new Error('OPENCLAW_GATEWAY_TOKEN is required for browser control');
-    const response = await fetch(`${this.baseUrl}${pathname}${pathname.includes('?') ? '&' : '?'}profile=${encodeURIComponent(this.profile)}`, {
-      method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
-    if (!response.ok) throw new Error(`Browser control ${method} ${pathname} failed (${response.status})`);
+    if (!token) throw Object.assign(new Error('OPENCLAW_GATEWAY_TOKEN is required for browser control'), { code: 'browser_control_unauthorized' });
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}${pathname}${pathname.includes('?') ? '&' : '?'}profile=${encodeURIComponent(this.profile)}`, {
+        method,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+    } catch (cause) {
+      throw Object.assign(new Error('OpenClaw browser control is unreachable', { cause }), { code: 'browser_control_unavailable' });
+    }
+    if (!response.ok) {
+      const code = response.status === 401 || response.status === 403
+        ? 'browser_control_unauthorized'
+        : 'browser_control_unavailable';
+      throw Object.assign(new Error(`Browser control ${method} ${pathname} failed (${response.status})`), { code });
+    }
     return response.json().catch(() => ({}));
   }
 
@@ -253,6 +267,7 @@ export class MeetingJoinService {
   }
 
   async join(input: any) {
+    await this.start();
     const roomId = String(input?.room_id ?? '').trim();
     const parentId = String(input?.parent_id ?? '').trim() || undefined;
     const invitation = createInvitation(input?.meeting_link, input?.meeting_password);
@@ -264,7 +279,7 @@ export class MeetingJoinService {
     const existing = Object.values(this.state.sessions).find((session) => session.roomId === roomId && ACTIVE_STATES.has(session.state));
     if (existing) {
       if (existing.invitation.joinLink === invitation.joinLink) {
-        return { accepted: true, session_id: existing.id, state: existing.state };
+        return this.browserReadyResult(existing);
       }
       return { accepted: false, state: existing.state, error_code: 'active_meeting_requires_leave' };
     }
@@ -288,20 +303,27 @@ export class MeetingJoinService {
     try {
       await this.launch(session);
       await this.transition(session, 'ready_for_browser');
-      return {
-        accepted: true,
-        session_id: session.id,
-        state: 'ready_for_browser',
-        browser_profile: this.cfg.browserProfile,
-        tab_id: session.tabId,
-        tab_label: session.tabLabel,
-        next_action: 'Inspect this tab with the browser tool and activate Join Webex meeting when the page is ready.',
-      };
+      return this.browserReadyResult(session);
     } catch (error) {
       const code = safeErrorCode(error);
       await this.fail(session, code);
       return { accepted: false, session_id: session.id, state: 'failed', error_code: code };
     }
+  }
+
+  private browserReadyResult(session: Session) {
+    const needsBrowserAction = session.state === 'ready_for_browser';
+    return {
+      accepted: true,
+      session_id: session.id,
+      state: session.state,
+      ...(needsBrowserAction ? {
+        browser_profile: this.cfg.browserProfile,
+        tab_id: session.tabId,
+        tab_label: session.tabLabel,
+        next_action: 'Inspect this tab with the browser tool and activate Join Webex meeting when the page is ready.',
+      } : {}),
+    };
   }
 
   async leave(roomId: string) {
@@ -479,6 +501,7 @@ export class MeetingJoinService {
       try {
         await this.browser.close(session.tabId);
         await this.launch(session);
+        await this.transition(session, 'ready_for_browser');
         return;
       } catch {
         const delay = this.cfg.recoveryBaseDelayMs * 2 ** (session.recoveryAttempts - 1) + Math.floor(Math.random() * 250);
@@ -574,4 +597,4 @@ export class MeetingJoinService {
   }
 }
 
-export { createInvitation, EncryptedState, isLoopback };
+export { createInvitation, EncryptedState, isLoopback, safeErrorCode };
