@@ -4,10 +4,11 @@
   "type": "module",
   "workspaces": [
     "lib",
+    "plugins/meeting-join",
     "plugins/source-observer",
     "services/setup-ui"
   ],
   "scripts": {
-    "test": "node --test plugins/source-observer/*.test.js"
+    "test": "node --test plugins/source-observer/*.test.js && npm test --workspace=@openclaw/meeting-join"
   }
 }

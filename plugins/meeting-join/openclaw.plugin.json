@@ -1,0 +1,28 @@
+{
+  "id": "meeting-join",
+  "name": "Meeting Join",
+  "description": "Securely joins Webex meetings through a dedicated OAuth user and the Webex Meetings SDK.",
+  "contracts": {
+    "tools": ["join_webex_meeting", "leave_webex_meeting"]
+  },
+  "toolMetadata": {
+    "join_webex_meeting": { "optional": true },
+    "leave_webex_meeting": { "optional": true }
+  },
+  "activation": {
+    "onStartup": true
+  },
+  "skills": ["skills"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": { "type": "boolean", "default": true },
+      "maxConcurrentMeetings": { "type": "integer", "minimum": 1, "default": 4 },
+      "browserProfile": { "type": "string", "default": "meeting-join" },
+      "recoveryMaxAttempts": { "type": "integer", "minimum": 1, "default": 5 },
+      "recoveryBaseDelayMs": { "type": "integer", "minimum": 100, "default": 1000 },
+      "candidateTtlMs": { "type": "integer", "minimum": 60000, "default": 600000 }
+    }
+  }
+}

@@ -5,6 +5,8 @@ package-lock.json
 .env.*
 !.env.example
 services/setup-ui/dist/
+plugins/meeting-join/dist/
 # Compiled deploy-cli binary (built on the target VPS by bootstrap).
 deploy-cli/deploy-cli
 deploy-cli.pem
+.DS_Store

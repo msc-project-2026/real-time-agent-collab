@@ -45,7 +45,10 @@
     "list": [
       {
         "id": "main",
-        "default": true
+        "default": true,
+        "tools": {
+          "alsoAllow": ["join_webex_meeting", "leave_webex_meeting"]
+        }
       },
       {
         "id": "observer",
@@ -141,9 +144,27 @@
     "allowedSessionKeyPrefixes": ["agent:main:webex:", "hook:"],
     "defaultSessionKey": "hook:collab-sync"
   },
+  "browser": {
+    "enabled": true,
+    "evaluateEnabled": false,
+    "tabCleanup": {
+      "enabled": false
+    },
+    "ssrfPolicy": {
+      "allowedHostnames": ["localhost", "127.0.0.1"]
+    },
+    "profiles": {
+      "meeting-join": {
+        "headless": true,
+        "noSandbox": true,
+        "color": "#6D28D9"
+      }
+    }
+  },
   "plugins": {
     "load": {
       "paths": [
+        "plugins/meeting-join",
         "plugins/webex",
         "plugins/openclaw",
         "plugins/source-observer",
@@ -151,6 +172,16 @@
       ]
     },
     "entries": {
+      "meeting-join": {
+        "enabled": true,
+        "config": {
+          "maxConcurrentMeetings": 4,
+          "browserProfile": "meeting-join",
+          "recoveryMaxAttempts": 5,
+          "recoveryBaseDelayMs": 1000,
+          "candidateTtlMs": 600000
+        }
+      },
       "source-observer": {
         "enabled": true
       },
