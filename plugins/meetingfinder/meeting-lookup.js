@@ -63,12 +63,18 @@ async function resolveWebLink(token, meetingId, { retried = false } = {}) {
 // roomId→meeting, and only for meetings scheduled through a space.
 //
 // So this reverses it the only way possible: check each candidate room's
-// active meeting and see if its id matches. O(n) in the number of candidate
-// rooms — only practical with a small, explicit room list (cfg.roomIds), not
-// "every room the account can see". Returns null if no candidate room's
-// active meeting matches — the expected/normal outcome for a meeting that was
-// started instantly rather than scheduled through a space.
-async function findRoomIdForMeeting(token, meetingId, candidateRoomIds) {
+// active meeting and see if it's the same meeting. Matches on meetingNumber,
+// not meetingId — confirmed live that the started webhook's meetingId carries
+// an "_I_<instance>" suffix that the roomId-filtered lookup's meetingId does
+// NOT have, even for the exact same meeting. meetingNumber is identical in
+// both representations, so it's the only reliable match key across the two.
+//
+// O(n) in the number of candidate rooms — cheap for a handful of rooms
+// (rooms.js's listRoomIds), not something to run against hundreds unbatched.
+// Returns null if no candidate room's active meeting matches — the expected/
+// normal outcome for a meeting that was started instantly rather than
+// scheduled through a space.
+async function findRoomIdForMeeting(token, meetingNumber, candidateRoomIds) {
   for (const roomId of candidateRoomIds) {
     let result;
     try {
@@ -76,7 +82,7 @@ async function findRoomIdForMeeting(token, meetingId, candidateRoomIds) {
     } catch {
       continue; // one room's query failing shouldn't abort the scan
     }
-    if (result && !result.ambiguous && result.meetingId === meetingId) {
+    if (result && !result.ambiguous && result.meetingNumber === meetingNumber) {
       return roomId;
     }
   }

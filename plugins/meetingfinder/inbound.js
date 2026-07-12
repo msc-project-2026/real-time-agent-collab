@@ -58,7 +58,7 @@ async function handleInbound(payload, { cfg, log }) {
   let roomId = null;
   try {
     const candidateRoomIds = cfg.roomIds?.length ? cfg.roomIds : await listRoomIds(token);
-    roomId = await findRoomIdForMeeting(token, meetingId, candidateRoomIds);
+    roomId = await findRoomIdForMeeting(token, data.meetingNumber, candidateRoomIds);
   } catch (err) {
     log?.warn?.(`[meetingfinder] roomId reverse lookup failed for ${meetingId}: ${err?.message}`);
   }
