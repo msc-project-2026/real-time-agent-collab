@@ -6,7 +6,7 @@
   "description": "Secure Webex Meetings SDK join runner for OpenClaw",
   "main": "dist/index.js",
   "scripts": {
-    "build": "esbuild src/bridge.cts --platform=node --format=cjs --outfile=dist/bridge.cjs && esbuild src/service.ts --platform=node --format=cjs --bundle --outfile=dist/service.cjs && esbuild src/index.ts --platform=node --format=esm --bundle --external:./bridge.cjs --outfile=dist/index.js && esbuild src/runner.ts --platform=browser --format=iife --bundle --outfile=dist/runner.js",
+    "build": "esbuild src/service.ts --platform=node --format=cjs --bundle --outfile=dist/service.cjs && esbuild src/index.ts --platform=node --format=esm --bundle --outfile=dist/index.js && esbuild src/runner.ts --platform=browser --format=iife --bundle --outfile=dist/runner.js",
     "test": "npm run build && node --test test/*.test.cjs"
   },
   "dependencies": {

@@ -21,8 +21,7 @@
       "maxConcurrentMeetings": { "type": "integer", "minimum": 1, "default": 4 },
       "browserProfile": { "type": "string", "default": "meeting-join" },
       "recoveryMaxAttempts": { "type": "integer", "minimum": 1, "default": 5 },
-      "recoveryBaseDelayMs": { "type": "integer", "minimum": 100, "default": 1000 },
-      "candidateTtlMs": { "type": "integer", "minimum": 60000, "default": 600000 }
+      "recoveryBaseDelayMs": { "type": "integer", "minimum": 100, "default": 1000 }
     }
   }
 }

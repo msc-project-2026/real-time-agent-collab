@@ -5,43 +5,22 @@ const test = require('node:test');
 const { mkdtemp, readFile, rm } = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { parseInvitation, redactInvitation, EncryptedState } = require('../dist/service.cjs');
+const { createInvitation, EncryptedState } = require('../dist/service.cjs');
 
-const INVITATION = `Meeting link:
-https://meet1753491728593-7008.webex.com/meet1753491728593-7008/j.php?MTID=m0ceda7e17bef71adc7e2f13b63c51476
+const JOIN_LINK = 'https://meet1753491728593-7008.webex.com/meet1753491728593-7008/j.php?MTID=m0ceda7e17bef71adc7e2f13b63c51476';
 
-Meeting number:
-2378 512 0739
-
-Meeting password:
-tM9mpFci5C8
-
-Join from a video system or application
-Dial 23785120739@meet1753491728593-7008.webex.com
-
-Meeting password for video system
-86967324`;
-
-test('parses the ordinary Webex password and ignores video-system credentials', () => {
-  const invitation = parseInvitation(INVITATION);
-  assert.equal(invitation.joinLink.startsWith('https://meet1753491728593-7008.webex.com/'), true);
+test('accepts the Webex link and ordinary password supplied directly to the join tool', () => {
+  const invitation = createInvitation(JOIN_LINK, 'tM9mpFci5C8');
+  assert.equal(invitation.joinLink, JOIN_LINK);
   assert.equal(invitation.password, 'tM9mpFci5C8');
-  assert.equal(invitation.meetingNumber, '2378 512 0739');
 });
 
-test('redacts the entire stored invitation from agent-bound text', () => {
-  const invitation = parseInvitation(INVITATION);
-  const redacted = redactInvitation(`@bot join the meeting\n${INVITATION}`, invitation);
-  assert.match(redacted, /@bot join the meeting/);
-  assert.doesNotMatch(redacted, /tM9mpFci5C8|86967324|meet1753491728593/);
+test('rejects a non-Webex link or an empty meeting password', () => {
+  assert.equal(createInvitation('https://example.com/join', 'x'), null);
+  assert.equal(createInvitation(JOIN_LINK, ''), null);
 });
 
-test('rejects non-Webex and malformed invitations', () => {
-  assert.equal(parseInvitation('Meeting link: https://example.com/join\nMeeting password: x'), null);
-  assert.equal(parseInvitation('Meeting link: https://meet.webex.com/j.php\n'), null);
-});
-
-test('encrypted state round-trips without plaintext credentials on disk', async () => {
+test('encrypted state keeps active-session and OAuth credentials out of plaintext storage', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'meeting-join-test-'));
   try {
     const statePath = path.join(dir, 'state.enc');
@@ -49,8 +28,12 @@ test('encrypted state round-trips without plaintext credentials on disk', async 
     const store = new EncryptedState(key, statePath);
     const state = {
       version: 1,
-      invitations: { room: { joinLink: 'https://meet.example.webex.com/j.php', password: 'secret-pass', discoveredAt: 'now' } },
-      sessions: {},
+      sessions: {
+        active: {
+          id: 'active', roomId: 'room', invitation: { joinLink: JOIN_LINK, password: 'secret-pass', discoveredAt: 'now' },
+          state: 'joined', recoveryAttempts: 0, createdAt: 'now', updatedAt: 'now',
+        },
+      },
       token: { accessToken: 'access-secret', refreshToken: 'refresh-secret', expiresAt: 1 },
     };
     await store.save(state);

@@ -195,12 +195,12 @@ Configured in `config/openclaw.json` under `channels.webex.allowFrom`. Edit that
 
 ### Meeting Join plugin
 
-`plugins/meeting-join` lets a Webex space member mention the bot with a natural-language meeting request (for example, `@bot join the meeting`). It stores invitation credentials outside the agent context, then uses a dedicated licensed Webex user and the Webex Meetings SDK in an OpenClaw-managed headless browser.
+`plugins/meeting-join` lets a Webex space member mention the bot with a natural-language meeting request (for example, `@bot join the meeting`) and include the meeting link and ordinary password in that message. The agent passes those credentials directly to the Webex Meetings SDK runner running under a dedicated licensed Webex user.
 
-- The invitation can be in the request or the latest stored invitation from the same space.
+- The invitation must be in the same mentioned request as the join instruction.
 - Phase 1 joins without microphone, camera, screen-share, or media processing.
 - `@bot leave the meeting` ends that space's active session; meeting-end and container-restart recovery are handled automatically.
-- OAuth, invitation, and active-session state are encrypted in the persistent OpenClaw volume using `MEETING_JOIN_ENCRYPTION_KEY`.
+- OAuth and active-session state are encrypted in the persistent OpenClaw volume using `MEETING_JOIN_ENCRYPTION_KEY`.
 - A maximum of four sessions is configured by default, with one active meeting per space.
 
 The `MEETING_JOIN_*` variables in `.env.example` must be supplied before enabling it in production. The Docker image uses OpenClaw's browser variant and enables the loopback-only browser-control server.

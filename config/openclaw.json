@@ -180,8 +180,7 @@
           "maxConcurrentMeetings": 4,
           "browserProfile": "meeting-join",
           "recoveryMaxAttempts": 5,
-          "recoveryBaseDelayMs": 1000,
-          "candidateTtlMs": 600000
+          "recoveryBaseDelayMs": 1000
         }
       },
       "source-observer": {

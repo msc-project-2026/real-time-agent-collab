@@ -1,7 +1,7 @@
 // Inbound message filtering, membership checks, and agent pipeline dispatch.
 'use strict';
 
-const { WEBEX_API, webexFetch } = require('./api');
+const { webexFetch } = require('./api');
 const { getAccessToken } = require('./token');
 const { buildMsgBody } = require('./send');
 const { scoreMessage } = require('./gate');
@@ -11,15 +11,6 @@ const { tryAccept } = require('./debounce');
 const { logDecision } = require('./audit');
 const prefs = require('./prefs');
 const { buildWelcomeCard, buildPresetCard } = require('./card');
-
-let meetingJoinBridge = null;
-try {
-  // Built from plugins/meeting-join during the gateway image build. Keep the
-  // channel bootable when a developer has not built the optional plugin yet.
-  meetingJoinBridge = require('../meeting-join/dist/bridge.cjs');
-} catch {
-  meetingJoinBridge = null;
-}
 
 let pluginRuntime = null;
 function setRuntime(r) {
@@ -88,39 +79,6 @@ function getProactivityCfg(loadedCfg) {
       apiKey: process.env.CISCO_LLM_API_KEY ?? '',
     },
   };
-}
-
-function fallbackMeetingRedaction(text) {
-  return String(text ?? '')
-    .replace(/^(Meeting password:\s*).*$/gim, '$1[REDACTED]')
-    .replace(/^(Meeting password for video system\s*\n?\s*).*$/gim, '$1[REDACTED]');
-}
-
-function nextLink(header) {
-  for (const part of String(header ?? '').split(',')) {
-    const match = part.match(/<([^>]+)>;\s*rel="?next"?/i);
-    if (match) return match[1];
-  }
-  return null;
-}
-
-// The bot token can only list messages mentioning the bot. The existing OAuth
-// identity used by this channel has the broader room history required to find a
-// meeting invitation posted before the later @bot join request.
-async function listRoomHistory(roomId, token) {
-  let url = new URL(`${WEBEX_API}/messages`);
-  url.searchParams.set('roomId', roomId);
-  url.searchParams.set('max', '100');
-  const messages = [];
-  while (url) {
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) throw new Error(`Webex room history failed (${res.status})`);
-    const body = await res.json();
-    for (const item of body?.items ?? []) messages.push({ text: item.text ?? item.markdown ?? '' });
-    const next = nextLink(res.headers.get('link'));
-    url = next ? new URL(next) : null;
-  }
-  return messages;
 }
 
 // ── /collab command handler ────────────────────────────────────────────────────
@@ -378,33 +336,24 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
   const isMentioned =
     Array.isArray(msg.mentionedPeople) && msg.mentionedPeople.includes(botId);
 
-  // Meeting credentials must never reach the gate, context cache, audit log,
-  // or LLM. The meeting-join plugin stores them server-side and adds only an
-  // opaque candidate annotation to mentioned requests.
-  const meetingPrepared = meetingJoinBridge?.prepareMeetingInbound
-    ? await meetingJoinBridge.prepareMeetingInbound({
-        text: msg.text ?? '',
-        roomId,
-        parentId: msg.parentId,
-        isMentioned,
-        historyLookup: () => listRoomHistory(roomId, getAccessToken() ?? cfg.token),
-      })
-    : { text: fallbackMeetingRedaction(msg.text ?? '') };
-  const safeText = meetingPrepared.text;
+  // Meeting credentials are intentionally passed to the agent with the request.
+  // The agent supplies them directly to the meeting-join tool; invitations are
+  // not cached or resolved from room history.
+  const agentText = msg.text ?? '';
 
   // Capture lastSeen BEFORE recording so we can detect how long the room was silent.
   const lastActivity = getLastSeen(roomId);
 
   // Record arrival for lull, context, and engagement — always, even if debounced.
   lullRecord(roomId);
-  ctxRecord(roomId, { text: safeText, senderName });
+  ctxRecord(roomId, { text: agentText, senderName });
   prefs.recordHumanMessage(roomId);
 
   const loadedCfg = pluginRuntime.config?.current?.() ?? {};
   const proactivity = getProactivityCfg(loadedCfg);
 
   // ── /collab commands ─────────────────────────────────────────────────────────
-  const wasCommand = await handleCommand(safeText, {
+  const wasCommand = await handleCommand(agentText, {
     roomId,
     personId,
     token: cfg.token,
@@ -433,7 +382,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
     const recentMessages = getRecentMessages(roomId);
     const result = await scoreMessage(
       {
-        text: safeText,
+        text: agentText,
         senderName,
         chatType: msg.roomType === 'direct' ? 'direct' : 'group',
         recentMessages,
@@ -496,9 +445,9 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
 
   // ── Stage 2: Main agent dispatch ──────────────────────────────────────────
   const ctxPayload = {
-    Body: safeText,
-    RawBody: safeText,
-    CommandBody: safeText,
+    Body: agentText,
+    RawBody: agentText,
+    CommandBody: agentText,
     From: `webex:${personId}`,
     To: `webex:${roomId}`,
     SessionKey: `agent:main:webex:${roomId}`,

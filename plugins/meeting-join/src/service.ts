@@ -36,19 +36,8 @@ type Session = {
 
 type PersistedState = {
   version: 1;
-  invitations: Record<string, Invitation>;
   sessions: Record<string, Session>;
   token?: { accessToken: string; refreshToken: string; expiresAt: number };
-};
-
-type Candidate = {
-  id: string;
-  roomId: string;
-  parentId?: string;
-  invitation?: Invitation;
-  errorCode?: string;
-  expiresAt: number;
-  consumed: boolean;
 };
 
 function nowIso() {
@@ -99,38 +88,19 @@ function sendJson(res: any, status: number, body: unknown) {
   res.end(JSON.stringify(body));
 }
 
-function parseInvitation(text: unknown): Invitation | null {
-  const raw = String(text ?? '');
-  const link = raw.match(/https:\/\/[^\s]+\.webex\.com\/[^\s]*/i)?.[0];
-  if (!link) return null;
-
+function createInvitation(joinLink: unknown, password: unknown): Invitation | null {
   let parsed: URL;
   try {
-    parsed = new URL(link);
+    parsed = new URL(String(joinLink ?? '').trim());
   } catch {
     return null;
   }
   if (parsed.protocol !== 'https:' || !(parsed.hostname === 'webex.com' || parsed.hostname.endsWith('.webex.com'))) {
     return null;
   }
-
-  const password = raw.match(/^Meeting password:\s*([^\r\n]+)/im)?.[1]?.trim();
-  if (!password) return null;
-  const meetingNumber = raw.match(/^Meeting number:\s*([^\r\n]+)/im)?.[1]?.replace(/\s+/g, ' ').trim();
-  return { joinLink: parsed.toString(), password, meetingNumber, discoveredAt: nowIso() };
-}
-
-function redactInvitation(text: unknown, invitation: Invitation | null) {
-  let redacted = String(text ?? '');
-  if (!invitation) {
-    return redacted
-      .replace(/^(Meeting password:\s*).*$/gim, '$1[REDACTED]')
-      .replace(/^(Meeting password for video system\s*\n?\s*).*$/gim, '$1[REDACTED]');
-  }
-  // Do not leave credentials, join links, SIP addresses, or video-system credentials in agent context.
-  const start = redacted.search(/^(Meeting link:|https:\/\/[^\s]+\.webex\.com\/)/im);
-  if (start >= 0) redacted = `${redacted.slice(0, start).trimEnd()}\n[Webex meeting invitation stored securely]`;
-  return redacted;
+  const normalizedPassword = String(password ?? '').trim();
+  if (!normalizedPassword) return null;
+  return { joinLink: parsed.toString(), password: normalizedPassword, discoveredAt: nowIso() };
 }
 
 class EncryptedState {
@@ -156,12 +126,11 @@ class EncryptedState {
       const parsed = JSON.parse(plain.toString('utf8'));
       return {
         version: 1,
-        invitations: parsed.invitations ?? {},
         sessions: parsed.sessions ?? {},
         token: parsed.token,
       };
     } catch (error: any) {
-      if (error?.code === 'ENOENT') return { version: 1, invitations: {}, sessions: {} };
+      if (error?.code === 'ENOENT') return { version: 1, sessions: {} };
       throw new Error('Meeting state could not be decrypted; refusing to use stored credentials');
     }
   }
@@ -228,7 +197,6 @@ class BrowserControl {
 export class MeetingJoinService {
   private state!: PersistedState;
   private store: EncryptedState | null = null;
-  private candidates = new Map<string, Candidate>();
   private runnerNonces = new Map<string, { sessionId: string; expiresAt: number }>();
   private runnerCookies = new Map<string, { sessionId: string; expiresAt: number }>();
   private enabled = false;
@@ -243,7 +211,6 @@ export class MeetingJoinService {
       browserProfile: config?.browserProfile ?? 'meeting-join',
       recoveryMaxAttempts: config?.recoveryMaxAttempts ?? 5,
       recoveryBaseDelayMs: config?.recoveryBaseDelayMs ?? 1000,
-      candidateTtlMs: config?.candidateTtlMs ?? 10 * 60_000,
     };
     this.browser = new BrowserControl(this.cfg.browserProfile);
   }
@@ -283,65 +250,18 @@ export class MeetingJoinService {
     await this.persist().catch(() => undefined);
   }
 
-  async prepareInbound({ text, roomId, parentId, isMentioned, historyLookup }: any) {
-    const direct = parseInvitation(text);
-    const sanitized = redactInvitation(text, direct);
-    if (direct && this.enabled) {
-      this.state.invitations[roomId] = direct;
-      await this.persist();
-    }
-
-    if (!isMentioned) return { text: sanitized, candidateId: null, credentialsAvailable: Boolean(direct), redacted: Boolean(direct) };
-
-    let invitation = direct ?? this.state?.invitations?.[roomId];
-    let errorCode: string | undefined;
-    if (!invitation && historyLookup) {
-      try {
-        const messages: Array<{ text?: string }> = await historyLookup();
-        for (const message of messages) {
-          const found = parseInvitation(message.text);
-          if (found) {
-            invitation = found;
-            if (this.enabled) {
-              this.state.invitations[roomId] = found;
-              await this.persist();
-            }
-            break;
-          }
-        }
-      } catch {
-        errorCode = 'meeting_history_unavailable';
-      }
-    }
-    if (!invitation && !errorCode) errorCode = this.enabled ? 'meeting_invitation_not_found' : 'meeting_join_unavailable';
-    const candidateId = randomUUID();
-    this.candidates.set(candidateId, {
-      id: candidateId,
-      roomId,
-      parentId,
-      invitation,
-      errorCode,
-      expiresAt: Date.now() + this.cfg.candidateTtlMs,
-      consumed: false,
-    });
-    const note = `\n[meeting_join_candidate candidate_id="${candidateId}" credentials_available="${Boolean(invitation)}" room_id="${roomId}"]`;
-    return { text: `${sanitized.trimEnd()}${note}`, candidateId, credentialsAvailable: Boolean(invitation), redacted: Boolean(direct) };
-  }
-
-  async join(candidateId: string) {
-    const candidate = this.candidates.get(candidateId);
-    if (!candidate || candidate.consumed || Date.now() > candidate.expiresAt) {
-      return { accepted: false, state: 'failed', error_code: 'meeting_candidate_invalid' };
-    }
-    candidate.consumed = true;
-    if (candidate.errorCode || !candidate.invitation) {
-      return { accepted: false, state: 'failed', error_code: candidate.errorCode ?? 'meeting_invitation_not_found' };
+  async join(input: any) {
+    const roomId = String(input?.room_id ?? '').trim();
+    const parentId = String(input?.parent_id ?? '').trim() || undefined;
+    const invitation = createInvitation(input?.meeting_link, input?.meeting_password);
+    if (!roomId || !invitation) {
+      return { accepted: false, state: 'failed', error_code: 'meeting_credentials_invalid' };
     }
     if (!this.enabled) return { accepted: false, state: 'failed', error_code: 'meeting_join_unavailable' };
 
-    const existing = Object.values(this.state.sessions).find((session) => session.roomId === candidate.roomId && ACTIVE_STATES.has(session.state));
+    const existing = Object.values(this.state.sessions).find((session) => session.roomId === roomId && ACTIVE_STATES.has(session.state));
     if (existing) {
-      if (existing.invitation.joinLink === candidate.invitation.joinLink) {
+      if (existing.invitation.joinLink === invitation.joinLink) {
         return { accepted: true, session_id: existing.id, state: existing.state };
       }
       return { accepted: false, state: existing.state, error_code: 'active_meeting_requires_leave' };
@@ -352,9 +272,9 @@ export class MeetingJoinService {
 
     const session: Session = {
       id: randomUUID(),
-      roomId: candidate.roomId,
-      parentId: candidate.parentId,
-      invitation: candidate.invitation,
+      roomId,
+      parentId,
+      invitation,
       state: 'preparing',
       recoveryAttempts: 0,
       createdAt: nowIso(),
@@ -618,4 +538,4 @@ export class MeetingJoinService {
   }
 }
 
-export { parseInvitation, redactInvitation, EncryptedState, isLoopback };
+export { createInvitation, EncryptedState, isLoopback };

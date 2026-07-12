@@ -1,4 +1,3 @@
-import bridge from './bridge.cjs';
 import { MeetingJoinService } from './service';
 
 function toToolResult(value: unknown) {
@@ -8,17 +7,21 @@ function toToolResult(value: unknown) {
 function register(api: any) {
   const pluginConfig = api.config?.plugins?.entries?.['meeting-join']?.config ?? api.config ?? {};
   const service = new MeetingJoinService(api.runtime, pluginConfig, api.logger ?? console);
-  bridge.setMeetingJoinService(service);
 
   api.registerTool({
     name: 'join_webex_meeting',
-    description: 'Join the Webex meeting represented by a sanitized meeting candidate. The candidate contains no credentials.',
+    description: 'Join a Webex meeting using the meeting credentials supplied in the Webex request.',
     parameters: {
       type: 'object',
-      properties: { candidate_id: { type: 'string', description: 'Opaque meeting candidate ID from the inbound Webex context.' } },
-      required: ['candidate_id'],
+      properties: {
+        room_id: { type: 'string', description: 'Current Webex RoomId.' },
+        parent_id: { type: 'string', description: 'Current MessageThreadId when present.' },
+        meeting_link: { type: 'string', description: 'HTTPS Webex meeting link from the invitation.' },
+        meeting_password: { type: 'string', description: 'Ordinary Meeting password from the invitation; do not use the video-system password.' },
+      },
+      required: ['room_id', 'meeting_link', 'meeting_password'],
     },
-    execute: async (_id: string, args: any) => toToolResult(await service.join(String(args?.candidate_id ?? ''))),
+    execute: async (_id: string, args: any) => toToolResult(await service.join(args)),
   }, { optional: true });
 
   api.registerTool({
