@@ -6,12 +6,13 @@
 const { getAccessToken } = require('./token');
 const { shouldResolve } = require('./gate');
 const { alreadyHandled, markHandled } = require('./dedupe');
-const { resolveJoinLink } = require('./meeting-lookup');
+const { resolveWebLink } = require('./meeting-lookup');
 const { recordJoinLink } = require('./store');
 
 async function handleInbound(payload, { cfg, log }) {
-  log?.info?.(`[meetingfinder] raw payload: ${JSON.stringify(payload)}`);
   if (payload?.resource !== 'meetings' || payload?.event !== 'started') return;
+
+  log?.info?.(`[meetingfinder] raw payload: ${JSON.stringify(payload)}`);
 
   const data = payload.data ?? {};
   const meetingId = data.id;
@@ -36,9 +37,9 @@ async function handleInbound(payload, { cfg, log }) {
 
   const token = getAccessToken() ?? cfg.accessToken ?? cfg.token;
 
-  let joinInfo;
+  let joinLink;
   try {
-    joinInfo = await resolveJoinLink(token, data);
+    joinLink = await resolveWebLink(token, meetingId);
   } catch (err) {
     log?.warn?.(`[meetingfinder] failed to resolve join link for ${meetingId}: ${err?.message}`);
     return;
@@ -50,10 +51,10 @@ async function handleInbound(payload, { cfg, log }) {
     roomId,
     title: data.title,
     start: data.start,
-    joinLink: joinInfo.joinLink,
+    joinLink,
   });
 
-  log?.info?.(`[meetingfinder] resolved join link for meetingId=${meetingId} roomId=${roomId}`);
+  log?.info?.(`[meetingfinder] resolved join link for meetingId=${meetingId} roomId=${roomId}: ${joinLink}`);
 }
 
 module.exports = { handleInbound };
