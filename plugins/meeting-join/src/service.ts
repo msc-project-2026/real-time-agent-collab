@@ -324,7 +324,7 @@ export class MeetingJoinService {
       expiresAt: Date.now() + this.cfg.candidateTtlMs,
       consumed: false,
     });
-    const note = `\n[meeting_join_candidate id="${candidateId}" credentials_available="${Boolean(invitation)}" room_id="${roomId}"]`;
+    const note = `\n[meeting_join_candidate candidate_id="${candidateId}" credentials_available="${Boolean(invitation)}" room_id="${roomId}"]`;
     return { text: `${sanitized.trimEnd()}${note}`, candidateId, credentialsAvailable: Boolean(invitation), redacted: Boolean(direct) };
   }
 
