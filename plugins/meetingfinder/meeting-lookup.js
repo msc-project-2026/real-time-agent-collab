@@ -13,7 +13,7 @@ const RETRY_DELAY_MS = 4000;
 
 
 async function findActiveMeetingForRoom(token, roomId) {
-  const params = new URLSearchParams({ roomId, state: 'active', meetingType: 'meeting' });
+  const params = new URLSearchParams({ roomId, state: 'inProgress', meetingType: 'meeting' });
   const res = await webexFetch(token, `/meetings?${params.toString()}`);
   const items = res?.items ?? [];
   if (items.length === 0) return null;
