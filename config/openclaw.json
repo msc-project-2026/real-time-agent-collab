@@ -89,6 +89,16 @@
     }
   ],
   "channels": {
+    "meetingfinder": {
+      "enabled": true,
+      "accessToken": "${WEBEX_ACCESS_TOKEN}",
+      "refreshToken": "${WEBEX_REFRESH_TOKEN}",
+      "clientId": "${WEBEX_CLIENT_ID}",
+      "clientSecret": "${WEBEX_CLIENT_SECRET}",
+      "webhookUrl": "${MEETINGFINDER_WEBHOOK_URL}",
+      "webhookSecret": "${MEETINGFINDER_WEBHOOK_SECRET}",
+      "roomIds": []
+    },
     "source-observer": {
       "enabled": true
     },
@@ -167,6 +177,7 @@
     "load": {
       "paths": [
         "plugins/meeting-join",
+        "plugins/meetingfinder",
         "plugins/webex",
         "plugins/openclaw",
         "plugins/source-observer",
@@ -182,6 +193,9 @@
           "recoveryMaxAttempts": 5,
           "recoveryBaseDelayMs": 1000
         }
+      },
+      "meetingfinder": {
+        "enabled": true
       },
       "source-observer": {
         "enabled": true
