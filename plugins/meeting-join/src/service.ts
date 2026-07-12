@@ -5,6 +5,7 @@ import path from 'node:path';
 const WEBEX_API = 'https://webexapis.com/v1';
 const ACTIVE_STATES = new Set([
   'preparing',
+  'ready_for_browser',
   'joining',
   'waiting_for_admission',
   'joined',
@@ -28,6 +29,7 @@ type Session = {
   state: string;
   lastNotifiedState?: string;
   tabId?: string;
+  tabLabel?: string;
   recoveryAttempts: number;
   leaveRequested?: boolean;
   createdAt: string;
@@ -283,8 +285,23 @@ export class MeetingJoinService {
     this.state.sessions[session.id] = session;
     await this.persist();
     await this.transition(session, 'preparing');
-    this.launch(session).catch((error) => this.fail(session, safeErrorCode(error)));
-    return { accepted: true, session_id: session.id, state: 'preparing' };
+    try {
+      await this.launch(session);
+      await this.transition(session, 'ready_for_browser');
+      return {
+        accepted: true,
+        session_id: session.id,
+        state: 'ready_for_browser',
+        browser_profile: this.cfg.browserProfile,
+        tab_id: session.tabId,
+        tab_label: session.tabLabel,
+        next_action: 'Inspect this tab with the browser tool and activate Join Webex meeting when the page is ready.',
+      };
+    } catch (error) {
+      const code = safeErrorCode(error);
+      await this.fail(session, code);
+      return { accepted: false, session_id: session.id, state: 'failed', error_code: code };
+    }
   }
 
   async leave(roomId: string) {
@@ -344,7 +361,23 @@ export class MeetingJoinService {
         res.statusCode = 200;
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.setHeader('Cache-Control', 'no-store');
-        res.end(`<!doctype html><meta charset="utf-8"><title>OpenClaw Meeting Runner</title><script src="${url.pathname}?sdk=1"></script><script src="${url.pathname}?asset=1"></script>`);
+        res.end(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenClaw Webex Meeting Runner</title>
+</head>
+<body>
+  <main>
+    <h1>Webex meeting</h1>
+    <p id="meeting-status" role="status" aria-live="polite">Ready to join with the configured Webex user.</p>
+    <button id="join-meeting" type="button">Join Webex meeting</button>
+  </main>
+  <script src="${url.pathname}?sdk=1"></script>
+  <script src="${url.pathname}?asset=1"></script>
+</body>
+</html>`);
         return true;
       }
       const nonce = url.searchParams.get('nonce');
@@ -414,7 +447,9 @@ export class MeetingJoinService {
     this.runnerNonces.set(nonce, { sessionId: session.id, expiresAt: Date.now() + 60_000 });
     const port = Number(process.env.OPENCLAW_GATEWAY_PORT ?? process.env.PORT ?? 18789);
     const runnerUrl = `http://127.0.0.1:${port}/meeting-join/runner/${session.id}?nonce=${encodeURIComponent(nonce)}`;
-    session.tabId = await this.browser.open(runnerUrl, `meeting:${Buffer.from(session.roomId).toString('base64url').slice(0, 20)}`);
+    session.tabLabel = `meeting:${Buffer.from(session.roomId).toString('base64url').slice(0, 20)}`;
+    session.tabId = await this.browser.open(runnerUrl, session.tabLabel);
+    if (!session.tabId) throw new Error('Browser did not return a meeting tab identifier');
     session.updatedAt = nowIso();
     await this.persist();
   }
@@ -479,6 +514,7 @@ export class MeetingJoinService {
   private async notify(session: Session, state: string, errorCode?: string) {
     const labels: Record<string, string> = {
       preparing: 'Preparing the Webex meeting session.',
+      ready_for_browser: 'The secure meeting page is ready for browser review.',
       joining: 'Joining the Webex meeting.',
       waiting_for_admission: 'Waiting for the host to admit the meeting account.',
       joined: 'Joined the Webex meeting.',

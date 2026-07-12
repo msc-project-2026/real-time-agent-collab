@@ -5,6 +5,12 @@ declare global {
 const base = window.location.pathname.replace(/\/$/, '');
 let meeting: any;
 let leaving = false;
+let waitingForAdmission = false;
+
+function setStatus(message: string) {
+  const status = document.querySelector<HTMLElement>('#meeting-status');
+  if (status) status.textContent = message;
+}
 
 async function request(path: string, init: RequestInit = {}) {
   const response = await fetch(`${base}/${path}`, { credentials: 'same-origin', ...init });
@@ -30,33 +36,54 @@ function classify(error: unknown) {
 async function start() {
   if (window.meetingJoinStarted) return;
   window.meetingJoinStarted = true;
+  const joinButton = document.querySelector<HTMLButtonElement>('#join-meeting');
+  if (joinButton) joinButton.disabled = true;
+  setStatus('Connecting to Webex…');
   try {
     const boot = await request('bootstrap');
     await event('joining');
+    setStatus('Authenticating the configured Webex user…');
     const webex: any = window.Webex?.init({
       appName: 'openclaw-meeting-join',
       appPlatform: 'openclaw',
       credentials: { access_token: boot.accessToken },
     });
+    if (!webex) throw new Error('Webex Meetings SDK is unavailable');
     await new Promise<void>((resolve, reject) => {
       webex.once('ready', resolve);
       webex.once('error', reject);
     });
     await webex.meetings.register();
     meeting = await webex.meetings.create(boot.joinLink);
-    meeting.on?.('meeting:self:guestAdmitted', () => event('joined').catch(() => undefined));
-    meeting.on?.('meeting:self:lobbyWaiting', () => event('waiting_for_admission').catch(() => undefined));
+    meeting.on?.('meeting:self:guestAdmitted', () => {
+      waitingForAdmission = false;
+      setStatus('Joined the Webex meeting.');
+      event('joined').catch(() => undefined);
+    });
+    meeting.on?.('meeting:self:lobbyWaiting', () => {
+      waitingForAdmission = true;
+      setStatus('Waiting for the host to admit this Webex user.');
+      event('waiting_for_admission').catch(() => undefined);
+    });
     meeting.on?.('error', (error: unknown) => event('error', classify(error)).catch(() => undefined));
     if (meeting.passwordStatus === 'REQUIRED') {
+      setStatus('Verifying the meeting password…');
       const result = await meeting.verifyPassword(boot.password);
+      if (result?.requiredCaptcha) throw new Error('captcha required');
       if (!result?.isPasswordValid) throw new Error('meeting password rejected');
     }
+    setStatus('Joining the Webex meeting without media…');
     await meeting.join(); // Phase 1 intentionally joins without media.
-    await event('joined');
+    if (!waitingForAdmission) {
+      setStatus('Joined the Webex meeting.');
+      await event('joined');
+    }
     setInterval(() => event('heartbeat').catch(() => undefined), 15_000);
     setInterval(checkControl, 1000);
   } catch (error) {
-    await event('error', classify(error)).catch(() => undefined);
+    const code = classify(error);
+    setStatus(`Could not join the Webex meeting (${code}).`);
+    await event('error', code).catch(() => undefined);
   }
 }
 
@@ -73,4 +100,4 @@ async function checkControl() {
   }
 }
 
-start();
+document.querySelector('#join-meeting')?.addEventListener('click', () => start());

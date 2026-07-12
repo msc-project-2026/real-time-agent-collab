@@ -47,7 +47,7 @@
         "id": "main",
         "default": true,
         "tools": {
-          "alsoAllow": ["join_webex_meeting", "leave_webex_meeting"]
+          "alsoAllow": ["browser", "join_webex_meeting", "leave_webex_meeting"]
         }
       },
       {
