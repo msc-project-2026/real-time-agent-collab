@@ -1,21 +1,19 @@
 // Resolves the human-style join link (the same j.php?MTID=... URL shown in a
 // meeting invitation) via GET /meetings/{meetingId}.
-
+//
+// Previously also called POST /meetings/join for a second, SDK/programmatic-style
+// link (integrationJoinToken-based) — dropped after testing showed that link is
+// short-lived and tied to a specific identity, neither of which apply to the
+// MTID-style webLink returned here.
 'use strict';
 
 const { webexFetch } = require('./api');
 
 const RETRY_DELAY_MS = 4000;
 
-// UNVERIFIED until tested live: List Meetings' roomId filter is documented for
-// meetings created via the API with adhoc:true. We don't have confirmation it
-// behaves the same for meetings started via the client's "Start meeting" button.
-// This function is the thing being tested — not yet trusted infrastructure.
-//
-// Finds the currently active meeting in a given room, if any, and resolves its
-// webLink in one call. Returns null if nothing active is found.
+
 async function findActiveMeetingForRoom(token, roomId) {
-  const params = new URLSearchParams({ roomId, state: 'active' });
+  const params = new URLSearchParams({ roomId, state: 'active', meetingType: 'meeting' });
   const res = await webexFetch(token, `/meetings?${params.toString()}`);
   const items = res?.items ?? [];
   if (items.length === 0) return null;
