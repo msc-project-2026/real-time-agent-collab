@@ -5,94 +5,56 @@ const { buildProcessingInstruction } = require('./instructions/processing');
 const { buildRoutingInstruction } = require('./instructions/routing');
 const { dispatchToAgentForSpace } = require('./dispatch');
 const { getPluginRuntime } = require('./runtime');
+const { stagePendingBatch } = require('./lifecycle/stage-pending');
+const { appendPendingMessage } = require('./lifecycle/append-pending');
+const { schedulePendingBatchStaging } = require('./lifecycle/schedule-pending');
 
 // *** Helpers
-// Make handler of staging batch result
-function makeStageResultHandler({ spaceId, account, log }) {
+// Make handler for parsing message routing result
+function makeRouteResultHandler({ message, account, log }) {
+  const spaceId = message.roomId;
+
   return async ({ text }) => {
-    log?.info?.(
-      `[webex:${account.accountId}] inspecting agent output for staged batch`,
-      {
-        spaceId,
-        text,
-      }
-    );
+    log?.info?.(`[webex:${account.accountId}] inspecting agent route output`, {
+      spaceId,
+      text,
+    });
 
     let parsed;
     try {
       parsed = JSON.parse(text);
     } catch (err) {
-      log?.warn?.(`[webex:${account.accountId}] agent output was not JSON`, {
-        spaceId,
-        error: err?.message ?? String(err),
-        text,
-      });
+      log?.warn?.(
+        `[webex:${account.accountId}] agent route output was not JSON`,
+        {
+          spaceId,
+          error: err?.message ?? String(err),
+          text,
+        }
+      );
       return;
     }
 
     log?.info?.(
-      `[webex:${account.accountId}] parsed agent output ${JSON.stringify({
+      `[webex:${account.accountId}] parsed agent route output ${JSON.stringify({
         spaceId,
         route: parsed.route,
-        hasStagedBatch: Boolean(parsed.stagedBatch),
-        stagedBatch: parsed.stagedBatch ?? null,
       })}`
     );
 
-    const isStageResult =
-      parsed.route === 'stage_pending_batch' ||
-      parsed.route === 'append_and_stage';
-
-    if (!isStageResult) {
-      log?.info?.(
-        `[webex:${account.accountId}] agent output is not a staging result`,
-        {
-          spaceId,
-          route: parsed.route,
-        }
-      );
-      return;
-    }
-
-    const batchId = parsed.stagedBatch?.batchId;
-    const messageCount = parsed.stagedBatch?.messageCount ?? 0;
-
-    if (!batchId || messageCount <= 0) {
-      log?.info?.(
-        `[webex:${account.accountId}] staged batch result has nothing to process`,
-        {
-          spaceId,
-          route: parsed.route,
-          batchId: batchId ?? null,
-          messageCount,
-        }
-      );
-      return;
-    }
-
-    log?.info?.(
-      `[webex:${account.accountId}] dispatching staged batch for processing`,
-      {
-        spaceId,
-        batchId,
-        messageCount,
-        route: parsed.route,
-      }
-    );
-
     try {
-      await handleProcessStagedBatchRequest({
-        spaceId,
-        batchId,
+      await handleRouteResult({
+        routeResult: parsed,
+        message,
         account,
         log,
       });
     } catch (err) {
       log?.error?.(
-        `[webex:${account.accountId}] failed to dispatch staged batch for processing`,
+        `[webex:${account.accountId}] failed to handle route result`,
         {
           spaceId,
-          batchId,
+          route: parsed.route,
           error: err?.message ?? String(err),
         }
       );
@@ -102,69 +64,82 @@ function makeStageResultHandler({ spaceId, account, log }) {
 }
 
 // *** Handlers
-// Stage a pending batch
-async function handleStagePendingBatchRequest({ spaceId, account, log }) {
-  if (!spaceId) throw new Error('spacedId is required');
-
-  const routingInstruction = buildRoutingInstruction();
-
-  function buildStagePendingBatchCtxPayload(sessionKeySuffix) {
-    const context = {
-      eventType: 'stage_pending_batch',
-      internal: true,
+// Handle route result
+async function handleRouteResult({ routeResult, message, account, log }) {
+  const spaceId = message.roomId;
+  if (!routeResult?.route) {
+    log?.warn?.(`[webex:${account.accountId}] route result missing route`, {
       spaceId,
-      createdAt: new Date().toISOString(),
-    };
+      routeResult,
+    });
 
-    return {
-      Body: '',
-      RawBody: '',
-      CommandBody: [
-        routingInstruction,
-        '',
-        'Internal collaboration event:',
-        '',
-        '```json',
-        JSON.stringify(context, null, 2),
-        '```',
-        '',
-        'Route this event as stage_pending_batch.',
-      ].join('\n'),
-
-      From: 'webex:internal-scheduler',
-      To: `webex:${spaceId}`,
-
-      SessionKey: sessionKeySuffix
-        ? `agent:main:webex:${spaceId}:${sessionKeySuffix}`
-        : `agent:main:webex:${spaceId}`,
-
-      WebexRoomId: spaceId,
-      AccountId: account.accountId,
-      ChatType: 'group',
-      SenderName: 'internal-scheduler',
-      SenderId: 'internal-scheduler',
-      Provider: 'webex',
-      Surface: 'webex',
-      MessageSid: `stage_pending_batch:${spaceId}:${Date.now()}`,
-      Timestamp: context.createdAt,
-      OriginatingChannel: 'webex',
-      OriginatingTo: `webex:${spaceId}`,
-      MessageThreadId: null,
-    };
+    return;
   }
 
-  await dispatchToAgentForSpace({
-    pluginRuntime: getPluginRuntime(),
+  switch (routeResult.route) {
+    case 'append_only': {
+      await appendPendingMessage({ spaceId, message });
+
+      schedulePendingBatchStaging({
+        spaceId,
+        account,
+        log,
+        batchStagingHandler: handleStagePendingBatchRequest,
+      });
+
+      return;
+    }
+
+    case 'append_and_stage': {
+      await appendPendingMessage({ spaceId, message });
+
+      await handleStagePendingBatchRequest({ spaceId, account, log });
+
+      return;
+    }
+
+    default: {
+      // unknown route
+      log?.warn?.(
+        `[webex:${account.accountId}] unknown or unsupported route result`,
+        {
+          spaceId,
+          route: routeResult.route ?? null,
+          routeResult,
+        }
+      );
+
+      return;
+    }
+  }
+}
+
+// Stage a pending batch
+async function handleStagePendingBatchRequest({ spaceId, account, log }) {
+  if (!spaceId) throw new Error('spaceId is required');
+  if (!account) throw new Error('account is required');
+
+  const result = await stagePendingBatch(spaceId);
+
+  log?.info?.(`[webex:${account.accountId}] pending batch staging result`, {
     spaceId,
+    staged: result.staged,
+    batchId: result.batchId,
+    messageCount: result.messageCount,
+  });
+
+  if (!result.staged || result.messageCount <= 0) {
+    return result;
+  }
+
+  await handleProcessStagedBatchRequest({
+    spaceId,
+    batchId: result.batchId,
     account,
     log,
-    buildCtxPayload: buildStagePendingBatchCtxPayload,
-    onAgentOutput: makeStageResultHandler({
-      spaceId,
-      account,
-      log,
-    }),
   });
+
+  return result;
 }
 
 // Process staged batch
@@ -233,7 +208,7 @@ async function handleProcessStagedBatchRequest({
 }
 
 module.exports = {
-  makeStageResultHandler,
+  makeRouteResultHandler,
   handleStagePendingBatchRequest,
   handleProcessStagedBatchRequest,
 };

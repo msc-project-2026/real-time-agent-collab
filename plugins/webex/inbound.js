@@ -6,11 +6,7 @@ const { webexFetch } = require('./api');
 const { getAccessToken } = require('./token');
 const { buildRoutingInstruction } = require('./instructions/routing');
 const { dispatchToAgentForSpace } = require('./dispatch');
-const { schedulePendingBatchStaging } = require('./lifecycle/schedule-pending');
-const {
-  makeStageResultHandler,
-  handleStagePendingBatchRequest,
-} = require('./internal-events');
+const { makeRouteResultHandler } = require('./internal-events');
 const { getPluginRuntime } = require('./runtime');
 
 // DmPolicy enforcement
@@ -127,18 +123,11 @@ async function handleInboundWebexMessage(
     account,
     log,
     buildCtxPayload: buildRealWebexCtxPayload,
-    onAgentOutput: makeStageResultHandler({
-      spaceId: msg.roomId,
+    onAgentOutput: makeRouteResultHandler({
+      message: msg,
       account,
       log,
     }),
-  });
-
-  schedulePendingBatchStaging({
-    spaceId: msg.roomId,
-    account,
-    log,
-    batchStagingHandler: handleStagePendingBatchRequest,
   });
 }
 

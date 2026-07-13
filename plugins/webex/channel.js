@@ -11,10 +11,10 @@ const {
   ensureWebhook,
   deregisterWebhooks,
 } = require('./token');
+const { targets, normPath } = require('./webhook');
 const { buildMsgBody } = require('./send');
 const { handleInboundWebexMessage } = require('./inbound');
 const { handleStagePendingBatchRequest } = require('./internal-events');
-const { targets, normPath } = require('./webhook');
 const {
   runPendingBatchStagingRecovery,
 } = require('./lifecycle/schedule-pending');

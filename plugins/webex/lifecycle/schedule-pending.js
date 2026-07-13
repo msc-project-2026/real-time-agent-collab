@@ -99,16 +99,36 @@ async function scanPendingBatchStaging({ account, log, batchStagingHandler }) {
       continue;
     }
 
-    if (!state.scheduledRunAfter) continue;
+    const scheduledAt = new Date(state.scheduledRunAfter).getTime();
 
-    if (new Date(state.scheduledRunAfter).getTime() <= now) {
+    if (!Number.isFinite(scheduledAt)) {
+      log?.warn?.(`[webex:${account.accountId}] invalid scheduledRunAfter`, {
+        spaceId,
+        scheduledRunAfter: state.scheduledRunAfter,
+      });
+      continue;
+    }
+
+    if (scheduledAt <= now) {
       log?.info?.(`[webex:${account.accountId}] overdue pending batch found`, {
         spaceId,
         scheduledRunAfter: state.scheduledRunAfter,
         messageCount: state.messageCount,
       });
 
-      await batchStagingHandler({ spaceId, account, log });
+      try {
+        await batchStagingHandler({ spaceId, account, log });
+      } catch (err) {
+        log?.error?.(
+          `[webex:${account.accountId}] failed to recover pending batch`,
+          {
+            spaceId,
+            error: err?.message ?? String(err),
+          }
+        );
+
+        continue;
+      }
     }
   }
 }
