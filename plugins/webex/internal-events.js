@@ -119,7 +119,7 @@ async function handleStagePendingBatchRequest({ spaceId, account, log }) {
   if (!spaceId) throw new Error('spaceId is required');
   if (!account) throw new Error('account is required');
 
-  const result = await stagePendingBatch(spaceId);
+  const result = await stagePendingBatch({ spaceId });
 
   log?.info?.(`[webex:${account.accountId}] pending batch staging result`, {
     spaceId,
