@@ -190,7 +190,7 @@
         "config": {
           "maxConcurrentMeetings": 4,
           "browserProfile": "meeting-join",
-          "requireBrowserReview": true,
+          "requireBrowserReview": false,
           "recoveryMaxAttempts": 5,
           "recoveryBaseDelayMs": 1000
         }

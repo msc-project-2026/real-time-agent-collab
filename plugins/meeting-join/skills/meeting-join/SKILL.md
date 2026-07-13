@@ -23,7 +23,12 @@ message directly.
   inspect again to verify the visible status.
 - The scoped runner tools resolve the correct browser tab internally. Never
   pass a `targetId` to them. If an action reports a retryable stale/ref error,
-  inspect again and choose a fresh ref based on the changed page.
+  inspect again and choose a fresh ref based on the changed page. Do not retry
+  an old ref without a new inspection: each ref is internally bound to the raw
+  target ID returned by exactly one snapshot and can be consumed only once.
+- Treat `browser_target_id_mismatch`, `browser_action_invalid`, and
+  `browser_action_unsupported` as plugin/runtime compatibility failures. Do not
+  retry them or fall back to constructing a generic browser target ID.
 - Only if a scoped runner tool itself remains unavailable after one fresh
   inspection may you recover with the generic `browser` tool: focus the
   returned `tab_id`/`tab_label` once, then omit `targetId` from subsequent

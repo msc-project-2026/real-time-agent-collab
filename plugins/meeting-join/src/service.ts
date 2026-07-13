@@ -30,11 +30,35 @@ type Session = {
   lastNotifiedState?: string;
   tabId?: string;
   tabLabel?: string;
+  inspectedTargetId?: string;
+  inspectedRefs?: string[];
   recoveryAttempts: number;
   leaveRequested?: boolean;
   createdAt: string;
   updatedAt: string;
 };
+
+type BrowserControlErrorDetails = {
+  status?: number;
+  controlCode?: string;
+  controlError?: string;
+};
+
+class BrowserControlError extends Error {
+  code: string;
+  status?: number;
+  controlCode?: string;
+  controlError?: string;
+
+  constructor(message: string, code: string, details: BrowserControlErrorDetails = {}) {
+    super(message);
+    this.name = 'BrowserControlError';
+    this.code = code;
+    this.status = details.status;
+    this.controlCode = details.controlCode;
+    this.controlError = details.controlError;
+  }
+}
 
 type PersistedState = {
   version: 1;
@@ -47,6 +71,10 @@ function nowIso() {
 }
 
 function safeErrorCode(error: unknown) {
+  const controlCode = String((error as any)?.controlCode ?? '');
+  if (controlCode === 'ACT_TARGET_ID_MISMATCH') return 'browser_target_id_mismatch';
+  if (controlCode === 'ACT_INVALID_REQUEST' || controlCode === 'ACT_KIND_REQUIRED') return 'browser_action_invalid';
+  if (controlCode === 'ACT_EXISTING_SESSION_UNSUPPORTED') return 'browser_action_unsupported';
   const explicitCode = String((error as any)?.code ?? '');
   if (explicitCode === 'browser_control_unavailable' || explicitCode === 'browser_control_unauthorized') {
     return explicitCode;
@@ -58,6 +86,40 @@ function safeErrorCode(error: unknown) {
   if (message.includes('capacity')) return 'capacity_reached';
   if (message.includes('history')) return 'meeting_history_unavailable';
   return 'meeting_join_failed';
+}
+
+function browserActionFailure(error: unknown) {
+  const controlCode = String((error as any)?.controlCode ?? '');
+  const message = String((error as any)?.controlError ?? (error as any)?.message ?? error ?? '').toLowerCase();
+  if (controlCode === 'ACT_TARGET_ID_MISMATCH') {
+    return { error_code: 'browser_target_id_mismatch', retryable: false };
+  }
+  if (controlCode === 'ACT_INVALID_REQUEST' || controlCode === 'ACT_KIND_REQUIRED') {
+    return { error_code: 'browser_action_invalid', retryable: false };
+  }
+  if (controlCode === 'ACT_EXISTING_SESSION_UNSUPPORTED') {
+    return { error_code: 'browser_action_unsupported', retryable: false };
+  }
+  if (message.includes('unknown ref') || message.includes('stale') || message.includes('tab not found')) {
+    return { error_code: 'meeting_runner_snapshot_stale', retryable: true };
+  }
+  const code = safeErrorCode(error);
+  return {
+    error_code: code === 'browser_control_unauthorized' ? code : 'meeting_runner_action_failed',
+    retryable: code !== 'browser_control_unauthorized',
+  };
+}
+
+function snapshotRefs(snapshot: any) {
+  const refs = new Set<string>();
+  if (snapshot?.refs && typeof snapshot.refs === 'object') {
+    for (const ref of Object.keys(snapshot.refs)) {
+      if (/^(?:\d+|e\d+|ax\d+)$/.test(ref)) refs.add(ref);
+    }
+  }
+  const text = String(snapshot?.snapshot ?? snapshot?.nodes ?? '');
+  for (const match of text.matchAll(/(?:\[ref=|aria-ref=["'])(\d+|e\d+|ax\d+)(?:\]|["'])/g)) refs.add(match[1]);
+  return [...refs];
 }
 
 function isLoopback(address?: string) {
@@ -168,7 +230,7 @@ class BrowserControl {
 
   private async request(method: string, pathname: string, body?: unknown) {
     const token = process.env.OPENCLAW_GATEWAY_TOKEN;
-    if (!token) throw Object.assign(new Error('OPENCLAW_GATEWAY_TOKEN is required for browser control'), { code: 'browser_control_unauthorized' });
+    if (!token) throw new BrowserControlError('OPENCLAW_GATEWAY_TOKEN is required for browser control', 'browser_control_unauthorized');
     let response: Response;
     try {
       response = await fetch(`${this.baseUrl}${pathname}${pathname.includes('?') ? '&' : '?'}profile=${encodeURIComponent(this.profile)}`, {
@@ -180,13 +242,20 @@ class BrowserControl {
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
     } catch (cause) {
-      throw Object.assign(new Error('OpenClaw browser control is unreachable', { cause }), { code: 'browser_control_unavailable' });
+      throw new BrowserControlError('OpenClaw browser control is unreachable', 'browser_control_unavailable', {
+        controlError: String((cause as any)?.message ?? cause ?? ''),
+      });
     }
     if (!response.ok) {
+      const responseBody: any = await response.json().catch(() => ({}));
       const code = response.status === 401 || response.status === 403
         ? 'browser_control_unauthorized'
         : 'browser_control_unavailable';
-      throw Object.assign(new Error(`Browser control ${method} ${pathname} failed (${response.status})`), { code });
+      throw new BrowserControlError(`Browser control ${method} ${pathname} failed (${response.status})`, code, {
+        status: response.status,
+        controlCode: typeof responseBody?.code === 'string' ? responseBody.code : undefined,
+        controlError: typeof responseBody?.error === 'string' ? responseBody.error : undefined,
+      });
     }
     return response.json().catch(() => ({}));
   }
@@ -196,11 +265,10 @@ class BrowserControl {
   }
 
   async open(url: string, label: string) {
-    const result: any = await this.request('POST', '/tabs/open', { url });
+    // Assign the stable label as part of tab creation. A separate label request
+    // leaves a race where the raw Chromium target can be replaced in between.
+    const result: any = await this.request('POST', '/tabs/open', { url, label });
     const tabId = result.suggestedTargetId ?? result.targetId ?? result.id;
-    if (tabId) {
-      await this.request('POST', '/tabs/action', { action: 'label', targetId: tabId, label }).catch(() => undefined);
-    }
     return tabId;
   }
 
@@ -213,10 +281,10 @@ class BrowserControl {
     return this.request('GET', `/snapshot?targetId=${encodeURIComponent(tabId)}&format=ai`);
   }
 
-  click(tabId: string, ref: string) {
-    // Call the control API directly with exactly one targetId. This avoids the
-    // agent browser tool's outer targetId vs nested request.targetId mismatch.
-    return this.request('POST', '/act', { kind: 'click', targetId: tabId, ref });
+  click(targetId: string, ref: string) {
+    // The raw targetId must come from the same snapshot as the ref. Include it
+    // exactly once in the HTTP action payload; there is no nested request ID.
+    return this.request('POST', '/act', { kind: 'click', targetId, ref });
   }
 }
 
@@ -358,15 +426,23 @@ export class MeetingJoinService {
     }
     try {
       const snapshot: any = await this.browser.snapshot(session.tabId);
+      const targetId = String(snapshot?.targetId ?? '').trim();
+      const refs = snapshotRefs(snapshot);
+      if (!targetId) throw new BrowserControlError('Meeting runner snapshot did not return a targetId', 'browser_control_unavailable');
+      session.inspectedTargetId = targetId;
+      session.inspectedRefs = refs;
       return {
         ok: true,
         session_id: session.id,
         state: session.state,
         snapshot: snapshot.snapshot ?? snapshot.nodes ?? '',
         refs: snapshot.refs ?? {},
+        target_binding: 'internal',
         truncated: Boolean(snapshot.truncated),
       };
     } catch (error) {
+      session.inspectedTargetId = undefined;
+      session.inspectedRefs = undefined;
       this.log?.warn?.(`[meeting-join] runner inspection failed: ${safeErrorCode(error)}`);
       return { ok: false, state: session.state, error_code: 'meeting_runner_inspection_failed', retryable: true };
     }
@@ -383,8 +459,14 @@ export class MeetingJoinService {
     if (!/^(?:\d+|e\d+|ax\d+)$/.test(normalizedRef)) {
       return { ok: false, state: session.state, error_code: 'meeting_runner_ref_invalid', retryable: true };
     }
+    if (!session.inspectedTargetId || !session.inspectedRefs?.includes(normalizedRef)) {
+      return { ok: false, state: session.state, error_code: 'meeting_runner_snapshot_required', retryable: true };
+    }
+    const inspectedTargetId = session.inspectedTargetId;
+    session.inspectedTargetId = undefined;
+    session.inspectedRefs = undefined;
     try {
-      await this.browser.click(session.tabId, normalizedRef);
+      await this.browser.click(inspectedTargetId, normalizedRef);
       return {
         ok: true,
         session_id: session.id,
@@ -393,8 +475,9 @@ export class MeetingJoinService {
         next_action: 'Inspect the meeting runner again to verify its visible status.',
       };
     } catch (error) {
-      this.log?.warn?.(`[meeting-join] runner action failed: ${safeErrorCode(error)}`);
-      return { ok: false, state: session.state, error_code: 'meeting_runner_action_failed', retryable: true };
+      const failure = browserActionFailure(error);
+      this.log?.warn?.(`[meeting-join] runner action failed: ${failure.error_code}`);
+      return { ok: false, state: session.state, ...failure };
     }
   }
 
@@ -531,6 +614,8 @@ export class MeetingJoinService {
     const port = Number(process.env.OPENCLAW_GATEWAY_PORT ?? process.env.PORT ?? 18789);
     const runnerUrl = `http://127.0.0.1:${port}/meeting-join/runner/${session.id}?nonce=${encodeURIComponent(nonce)}`;
     session.tabLabel = `meeting:${Buffer.from(session.roomId).toString('base64url').slice(0, 20)}`;
+    session.inspectedTargetId = undefined;
+    session.inspectedRefs = undefined;
     session.tabId = await this.browser.open(runnerUrl, session.tabLabel);
     if (!session.tabId) throw new Error('Browser did not return a meeting tab identifier');
     session.updatedAt = nowIso();
@@ -659,4 +744,4 @@ export class MeetingJoinService {
   }
 }
 
-export { BrowserControl, createInvitation, EncryptedState, isLoopback, safeErrorCode };
+export { BrowserControl, BrowserControlError, browserActionFailure, createInvitation, EncryptedState, isLoopback, safeErrorCode, snapshotRefs };
