@@ -195,7 +195,7 @@ Configured in `config/openclaw.json` under `channels.webex.allowFrom`. Edit that
 
 ### Meeting Join plugin
 
-`plugins/meeting-join` lets a Webex space member mention the bot with a natural-language meeting request (for example, `@bot join the meeting`) and include the meeting link and ordinary password in that message. The plugin opens a secure local runner in the OpenClaw-managed headless browser. The agent inspects that page with the `browser` tool and chooses its join action from a fresh semantic snapshot. The runner then joins through the Webex Meetings SDK as the dedicated licensed Webex OAuth user.
+`plugins/meeting-join` lets a Webex space member mention the bot with a natural-language meeting request (for example, `@bot join the meeting`) and include the meeting link and ordinary password in that message. The plugin opens a secure local runner in the OpenClaw-managed headless browser and automatically joins through the Webex Meetings SDK as the dedicated licensed Webex OAuth user. Set `plugins.entries.meeting-join.config.requireBrowserReview` to `true` only when an agent-reviewed snapshot-and-click handoff is explicitly required; session-scoped meeting tools then resolve the runner tab internally so the agent reasons over fresh refs without constructing generic browser `targetId` values.
 
 - The invitation must be in the same mentioned request as the join instruction.
 - Phase 1 joins without microphone, camera, screen-share, or media processing.

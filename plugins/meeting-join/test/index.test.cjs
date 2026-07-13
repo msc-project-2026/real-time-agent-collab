@@ -14,7 +14,12 @@ test('tool discovery registers tools without routes, hooks, or service startup',
   };
 
   register(api);
-  assert.deepEqual(tools, ['join_webex_meeting', 'leave_webex_meeting']);
+  assert.deepEqual(tools, [
+    'join_webex_meeting',
+    'leave_webex_meeting',
+    'inspect_webex_meeting_runner',
+    'act_webex_meeting_runner',
+  ]);
 });
 
 test('non-runtime discovery does not register active meeting surfaces', async () => {

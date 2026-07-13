@@ -46,6 +46,37 @@ function registerTools(api: any, resolveService: () => MeetingJoinService) {
     },
     execute: async (_id: string, args: any) => toToolResult(await resolveService().leave(String(args?.room_id ?? ''))),
   }, { optional: true });
+
+  api.registerTool({
+    name: 'inspect_webex_meeting_runner',
+    description: 'Inspect the secure meeting runner for one accepted join session and return a semantic snapshot with fresh action refs.',
+    parameters: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string', description: 'Session ID returned by join_webex_meeting.' },
+      },
+      required: ['session_id'],
+    },
+    execute: async (_id: string, args: any) => toToolResult(
+      await resolveService().inspectRunner(String(args?.session_id ?? ''))
+    ),
+  }, { optional: true });
+
+  api.registerTool({
+    name: 'act_webex_meeting_runner',
+    description: 'Click one fresh semantic ref in the secure meeting runner. The plugin resolves the session tab internally; do not supply a targetId.',
+    parameters: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string', description: 'Session ID returned by join_webex_meeting.' },
+        ref: { type: 'string', description: 'Fresh clickable ref selected from inspect_webex_meeting_runner output.' },
+      },
+      required: ['session_id', 'ref'],
+    },
+    execute: async (_id: string, args: any) => toToolResult(
+      await resolveService().actOnRunner(String(args?.session_id ?? ''), String(args?.ref ?? ''))
+    ),
+  }, { optional: true });
 }
 
 function register(api: any) {

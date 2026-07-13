@@ -47,7 +47,7 @@
         "id": "main",
         "default": true,
         "tools": {
-          "alsoAllow": ["browser", "join_webex_meeting", "leave_webex_meeting"]
+          "alsoAllow": ["browser", "join_webex_meeting", "leave_webex_meeting", "inspect_webex_meeting_runner", "act_webex_meeting_runner"]
         }
       },
       {
@@ -190,6 +190,7 @@
         "config": {
           "maxConcurrentMeetings": 4,
           "browserProfile": "meeting-join",
+          "requireBrowserReview": true,
           "recoveryMaxAttempts": 5,
           "recoveryBaseDelayMs": 1000
         }

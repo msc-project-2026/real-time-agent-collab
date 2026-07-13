@@ -5,7 +5,7 @@ const test = require('node:test');
 const { mkdtemp, readFile, rm } = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { createInvitation, EncryptedState, safeErrorCode } = require('../dist/service.cjs');
+const { BrowserControl, createInvitation, EncryptedState, safeErrorCode } = require('../dist/service.cjs');
 
 const JOIN_LINK = 'https://meet1753491728593-7008.webex.com/meet1753491728593-7008/j.php?MTID=m0ceda7e17bef71adc7e2f13b63c51476';
 
@@ -23,6 +23,30 @@ test('rejects a non-Webex link or an empty meeting password', () => {
 test('reports browser-control failures separately from Webex meeting failures', () => {
   assert.equal(safeErrorCode(Object.assign(new Error('fetch failed'), { code: 'browser_control_unavailable' })), 'browser_control_unavailable');
   assert.equal(safeErrorCode(Object.assign(new Error('forbidden'), { code: 'browser_control_unauthorized' })), 'browser_control_unauthorized');
+});
+
+test('session-scoped browser actions send exactly one internally resolved targetId', async () => {
+  const originalFetch = global.fetch;
+  const originalToken = process.env.OPENCLAW_GATEWAY_TOKEN;
+  const calls = [];
+  process.env.OPENCLAW_GATEWAY_TOKEN = 'gateway-token';
+  global.fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), init });
+    return { ok: true, json: async () => ({ ok: true, snapshot: 'button "Join Webex meeting" [ref=12]' }) };
+  };
+  try {
+    const browser = new BrowserControl('meeting-join');
+    await browser.snapshot('t2');
+    await browser.click('t2', '12');
+
+    assert.match(calls[0].url, /\/snapshot\?.*targetId=t2/);
+    assert.match(calls[0].url, /profile=meeting-join/);
+    assert.deepEqual(JSON.parse(calls[1].init.body), { kind: 'click', targetId: 't2', ref: '12' });
+  } finally {
+    global.fetch = originalFetch;
+    if (originalToken === undefined) delete process.env.OPENCLAW_GATEWAY_TOKEN;
+    else process.env.OPENCLAW_GATEWAY_TOKEN = originalToken;
+  }
 });
 
 test('encrypted state keeps active-session and OAuth credentials out of plaintext storage', async () => {

@@ -208,6 +208,16 @@ class BrowserControl {
     if (!tabId) return;
     await this.request('DELETE', `/tabs/${encodeURIComponent(tabId)}`).catch(() => undefined);
   }
+
+  snapshot(tabId: string) {
+    return this.request('GET', `/snapshot?targetId=${encodeURIComponent(tabId)}&format=ai`);
+  }
+
+  click(tabId: string, ref: string) {
+    // Call the control API directly with exactly one targetId. This avoids the
+    // agent browser tool's outer targetId vs nested request.targetId mismatch.
+    return this.request('POST', '/act', { kind: 'click', targetId: tabId, ref });
+  }
 }
 
 export class MeetingJoinService {
@@ -225,6 +235,7 @@ export class MeetingJoinService {
     this.cfg = {
       maxConcurrentMeetings: config?.maxConcurrentMeetings ?? 4,
       browserProfile: config?.browserProfile ?? 'meeting-join',
+      requireBrowserReview: config?.requireBrowserReview ?? false,
       recoveryMaxAttempts: config?.recoveryMaxAttempts ?? 5,
       recoveryBaseDelayMs: config?.recoveryBaseDelayMs ?? 1000,
     };
@@ -301,8 +312,9 @@ export class MeetingJoinService {
     await this.persist();
     await this.transition(session, 'preparing');
     try {
+      if (!this.cfg.requireBrowserReview) await this.transition(session, 'joining');
       await this.launch(session);
-      await this.transition(session, 'ready_for_browser');
+      if (this.cfg.requireBrowserReview) await this.transition(session, 'ready_for_browser');
       return this.browserReadyResult(session);
     } catch (error) {
       const code = safeErrorCode(error);
@@ -312,7 +324,7 @@ export class MeetingJoinService {
   }
 
   private browserReadyResult(session: Session) {
-    const needsBrowserAction = session.state === 'ready_for_browser';
+    const needsBrowserAction = this.cfg.requireBrowserReview && session.state === 'ready_for_browser';
     return {
       accepted: true,
       session_id: session.id,
@@ -321,7 +333,7 @@ export class MeetingJoinService {
         browser_profile: this.cfg.browserProfile,
         tab_id: session.tabId,
         tab_label: session.tabLabel,
-        next_action: 'Inspect this tab with the browser tool and activate Join Webex meeting when the page is ready.',
+        next_action: 'Call inspect_webex_meeting_runner with this session_id, choose the visible join action from its fresh snapshot, then call act_webex_meeting_runner with that ref.',
       } : {}),
     };
   }
@@ -335,6 +347,55 @@ export class MeetingJoinService {
       if (session.state === 'leaving') this.completeLeave(session).catch(() => undefined);
     }, 15_000).unref?.();
     return { accepted: true, state: 'leaving' };
+  }
+
+  async inspectRunner(sessionId: string) {
+    await this.start();
+    const session = this.state?.sessions?.[String(sessionId ?? '').trim()];
+    if (!session) return { ok: false, error_code: 'meeting_session_not_found', retryable: false };
+    if (!ACTIVE_STATES.has(session.state) || !session.tabId) {
+      return { ok: false, state: session.state, error_code: 'meeting_runner_not_ready', retryable: false };
+    }
+    try {
+      const snapshot: any = await this.browser.snapshot(session.tabId);
+      return {
+        ok: true,
+        session_id: session.id,
+        state: session.state,
+        snapshot: snapshot.snapshot ?? snapshot.nodes ?? '',
+        refs: snapshot.refs ?? {},
+        truncated: Boolean(snapshot.truncated),
+      };
+    } catch (error) {
+      this.log?.warn?.(`[meeting-join] runner inspection failed: ${safeErrorCode(error)}`);
+      return { ok: false, state: session.state, error_code: 'meeting_runner_inspection_failed', retryable: true };
+    }
+  }
+
+  async actOnRunner(sessionId: string, ref: string) {
+    await this.start();
+    const session = this.state?.sessions?.[String(sessionId ?? '').trim()];
+    if (!session) return { ok: false, error_code: 'meeting_session_not_found', retryable: false };
+    if (session.state !== 'ready_for_browser' || !session.tabId) {
+      return { ok: false, state: session.state, error_code: 'meeting_runner_not_ready', retryable: false };
+    }
+    const normalizedRef = String(ref ?? '').trim();
+    if (!/^(?:\d+|e\d+|ax\d+)$/.test(normalizedRef)) {
+      return { ok: false, state: session.state, error_code: 'meeting_runner_ref_invalid', retryable: true };
+    }
+    try {
+      await this.browser.click(session.tabId, normalizedRef);
+      return {
+        ok: true,
+        session_id: session.id,
+        state: session.state,
+        action: 'click_submitted',
+        next_action: 'Inspect the meeting runner again to verify its visible status.',
+      };
+    } catch (error) {
+      this.log?.warn?.(`[meeting-join] runner action failed: ${safeErrorCode(error)}`);
+      return { ok: false, state: session.state, error_code: 'meeting_runner_action_failed', retryable: true };
+    }
   }
 
   async handleRunnerRoute(req: any, res: any) {
@@ -390,7 +451,7 @@ export class MeetingJoinService {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OpenClaw Webex Meeting Runner</title>
 </head>
-<body>
+<body data-autostart="${this.cfg.requireBrowserReview ? 'false' : 'true'}">
   <main>
     <h1>Webex meeting</h1>
     <p id="meeting-status" role="status" aria-live="polite">Ready to join with the configured Webex user.</p>
@@ -500,8 +561,9 @@ export class MeetingJoinService {
       await this.transition(session, 'recovering');
       try {
         await this.browser.close(session.tabId);
+        if (!this.cfg.requireBrowserReview) await this.transition(session, 'joining');
         await this.launch(session);
-        await this.transition(session, 'ready_for_browser');
+        if (this.cfg.requireBrowserReview) await this.transition(session, 'ready_for_browser');
         return;
       } catch {
         const delay = this.cfg.recoveryBaseDelayMs * 2 ** (session.recoveryAttempts - 1) + Math.floor(Math.random() * 250);
@@ -597,4 +659,4 @@ export class MeetingJoinService {
   }
 }
 
-export { createInvitation, EncryptedState, isLoopback, safeErrorCode };
+export { BrowserControl, createInvitation, EncryptedState, isLoopback, safeErrorCode };

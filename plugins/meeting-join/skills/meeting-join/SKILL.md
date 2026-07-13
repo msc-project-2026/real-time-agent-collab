@@ -12,16 +12,22 @@ message directly.
   `room_id`, `MessageThreadId` as `parent_id` when available, the invitation's
   `Meeting link` as `meeting_link`, and its ordinary `Meeting password` as
   `meeting_password`. Never use `Meeting password for video system`.
-- When the join tool returns `ready_for_browser`, use the OpenClaw `browser`
-  tool with the returned `browser_profile` and `tab_id`/`tab_label`. Take a
-  fresh snapshot, inspect the current page semantically, and activate the
-  visible `Join Webex meeting` action by its current snapshot ref. Do not use
-  hard-coded selectors, coordinates, or a remembered ref. Take another
-  snapshot after the action and report the visible status accurately.
-- Keep the returned stable tab handle consistent on every browser operation.
-  For an `act` call, when both an outer `targetId` and `request.targetId` are
-  present, set both to the same returned `tab_id` or `tab_label`. Prefer a
-  fresh snapshot over a timed `act` wait, and never mix handles from two tabs.
+- Normally the secure runner starts the Webex SDK automatically. When the join
+  tool returns `joining`, do not call the browser tool; wait for the plugin's
+  lifecycle update and report only the confirmed state.
+- Only when the join tool returns `ready_for_browser` (the optional
+  `requireBrowserReview` mode), call `inspect_webex_meeting_runner` with its
+  `session_id`. Reason over that live semantic snapshot and choose the visible
+  `Join Webex meeting` ref; do not use a hard-coded or remembered ref. Call
+  `act_webex_meeting_runner` with the same `session_id` and chosen ref, then
+  inspect again to verify the visible status.
+- The scoped runner tools resolve the correct browser tab internally. Never
+  pass a `targetId` to them. If an action reports a retryable stale/ref error,
+  inspect again and choose a fresh ref based on the changed page.
+- Only if a scoped runner tool itself remains unavailable after one fresh
+  inspection may you recover with the generic `browser` tool: focus the
+  returned `tab_id`/`tab_label` once, then omit `targetId` from subsequent
+  snapshot/ref actions. Re-inspect after every navigation or failed action.
 - The secure local runner authenticates the Webex Meetings SDK with the
   configured human OAuth token. Never paste an OAuth token, refresh token,
   client secret, or account password into a web page.

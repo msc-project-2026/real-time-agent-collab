@@ -101,3 +101,4 @@ async function checkControl() {
 }
 
 document.querySelector('#join-meeting')?.addEventListener('click', () => start());
+if (document.body?.dataset?.autostart === 'true') queueMicrotask(() => start());

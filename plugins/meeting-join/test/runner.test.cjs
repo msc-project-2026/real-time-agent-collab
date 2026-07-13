@@ -6,7 +6,7 @@ const { readFile } = require('node:fs/promises');
 const path = require('node:path');
 const vm = require('node:vm');
 
-async function loadRunner({ enterLobby = false } = {}) {
+async function loadRunner({ enterLobby = false, autoStart = false } = {}) {
   const source = await readFile(path.join(__dirname, '../dist/runner.js'), 'utf8');
   const events = [];
   const listeners = new Map();
@@ -43,6 +43,7 @@ async function loadRunner({ enterLobby = false } = {}) {
       Webex: { init(options) { initOptions = options; return webex; } },
     },
     document: {
+      body: { dataset: { autostart: String(autoStart) } },
       querySelector(selector) {
         if (selector === '#join-meeting') return button;
         if (selector === '#meeting-status') return status;
@@ -97,4 +98,13 @@ test('does not report joined while the Webex user is waiting in the lobby', asyn
 
   assert.deepEqual(runner.events.map((event) => event.type), ['joining', 'waiting_for_admission']);
   assert.equal(runner.status.textContent, 'Waiting for the host to admit this Webex user.');
+});
+
+test('auto-start mode joins without an agent browser action or targetId handoff', async () => {
+  const runner = await loadRunner({ autoStart: true });
+  for (let i = 0; i < 6; i += 1) await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(runner.initOptions.credentials.access_token, 'human-oauth-token');
+  assert.deepEqual(runner.events.map((event) => event.type), ['joining', 'joined']);
+  assert.equal(runner.status.textContent, 'Joined the Webex meeting.');
 });
