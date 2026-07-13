@@ -120,11 +120,13 @@ async function scanPendingBatchStaging({ account, log, batchStagingHandler }) {
         await batchStagingHandler({ spaceId, account, log });
       } catch (err) {
         log?.error?.(
-          `[webex:${account.accountId}] failed to recover pending batch`,
-          {
-            spaceId,
-            error: err?.message ?? String(err),
-          }
+          `[webex:${account.accountId}] failed to recover pending batch ${JSON.stringify(
+            {
+              spaceId,
+              error: err?.message ?? String(err),
+              stack: err?.stack ?? null,
+            }
+          )}`
         );
 
         continue;
