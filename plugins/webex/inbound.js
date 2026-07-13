@@ -11,6 +11,7 @@ const { tryAccept } = require('./debounce');
 const { logDecision } = require('./audit');
 const prefs = require('./prefs');
 const { buildWelcomeCard, buildPresetCard } = require('./card');
+const { enqueueSessionDispatch } = require('./session-dispatch');
 
 let pluginRuntime = null;
 function setRuntime(r) {
@@ -476,7 +477,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
 
   const capturedIsMentioned = isMentioned;
 
-  await dispatchWithRetry(dispatch, {
+  const dispatchArgs = {
     ctx: ctxPayload,
     cfg: loadedCfg,
     dispatcherOptions: {
@@ -512,7 +513,11 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
       },
     },
     replyOptions: {},
-  });
+  };
+
+  await enqueueSessionDispatch(ctxPayload.SessionKey, () =>
+    dispatchWithRetry(dispatch, dispatchArgs)
+  );
 }
 
 module.exports = { handleInbound, isDmAllowed, setRuntime };
