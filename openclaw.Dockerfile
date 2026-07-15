@@ -7,13 +7,6 @@
 # from a mutable latest-browser tag during an unrelated rebuild.
 FROM ghcr.io/openclaw/openclaw:latest-browser@sha256:d4f53c02f77c9e8d67c2ecd009cf1b32e165596829405a3d723dae039c46cb90
 
-# The deploy-agent plugin reaches the hosting VPS over SSH (it shells out to the
-# `ssh` client), which the slim base image does not ship. Install it here.
-USER root
-RUN apt-get update \
-	&& apt-get install -y --no-install-recommends openssh-client \
-	&& rm -rf /var/lib/apt/lists/*
-
 # Versioned config is the source of truth. Copied into /app/config at build
 # time, then synced into the mounted volume at container start (volumes mask
 # image-layer files, so build-time COPY alone isn't enough).

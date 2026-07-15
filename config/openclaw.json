@@ -55,18 +55,6 @@
         "model": {
           "primary": "cisco/bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0"
         }
-      },
-      {
-        "id": "deployer",
-        "model": {
-          "primary": "cisco/bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0"
-        }
-      },
-      {
-        "id": "deploy-debugger",
-        "model": {
-          "primary": "cisco/bedrock/global.anthropic.claude-sonnet-4-6"
-        }
       }
     ]
   },
@@ -78,34 +66,10 @@
     {
       "agentId": "observer",
       "match": { "channel": "source-observer" }
-    },
-    {
-      "agentId": "deployer",
-      "match": { "channel": "deploy" }
-    },
-    {
-      "agentId": "deploy-debugger",
-      "match": { "channel": "deploy-debug" }
     }
   ],
   "channels": {
-    "meetingfinder": {
-      "enabled": true,
-      "accessToken": "${WEBEX_ACCESS_TOKEN}",
-      "refreshToken": "${WEBEX_REFRESH_TOKEN}",
-      "clientId": "${WEBEX_CLIENT_ID}",
-      "clientSecret": "${WEBEX_CLIENT_SECRET}",
-      "webhookUrl": "${MEETINGFINDER_WEBHOOK_URL}",
-      "webhookSecret": "${MEETINGFINDER_WEBHOOK_SECRET}",
-      "roomIds": []
-    },
     "source-observer": {
-      "enabled": true
-    },
-    "deploy": {
-      "enabled": true
-    },
-    "deploy-debug": {
       "enabled": true
     },
     "webex": {
@@ -177,11 +141,9 @@
     "load": {
       "paths": [
         "plugins/meeting-join",
-        "plugins/meetingfinder",
         "plugins/webex",
         "plugins/openclaw",
-        "plugins/source-observer",
-        "plugins/deploy-agent"
+        "plugins/source-observer"
       ]
     },
     "entries": {
@@ -195,9 +157,6 @@
           "recoveryBaseDelayMs": 1000
         }
       },
-      "meetingfinder": {
-        "enabled": true
-      },
       "source-observer": {
         "enabled": true
       },
@@ -205,9 +164,6 @@
         "enabled": true
       },
       "collab-writer": {
-        "enabled": true
-      },
-      "deploy-agent": {
         "enabled": true
       }
     }
