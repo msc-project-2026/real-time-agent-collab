@@ -98,7 +98,7 @@ real-time-agent-collab/
 
 ### OpenClaw gateway
 
-Built from `openclaw.Dockerfile`. Extends the official `ghcr.io/openclaw/openclaw:latest` image (Node 24, tini as PID 1).
+Built from `openclaw.Dockerfile`. Extends a digest-pinned official `ghcr.io/openclaw/openclaw:latest-browser` image (Node 24, tini as PID 1).
 
 **Why a custom Dockerfile?**
 
@@ -108,13 +108,14 @@ Docker volumes mask image-layer files at the mounted path, so the versioned `con
 
 1. `mkdir -p /home/node/.openclaw`
 2. `cp /app/config/openclaw.json /home/node/.openclaw/openclaw.json`
-3. `exec node openclaw.mjs gateway`
+3. Migrate persisted state ownership to the `node` user, excluding the read-only skills mount
+4. `exec gosu node node openclaw.mjs gateway`
 
-The container is declared with `user: "0:0"` in `docker-compose.yml` (runs as root) so the entrypoint has write access to the named volume.
+The container starts with `user: "0:0"` so the entrypoint can repair state created by older root-running releases. It drops permanently to the image's non-root `node` user before OpenClaw starts.
 
 **Installed plugins:**
 
-`plugins/webex` is copied into `/app/plugins/` at build time. The root `package.json` npm workspace and `lib/` are also copied so `npm install --workspaces` can create the `@collab/*` symlinks that plugins import at runtime.
+Custom plugin assets are built in an isolated build stage and copied into `/app/plugins/`. The build never replaces OpenClaw's `/app/package.json` or runs npm against its dependency tree. The small local `@collab/github` package is installed under the source-observer plugin for runtime resolution.
 
 **Healthcheck:**
 
@@ -208,9 +209,9 @@ missed events and reconstructs schedules after restart.
 - A maximum of four sessions is configured by default, with one active meeting per space and meeting ID.
 - Host admission, moderated-space permissions, locking, and organization policy remain authoritative.
 
-Supply `WEBEX_AUTO_JOIN_WEBHOOK_URL` and the existing `MEETING_JOIN_*`,
-`WEBEX_BOT_TOKEN`, `WEBEX_WEBHOOK_SECRET`, and `OPENCLAW_GATEWAY_TOKEN`
-variables before enabling it. Authorize the attendee integration with
+Supply the `MEETING_JOIN_*`, `WEBEX_BOT_TOKEN`, `WEBEX_WEBHOOK_SECRET`, and
+`OPENCLAW_GATEWAY_TOKEN` variables before enabling it. Compose derives
+`WEBEX_AUTO_JOIN_WEBHOOK_URL` from `DOMAIN`. Authorize the attendee integration with
 `spark:all spark:kms meeting:schedules_read`. See
 `plugins/webex-auto-join/README.md` for transfer, configuration, and validation
 details.
@@ -423,6 +424,7 @@ All variables live in `.env` (gitignored). Copy `.env.example` to `.env` and fil
 | `WEBEX_CLIENT_SECRET` | openclaw | Webex Integration client secret (for token refresh) |
 | `WEBEX_WEBHOOK_SECRET` | openclaw | HMAC-SHA1 secret Webex signs webhook POSTs with — `openssl rand -hex 32` |
 | `WEBEX_WEBHOOK_URL` | openclaw | Must be `https://claw.asabizanjo.dev/webhooks/webex/default` |
+| `WEBEX_AUTO_JOIN_WEBHOOK_URL` | openclaw | Derived by Compose as `https://${DOMAIN}/webhooks/webex-auto-join` |
 | `GITHUB_APP_ID` | setup-ui | Numeric GitHub App ID |
 | `GITHUB_APP_NAME` | setup-ui | GitHub App slug (shown in the install URL) |
 | `GITHUB_APP_PRIVATE_KEY_FILE` | setup-ui | Path to the mounted PEM — `/run/secrets/github-app-private-key.pem` |
