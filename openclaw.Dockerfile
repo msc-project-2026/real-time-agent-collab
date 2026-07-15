@@ -18,12 +18,13 @@ RUN chmod +x /app/docker-entrypoint.sh
 # runtime. docker-compose runs this service as root (`user: "0:0"`) so the
 # entrypoint can sync config and the gateway can persist state.
 
-# Copy shared lib and update plugins/ ownership.
+# Keep the workspace owned by the base image's non-root `node` user so npm can
+# create workspace-local node_modules during the image build.
 # npm install --workspaces creates the @collab/* symlinks in node_modules
 # so plugins can import shared packages (e.g. @collab/github) at runtime.
-COPY --chown=root:root plugins/ /app/plugins/
-COPY --chown=root:root lib/ /app/lib/
-COPY --chown=root:root package.json /app/package.json 
+COPY --chown=node:node plugins/ /app/plugins/
+COPY --chown=node:node lib/ /app/lib/
+COPY --chown=node:node package.json package-lock.json /app/
 RUN npm install --workspaces --include=dev --ignore-scripts \
 	&& npm run build --workspace=@openclaw/meeting-join
 
