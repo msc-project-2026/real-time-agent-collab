@@ -1340,9 +1340,9 @@ function register(api) {
     queueMicrotask(() => resolveService().start().catch(() => void 0));
   }
 }
-var src_default = register;
+var index_default = register;
 export {
-  src_default as default,
+  index_default as default,
   getSharedService,
   register
 };
