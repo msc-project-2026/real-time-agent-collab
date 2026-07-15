@@ -6,7 +6,7 @@ const { readFile } = require('node:fs/promises');
 const path = require('node:path');
 const vm = require('node:vm');
 
-async function loadRunner({ enterLobby = false, autoStart = false } = {}) {
+async function loadRunner({ enterLobby = false, autoStart = false, passwordRequired = false, includePassword = true } = {}) {
   const source = await readFile(path.join(__dirname, '../dist/runner.js'), 'utf8');
   const events = [];
   const listeners = new Map();
@@ -21,8 +21,9 @@ async function loadRunner({ enterLobby = false, autoStart = false } = {}) {
   };
   const status = { textContent: '' };
   const meeting = {
-    passwordStatus: 'NOT_REQUIRED',
+    passwordStatus: passwordRequired ? 'REQUIRED' : 'NOT_REQUIRED',
     on(name, handler) { listeners.set(name, handler); },
+    async verifyPassword() { return { isPasswordValid: true }; },
     async join() {
       if (enterLobby) listeners.get('meeting:self:lobbyWaiting')?.();
     },
@@ -39,7 +40,7 @@ async function loadRunner({ enterLobby = false, autoStart = false } = {}) {
 
   const context = {
     window: {
-      location: { pathname: '/meeting-join/runner/session-1' },
+      location: { pathname: '/webex-auto-join/runner/session-1' },
       Webex: { init(options) { initOptions = options; return webex; } },
     },
     document: {
@@ -52,7 +53,12 @@ async function loadRunner({ enterLobby = false, autoStart = false } = {}) {
     },
     fetch: async (url, init = {}) => {
       if (String(url).endsWith('/bootstrap')) {
-        return { ok: true, json: async () => ({ accessToken: 'human-oauth-token', joinLink: 'https://example.webex.com/meet/test', password: 'pw' }) };
+        return { ok: true, json: async () => ({
+          accessToken: 'human-oauth-token',
+          destination: 'meeting-id',
+          joinLink: 'https://example.webex.com/meet/test',
+          ...(includePassword ? { password: 'pw' } : {}),
+        }) };
       }
       if (String(url).endsWith('/events')) events.push(JSON.parse(init.body));
       return { ok: true, json: async () => ({}) };
@@ -87,7 +93,7 @@ test('waits for an agent-selected browser action and initializes Webex with the 
   await runner.click();
 
   assert.equal(runner.initOptions.credentials.access_token, 'human-oauth-token');
-  assert.equal(runner.initOptions.appName, 'openclaw-meeting-join');
+  assert.equal(runner.initOptions.appName, 'openclaw-webex-auto-join');
   assert.deepEqual(runner.events.map((event) => event.type), ['joining', 'joined']);
   assert.equal(runner.status.textContent, 'Joined the Webex meeting.');
 });
@@ -107,4 +113,12 @@ test('auto-start mode joins without an agent browser action or targetId handoff'
   assert.equal(runner.initOptions.credentials.access_token, 'human-oauth-token');
   assert.deepEqual(runner.events.map((event) => event.type), ['joining', 'joined']);
   assert.equal(runner.status.textContent, 'Joined the Webex meeting.');
+});
+
+test('passwordless discovery only fails when the SDK reports a required password', async () => {
+  const runner = await loadRunner({ passwordRequired: true, includePassword: false });
+  await runner.click();
+
+  assert.deepEqual(runner.events.map((event) => event.type), ['joining', 'error']);
+  assert.equal(runner.events[1].code, 'meeting_password_required');
 });

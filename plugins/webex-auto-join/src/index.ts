@@ -1,6 +1,30 @@
 import { MeetingJoinService } from './service';
+import { fileURLToPath } from 'node:url';
+import manifest from '../openclaw.plugin.json' with { type: 'json' };
 
-const SERVICE_KEY = Symbol.for('openclaw.meeting-join.service');
+const SERVICE_KEY = Symbol.for('openclaw.webex-auto-join.service');
+
+function assetPaths() {
+  return {
+    runner: fileURLToPath(new URL('./runner.js', import.meta.url)),
+    sdk: fileURLToPath(new URL('./webex.min.js', import.meta.url)),
+  };
+}
+
+function validationEntry() {
+  const entry: any = {};
+  Object.defineProperty(entry, Symbol.for('openclaw.plugin-sdk.tool-plugin.metadata'), {
+    value: {
+      id: manifest.id,
+      name: manifest.name,
+      description: manifest.description,
+      activation: manifest.activation,
+      configSchema: manifest.configSchema,
+      tools: manifest.contracts.tools.map((name) => ({ name, optional: true })),
+    },
+  });
+  return entry;
+}
 
 function toToolResult(value: unknown) {
   return { content: [{ type: 'text', text: JSON.stringify(value) }], details: value };
@@ -10,10 +34,10 @@ function getSharedService(api: any) {
   const root = globalThis as any;
   if (!root[SERVICE_KEY]) {
     const pluginConfig = api.pluginConfig
-      ?? api.config?.plugins?.entries?.['meeting-join']?.config
+      ?? api.config?.plugins?.entries?.['webex-auto-join']?.config
       ?? api.config
       ?? {};
-    root[SERVICE_KEY] = new MeetingJoinService(api.runtime, pluginConfig, api.logger ?? console);
+    root[SERVICE_KEY] = new MeetingJoinService(api.runtime, pluginConfig, api.logger ?? console, assetPaths());
   }
   return root[SERVICE_KEY] as MeetingJoinService;
 }
@@ -77,11 +101,28 @@ function registerTools(api: any, resolveService: () => MeetingJoinService) {
       await resolveService().actOnRunner(String(args?.session_id ?? ''), String(args?.ref ?? ''))
     ),
   }, { optional: true });
+
+  api.registerTool({
+    name: 'webex_auto_join_status',
+    description: 'Report Webex auto-join coverage, upcoming meetings, pending joins, active sessions, and sanitized failure codes.',
+    parameters: {
+      type: 'object',
+      properties: {
+        room_id: { type: 'string', description: 'Optional Webex room ID used to restrict the report to one space.' },
+      },
+    },
+    execute: async (_id: string, args: any) => toToolResult(
+      resolveService().status(String(args?.room_id ?? '').trim() || undefined)
+    ),
+  }, { optional: true });
 }
 
-function register(api: any) {
+function register(api?: any) {
+  // The authoring CLI invokes a default function without arguments to inspect
+  // defineToolPlugin-compatible metadata. Runtime loaders pass the plugin API.
+  if (!api) return validationEntry();
   const mode = api.registrationMode ?? 'full';
-  if (mode !== 'full' && mode !== 'tool-discovery') return;
+  if (!['full', 'discovery', 'tool-discovery'].includes(mode)) return;
 
   // Tool discovery must remain side-effect free. Resolve lazily so the full
   // runtime registration owns initialization, while both loads still share
@@ -90,10 +131,17 @@ function register(api: any) {
   const resolveService = () => service ??= getSharedService(api);
   registerTools(api, resolveService);
 
-  if (mode !== 'full') return;
+  if (mode === 'tool-discovery') return;
 
   api.registerHttpRoute({
-    path: '/meeting-join/runner/',
+    path: '/webhooks/webex-auto-join',
+    auth: 'plugin',
+    match: 'exact',
+    handler: (req: any, res: any) => resolveService().handleWebhookRoute(req, res),
+  });
+
+  api.registerHttpRoute({
+    path: '/webex-auto-join/runner/',
     auth: 'plugin',
     match: 'prefix',
     handler: (req: any, res: any) => resolveService().handleRunnerRoute(req, res),
@@ -102,9 +150,12 @@ function register(api: any) {
   api.on?.('gateway_start', async () => resolveService().start());
   api.on?.('gateway_stop', async () => resolveService().stop());
 
-  // Older local plugin runtimes do not dispatch gateway lifecycle hooks. Start
-  // asynchronously as a compatibility fallback; the service stays fail-closed.
-  queueMicrotask(() => resolveService().start().catch(() => undefined));
+  if (mode === 'full') {
+    // Older local plugin runtimes do not dispatch gateway lifecycle hooks.
+    // Start asynchronously as a compatibility fallback; the service stays
+    // fail-closed. Discovery only records capabilities and has no side effects.
+    queueMicrotask(() => resolveService().start().catch(() => undefined));
+  }
 }
 
 export default register;

@@ -9,6 +9,7 @@ const {
   BrowserControl,
   BrowserControlError,
   browserActionFailure,
+  createDiscoveredInvitation,
   createInvitation,
   EncryptedState,
   MeetingJoinService,
@@ -27,6 +28,88 @@ test('accepts the Webex link and ordinary password supplied directly to the join
 test('rejects a non-Webex link or an empty meeting password', () => {
   assert.equal(createInvitation('https://example.com/join', 'x'), null);
   assert.equal(createInvitation(JOIN_LINK, ''), null);
+});
+
+test('accepts a discovered meeting ID without requiring a password', () => {
+  const invitation = createDiscoveredInvitation({ id: 'meeting-1', webLink: JOIN_LINK }, 'room-1');
+  assert.equal(invitation.destination, 'meeting-1');
+  assert.equal(invitation.joinLink, JOIN_LINK);
+  assert.equal(invitation.meetingId, 'meeting-1');
+  assert.equal(invitation.password, undefined);
+  assert.ok(Number.isFinite(Date.parse(invitation.discoveredAt)));
+});
+
+test('automatic joins deduplicate by meeting ID and room without an agent turn', async () => {
+  const service = new MeetingJoinService({}, { maxConcurrentMeetings: 4 }, { warn() {} });
+  service.startTask = Promise.resolve();
+  service.enabled = true;
+  service.store = { save: async () => {} };
+  service.state = {
+    version: 2,
+    sessions: {},
+    rooms: { room: { roomId: 'room', covered: true, updatedAt: 'now' } },
+    schedules: {}, pending: {}, notifications: {},
+  };
+  service.launch = async (session) => { session.tabId = 'runner-tab'; };
+
+  const first = await service.joinDiscoveredMeeting({
+    id: 'meeting-1', meetingType: 'meeting', state: 'inProgress', roomId: 'room', webLink: JOIN_LINK,
+  });
+  const second = await service.joinDiscoveredMeeting({
+    id: 'meeting-1', meetingType: 'meeting', state: 'inProgress', roomId: 'room', webLink: JOIN_LINK,
+  });
+
+  assert.equal(first.accepted, true);
+  assert.equal(second.session_id, first.session_id);
+  assert.equal(Object.keys(service.state.sessions).length, 1);
+  assert.equal(service.state.sessions[first.session_id].source, 'automatic');
+  assert.equal(service.state.sessions[first.session_id].invitation.password, undefined);
+});
+
+test('capacity-blocked automatic meetings remain pending', async () => {
+  const service = new MeetingJoinService({}, { maxConcurrentMeetings: 1 }, { warn() {} });
+  service.startTask = Promise.resolve();
+  service.enabled = true;
+  service.store = { save: async () => {} };
+  service.state = {
+    version: 2,
+    sessions: {
+      active: {
+        id: 'active', roomId: 'room-1', source: 'automatic', state: 'joined',
+        invitation: { destination: 'meeting-1', meetingId: 'meeting-1', discoveredAt: 'now' },
+        recoveryAttempts: 0, createdAt: 'now', updatedAt: 'now',
+      },
+    },
+    rooms: {
+      'room-1': { roomId: 'room-1', covered: true, updatedAt: 'now' },
+      'room-2': { roomId: 'room-2', covered: true, updatedAt: 'now' },
+    },
+    schedules: {}, pending: {}, notifications: {},
+  };
+
+  const result = await service.joinDiscoveredMeeting({
+    id: 'meeting-2', roomId: 'room-2', webLink: JOIN_LINK, end: new Date(Date.now() + 60_000).toISOString(),
+  });
+  assert.deepEqual({ accepted: result.accepted, state: result.state, error_code: result.error_code }, {
+    accepted: false, state: 'pending', error_code: 'capacity_reached',
+  });
+  assert.equal(service.state.pending['meeting-2'].roomId, 'room-2');
+});
+
+test('status exposes only sanitized failure codes', () => {
+  const service = new MeetingJoinService({}, {}, { warn() {} });
+  service.state = {
+    version: 2,
+    sessions: {
+      failed: {
+        id: 'failed', roomId: 'room', source: 'automatic', state: 'failed',
+        invitation: { destination: 'meeting-1', meetingId: 'meeting-1', discoveredAt: 'now' },
+        errorCode: 'secret=do-not-return', recoveryAttempts: 0, createdAt: 'now', updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    },
+    rooms: {}, schedules: {}, pending: {}, notifications: {},
+  };
+  assert.equal(service.status().failures[0].error_code, 'meeting_join_failed');
 });
 
 test('reports browser-control failures separately from Webex meeting failures', () => {
@@ -218,19 +301,55 @@ test('encrypted state keeps active-session and OAuth credentials out of plaintex
     const key = Buffer.alloc(32, 7).toString('base64');
     const store = new EncryptedState(key, statePath);
     const state = {
-      version: 1,
+      version: 2,
       sessions: {
         active: {
           id: 'active', roomId: 'room', invitation: { joinLink: JOIN_LINK, password: 'secret-pass', discoveredAt: 'now' },
           state: 'joined', recoveryAttempts: 0, createdAt: 'now', updatedAt: 'now',
         },
       },
+      rooms: {},
+      schedules: {},
+      pending: {},
+      notifications: {},
       token: { accessToken: 'access-secret', refreshToken: 'refresh-secret', expiresAt: 1 },
     };
     await store.save(state);
     const raw = await readFile(statePath, 'utf8');
     assert.doesNotMatch(raw, /secret-pass|access-secret|refresh-secret/);
     assert.deepEqual(await store.load(), state);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('legacy migration imports only rotating OAuth token state', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'webex-auto-join-migration-'));
+  try {
+    const key = Buffer.alloc(32, 9).toString('base64');
+    const legacyPath = path.join(dir, 'meeting-join-state.enc');
+    const newPath = path.join(dir, 'webex-auto-join-state.enc');
+    const legacy = new EncryptedState(key, legacyPath);
+    await legacy.save({
+      version: 1,
+      sessions: {
+        old: {
+          id: 'old', roomId: 'room', state: 'joined',
+          invitation: { joinLink: JOIN_LINK, password: 'legacy-password', discoveredAt: 'now' },
+          recoveryAttempts: 0, createdAt: 'now', updatedAt: 'now',
+        },
+      },
+      token: { accessToken: 'old-access', refreshToken: 'rotated-refresh', expiresAt: 123 },
+    });
+    const service = new MeetingJoinService({}, { encryptionKey: key }, { info() {} });
+    service.store = new EncryptedState(key, newPath);
+    service.state = { version: 2, sessions: {}, rooms: {}, schedules: {}, pending: {}, notifications: {} };
+    await service.importLegacyToken(legacyPath);
+
+    const migrated = await service.store.load();
+    assert.deepEqual(migrated.sessions, {});
+    assert.equal(migrated.token.refreshToken, 'rotated-refresh');
+    assert.equal((await readFile(legacyPath, 'utf8')).includes('legacy-password'), false);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

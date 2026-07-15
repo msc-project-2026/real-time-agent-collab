@@ -3,7 +3,7 @@
 # Base ENTRYPOINT is ["tini", "-s", "--"]
 # Kept as-is so tini remains PID 1 for signal handling.
 # Pin the tested browser-control contract. Renovate this digest deliberately
-# alongside the meeting-join contract tests instead of inheriting API changes
+# alongside the webex-auto-join contract tests instead of inheriting API changes
 # from a mutable latest-browser tag during an unrelated rebuild.
 FROM ghcr.io/openclaw/openclaw:latest-browser@sha256:d4f53c02f77c9e8d67c2ecd009cf1b32e165596829405a3d723dae039c46cb90
 
@@ -26,7 +26,7 @@ COPY --chown=node:node plugins/ /app/plugins/
 COPY --chown=node:node lib/ /app/lib/
 COPY --chown=node:node package.json package-lock.json /app/
 RUN npm install --workspaces --include=dev --ignore-scripts \
-	&& npm run build --workspace=@openclaw/meeting-join
+	&& npm run build --workspace=@openclaw/webex-auto-join
 
 # Overrides the base CMD only; ENTRYPOINT (tini) is inherited.
 CMD ["/app/docker-entrypoint.sh"]

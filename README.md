@@ -193,19 +193,27 @@ Configured in `config/openclaw.json` under `channels.webex.allowFrom`. Edit that
 
 ---
 
-### Meeting Join plugin
+### Webex Auto Join plugin
 
-`plugins/meeting-join` lets a Webex space member mention the bot with a natural-language meeting request (for example, `@bot join the meeting`) and include the meeting link and ordinary password in that message. The plugin opens a secure local runner in the OpenClaw-managed headless browser and automatically joins through the Webex Meetings SDK as the dedicated licensed Webex OAuth user. Set `plugins.entries.meeting-join.config.requireBrowserReview` to `true` only when an agent-reviewed snapshot-and-click handoff is explicitly required; session-scoped meeting tools then resolve the runner tab internally so the agent reasons over fresh refs without constructing generic browser `targetId` values.
+`plugins/webex-auto-join` is a standalone native OpenClaw plugin. Add the
+messaging bot to a Webex group space and the Gateway service mirrors the
+licensed attendee, discovers space-associated instant and scheduled meetings,
+and joins them without a mention, invitation message, agent turn, or cron job.
+Webhook events are the primary trigger and periodic REST reconciliation repairs
+missed events and reconstructs schedules after restart.
 
-- The invitation must be in the same mentioned request as the join instruction.
 - Phase 1 joins without microphone, camera, screen-share, or media processing.
-- OAuth bearer and refresh tokens are used only by the local SDK runner and are never typed into the public Webex meeting page.
-- `@bot leave the meeting` ends that space's active session; meeting-end and container-restart recovery are handled automatically.
-- OAuth and active-session state are encrypted in the persistent OpenClaw volume using `MEETING_JOIN_ENCRYPTION_KEY`.
-- A maximum of four sessions is configured by default, with one active meeting per space.
+- Manual link/password join and leave tools remain available for unrelated meetings.
+- OAuth rotation, room coverage, schedules, deduplication, and sessions are encrypted in the persistent OpenClaw volume.
+- A maximum of four sessions is configured by default, with one active meeting per space and meeting ID.
+- Host admission, moderated-space permissions, locking, and organization policy remain authoritative.
 
-The `MEETING_JOIN_*` variables in `.env.example` must be supplied before enabling it in production. The Docker image uses OpenClaw's browser variant and enables the loopback-only browser-control server.
-Authorize the dedicated user's Webex Integration with the `spark:all spark:kms` scopes used by the Webex Meetings SDK, and store the resulting refresh token in `MEETING_JOIN_REFRESH_TOKEN`. `OPENCLAW_EAGER_BROWSER_CONTROL_SERVER=1` is required because this plugin uses OpenClaw's documented loopback browser-control HTTP API.
+Supply `WEBEX_AUTO_JOIN_WEBHOOK_URL` and the existing `MEETING_JOIN_*`,
+`WEBEX_BOT_TOKEN`, `WEBEX_WEBHOOK_SECRET`, and `OPENCLAW_GATEWAY_TOKEN`
+variables before enabling it. Authorize the attendee integration with
+`spark:all spark:kms meeting:schedules_read`. See
+`plugins/webex-auto-join/README.md` for transfer, configuration, and validation
+details.
 
 ### Setup UI
 

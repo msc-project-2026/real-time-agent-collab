@@ -47,7 +47,7 @@
         "id": "main",
         "default": true,
         "tools": {
-          "alsoAllow": ["browser", "join_webex_meeting", "leave_webex_meeting", "inspect_webex_meeting_runner", "act_webex_meeting_runner"]
+          "alsoAllow": ["browser", "join_webex_meeting", "leave_webex_meeting", "inspect_webex_meeting_runner", "act_webex_meeting_runner", "webex_auto_join_status"]
         }
       },
       {
@@ -123,7 +123,7 @@
     "evaluateEnabled": false,
     "headless": true,
     "noSandbox": true,
-    "defaultProfile": "meeting-join",
+    "defaultProfile": "webex-auto-join",
     "tabCleanup": {
       "enabled": false
     },
@@ -131,7 +131,7 @@
       "allowedHostnames": ["localhost", "127.0.0.1"]
     },
     "profiles": {
-      "meeting-join": {
+      "webex-auto-join": {
         "cdpPort": 18801,
         "color": "#6D28D9"
       }
@@ -140,19 +140,32 @@
   "plugins": {
     "load": {
       "paths": [
-        "plugins/meeting-join",
+        "plugins/webex-auto-join",
         "plugins/webex",
         "plugins/openclaw",
         "plugins/source-observer"
       ]
     },
     "entries": {
-      "meeting-join": {
+      "webex-auto-join": {
         "enabled": true,
         "config": {
+          "botToken": "${WEBEX_BOT_TOKEN}",
+          "webhookUrl": "${WEBEX_AUTO_JOIN_WEBHOOK_URL}",
+          "webhookSecret": "${WEBEX_WEBHOOK_SECRET}",
+          "attendeeClientId": "${MEETING_JOIN_CLIENT_ID}",
+          "attendeeClientSecret": "${MEETING_JOIN_CLIENT_SECRET}",
+          "attendeeRefreshToken": "${MEETING_JOIN_REFRESH_TOKEN}",
+          "expectedAttendeeEmail": "${MEETING_JOIN_EXPECTED_EMAIL}",
+          "encryptionKey": "${MEETING_JOIN_ENCRYPTION_KEY}",
           "maxConcurrentMeetings": 4,
-          "browserProfile": "meeting-join",
+          "browserProfile": "webex-auto-join",
           "requireBrowserReview": false,
+          "meetingReconcileIntervalSeconds": 60,
+          "membershipReconcileIntervalSeconds": 300,
+          "schedulingHorizonDays": 30,
+          "scheduledStartGraceMinutes": 30,
+          "notificationMode": "join-and-failure",
           "recoveryMaxAttempts": 5,
           "recoveryBaseDelayMs": 1000
         }

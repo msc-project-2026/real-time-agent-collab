@@ -2,6 +2,8 @@ declare global {
   interface Window { meetingJoinStarted?: boolean; Webex?: any }
 }
 
+import { noMediaAdapter } from './runner-media';
+
 const base = window.location.pathname.replace(/\/$/, '');
 let meeting: any;
 let leaving = false;
@@ -29,6 +31,7 @@ async function event(type: string, code?: string) {
 function classify(error: unknown) {
   const message = String((error as any)?.message ?? error ?? '').toLowerCase();
   if (message.includes('captcha')) return 'captcha_required';
+  if (message.includes('password required')) return 'meeting_password_required';
   if (message.includes('password')) return 'meeting_password_rejected';
   return 'meeting_join_failed';
 }
@@ -44,7 +47,7 @@ async function start() {
     await event('joining');
     setStatus('Authenticating the configured Webex user…');
     const webex: any = window.Webex?.init({
-      appName: 'openclaw-meeting-join',
+      appName: 'openclaw-webex-auto-join',
       appPlatform: 'openclaw',
       credentials: { access_token: boot.accessToken },
     });
@@ -54,7 +57,10 @@ async function start() {
       webex.once('error', reject);
     });
     await webex.meetings.register();
-    meeting = await webex.meetings.create(boot.joinLink);
+    meeting = await webex.meetings.create(boot.destination ?? boot.meetingId ?? boot.joinLink);
+    meeting.on?.('meeting:self:left', () => {
+      if (!leaving) event('ended').catch(() => undefined);
+    });
     meeting.on?.('meeting:self:guestAdmitted', () => {
       waitingForAdmission = false;
       setStatus('Joined the Webex meeting.');
@@ -67,13 +73,17 @@ async function start() {
     });
     meeting.on?.('error', (error: unknown) => event('error', classify(error)).catch(() => undefined));
     if (meeting.passwordStatus === 'REQUIRED') {
+      if (!boot.password) throw new Error('meeting password required');
       setStatus('Verifying the meeting password…');
       const result = await meeting.verifyPassword(boot.password);
       if (result?.requiredCaptcha) throw new Error('captcha required');
       if (!result?.isPasswordValid) throw new Error('meeting password rejected');
     }
     setStatus('Joining the Webex meeting without media…');
-    await meeting.join(); // Phase 1 intentionally joins without media.
+    await noMediaAdapter.join(meeting);
+    webex.meetings.on?.('meeting:removed', (removed: any) => {
+      if (!leaving && (!removed?.id || removed.id === meeting?.id)) event('ended').catch(() => undefined);
+    });
     if (!waitingForAdmission) {
       setStatus('Joined the Webex meeting.');
       await event('joined');
