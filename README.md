@@ -193,6 +193,20 @@ Configured in `config/openclaw.json` under `channels.webex.allowFrom`. Edit that
 
 ---
 
+### Meeting Join plugin
+
+`plugins/meeting-join` lets a Webex space member mention the bot with a natural-language meeting request (for example, `@bot join the meeting`) and include the meeting link and ordinary password in that message. The plugin opens a secure local runner in the OpenClaw-managed headless browser and automatically joins through the Webex Meetings SDK as the dedicated licensed Webex OAuth user. Set `plugins.entries.meeting-join.config.requireBrowserReview` to `true` only when an agent-reviewed snapshot-and-click handoff is explicitly required; session-scoped meeting tools then resolve the runner tab internally so the agent reasons over fresh refs without constructing generic browser `targetId` values.
+
+- The invitation must be in the same mentioned request as the join instruction.
+- Phase 1 joins without microphone, camera, screen-share, or media processing.
+- OAuth bearer and refresh tokens are used only by the local SDK runner and are never typed into the public Webex meeting page.
+- `@bot leave the meeting` ends that space's active session; meeting-end and container-restart recovery are handled automatically.
+- OAuth and active-session state are encrypted in the persistent OpenClaw volume using `MEETING_JOIN_ENCRYPTION_KEY`.
+- A maximum of four sessions is configured by default, with one active meeting per space.
+
+The `MEETING_JOIN_*` variables in `.env.example` must be supplied before enabling it in production. The Docker image uses OpenClaw's browser variant and enables the loopback-only browser-control server.
+Authorize the dedicated user's Webex Integration with the `spark:all spark:kms` scopes used by the Webex Meetings SDK, and store the resulting refresh token in `MEETING_JOIN_REFRESH_TOKEN`. `OPENCLAW_EAGER_BROWSER_CONTROL_SERVER=1` is required because this plugin uses OpenClaw's documented loopback browser-control HTTP API.
+
 ### Setup UI
 
 Located at `services/setup-ui/`. A single-page React form served by an Express backend. Reached at `https://<DOMAIN>/setup?spaceId=<webex-room-id>`.

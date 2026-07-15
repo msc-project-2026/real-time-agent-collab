@@ -13,6 +13,7 @@ import {
   readdir as fsReaddir,
 } from 'fs/promises';
 import { lookup } from 'node:dns/promises';
+import { buildCollabSyncSessionKey } from './openclaw-session.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -47,10 +48,9 @@ function backoffDelay(attempt) {
   return Math.min(base + Math.random() * base * 0.5, 5000);
 }
 
-// OpenClaw rejects concurrent dispatches to the same sessionKey with a
-// "reply session initialization conflicted" error (e.g. a collab-sync
-// notification racing a live inbound Webex message for the same room).
-// Retry with backoff so both deliveries land instead of one being dropped.
+// Retain bounded backoff as a final safeguard for transient gateway conflicts.
+// Collab-sync calls use unique hook sessions below, so normal concurrent
+// deliveries do not enter this path.
 async function notifyOpenClaw(openclawUrl, body, { maxAttempts = 5 } = {}) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const res = await fetch(`${openclawUrl}/hooks/agent`, {
@@ -204,7 +204,7 @@ app.post('/webhooks/github', express.raw({ type: '*/*' }), async (req, res) => {
   for (const spaceId of spaceIds) {
     notifyOpenClaw(openclawUrl, {
       message: `[SYSTEM] .collab/ update detected in ${owner}/${repo}. Send a brief acknowledgment message to Webex room ${spaceId}.`,
-      sessionKey: `agent:main:webex:${spaceId}`,
+      sessionKey: buildCollabSyncSessionKey(),
       name: 'collab-sync',
     }).catch((err) => console.error('OpenClaw forward error:', err));
   }

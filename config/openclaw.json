@@ -45,7 +45,10 @@
     "list": [
       {
         "id": "main",
-        "default": true
+        "default": true,
+        "tools": {
+          "alsoAllow": ["browser", "join_webex_meeting", "leave_webex_meeting", "inspect_webex_meeting_runner", "act_webex_meeting_runner"]
+        }
       },
       {
         "id": "observer",
@@ -96,6 +99,16 @@
 
   ],
   "channels": {
+    "meetingfinder": {
+      "enabled": true,
+      "accessToken": "${WEBEX_ACCESS_TOKEN}",
+      "refreshToken": "${WEBEX_REFRESH_TOKEN}",
+      "clientId": "${WEBEX_CLIENT_ID}",
+      "clientSecret": "${WEBEX_CLIENT_SECRET}",
+      "webhookUrl": "${MEETINGFINDER_WEBHOOK_URL}",
+      "webhookSecret": "${MEETINGFINDER_WEBHOOK_SECRET}",
+      "roomIds": []
+    },
     "source-observer": {
       "enabled": true
     },
@@ -162,9 +175,30 @@
     }
   ]
   },
+  "browser": {
+    "enabled": true,
+    "evaluateEnabled": false,
+    "headless": true,
+    "noSandbox": true,
+    "defaultProfile": "meeting-join",
+    "tabCleanup": {
+      "enabled": false
+    },
+    "ssrfPolicy": {
+      "allowedHostnames": ["localhost", "127.0.0.1"]
+    },
+    "profiles": {
+      "meeting-join": {
+        "cdpPort": 18801,
+        "color": "#6D28D9"
+      }
+    }
+  },
   "plugins": {
     "load": {
       "paths": [
+        "plugins/meeting-join",
+        "plugins/meetingfinder",
         "plugins/webex",
         "plugins/openclaw",
         "plugins/source-observer",
@@ -172,6 +206,19 @@
       ]
     },
     "entries": {
+      "meeting-join": {
+        "enabled": true,
+        "config": {
+          "maxConcurrentMeetings": 4,
+          "browserProfile": "meeting-join",
+          "requireBrowserReview": false,
+          "recoveryMaxAttempts": 5,
+          "recoveryBaseDelayMs": 1000
+        }
+      },
+      "meetingfinder": {
+        "enabled": true
+      },
       "source-observer": {
         "enabled": true
       },

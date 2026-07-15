@@ -2,7 +2,10 @@
 # Base: node:24-bookworm-slim, runs as non-root user `node` (uid 1000).
 # Base ENTRYPOINT is ["tini", "-s", "--"]
 # Kept as-is so tini remains PID 1 for signal handling.
-FROM ghcr.io/openclaw/openclaw:latest
+# Pin the tested browser-control contract. Renovate this digest deliberately
+# alongside the meeting-join contract tests instead of inheriting API changes
+# from a mutable latest-browser tag during an unrelated rebuild.
+FROM ghcr.io/openclaw/openclaw:latest-browser@sha256:d4f53c02f77c9e8d67c2ecd009cf1b32e165596829405a3d723dae039c46cb90
 
 # The deploy-agent plugin reaches the hosting VPS over SSH (it shells out to the
 # `ssh` client), which the slim base image does not ship. Install it here.
@@ -28,7 +31,8 @@ RUN chmod +x /app/docker-entrypoint.sh
 COPY --chown=root:root plugins/ /app/plugins/
 COPY --chown=root:root lib/ /app/lib/
 COPY --chown=root:root package.json /app/package.json 
-RUN npm install --workspaces --ignore-scripts
+RUN npm install --workspaces --include=dev --ignore-scripts \
+	&& npm run build --workspace=@openclaw/meeting-join
 
 # Overrides the base CMD only; ENTRYPOINT (tini) is inherited.
 CMD ["/app/docker-entrypoint.sh"]

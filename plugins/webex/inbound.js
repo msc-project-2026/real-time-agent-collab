@@ -12,6 +12,7 @@ const { logDecision } = require('./audit');
 const prefs = require('./prefs');
 const { dispatchWithRetry } = require('../../lib/dispatch-retry.js');
 const { buildWelcomeCard, buildPresetCard } = require('./card');
+const { enqueueSessionDispatch } = require('./session-dispatch');
 
 let pluginRuntime = null;
 function setRuntime(r) {
@@ -313,22 +314,27 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
   const senderName = msg.personEmail ?? msg.personId;
   const personId = msg.personId;
 
+  const isMentioned =
+    Array.isArray(msg.mentionedPeople) && msg.mentionedPeople.includes(botId);
+
+  // Meeting credentials are intentionally passed to the agent with the request.
+  // The agent supplies them directly to the meeting-join tool; invitations are
+  // not cached or resolved from room history.
+  const agentText = msg.text ?? '';
+
   // Capture lastSeen BEFORE recording so we can detect how long the room was silent.
   const lastActivity = getLastSeen(roomId);
 
   // Record arrival for lull, context, and engagement — always, even if debounced.
   lullRecord(roomId);
-  ctxRecord(roomId, { text: msg.text, senderName });
+  ctxRecord(roomId, { text: agentText, senderName });
   prefs.recordHumanMessage(roomId);
-
-  const isMentioned =
-    Array.isArray(msg.mentionedPeople) && msg.mentionedPeople.includes(botId);
 
   const loadedCfg = pluginRuntime.config?.current?.() ?? {};
   const proactivity = getProactivityCfg(loadedCfg);
 
   // ── /collab commands ─────────────────────────────────────────────────────────
-  const wasCommand = await handleCommand(msg.text, {
+  const wasCommand = await handleCommand(agentText, {
     roomId,
     personId,
     token: cfg.token,
@@ -357,7 +363,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
     const recentMessages = getRecentMessages(roomId);
     const result = await scoreMessage(
       {
-        text: msg.text ?? '',
+        text: agentText,
         senderName,
         chatType: msg.roomType === 'direct' ? 'direct' : 'group',
         recentMessages,
@@ -420,9 +426,9 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
 
   // ── Stage 2: Main agent dispatch ──────────────────────────────────────────
   const ctxPayload = {
-    Body: msg.text ?? '',
-    RawBody: msg.text ?? '',
-    CommandBody: msg.text ?? '',
+    Body: agentText,
+    RawBody: agentText,
+    CommandBody: agentText,
     From: `webex:${personId}`,
     To: `webex:${roomId}`,
     SessionKey: `agent:main:webex:${roomId}`,
@@ -451,7 +457,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
 
   const capturedIsMentioned = isMentioned;
 
-  await dispatchWithRetry(dispatch, {
+  const dispatchArgs = {
     ctx: ctxPayload,
     cfg: loadedCfg,
     dispatcherOptions: {
@@ -487,7 +493,11 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
       },
     },
     replyOptions: {},
-  });
+  };
+
+  await enqueueSessionDispatch(ctxPayload.SessionKey, () =>
+    dispatchWithRetry(dispatch, dispatchArgs)
+  );
 }
 
 module.exports = { handleInbound, isDmAllowed, setRuntime };
