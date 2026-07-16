@@ -10,7 +10,7 @@ test('tool discovery registers tools without routes, hooks, or service startup',
     registrationMode: 'tool-discovery',
     registerTool(tool) { tools.push(tool.name); },
     registerHttpRoute() { assert.fail('tool discovery registered an HTTP route'); },
-    on() { assert.fail('tool discovery registered a lifecycle hook'); },
+    registerService() { assert.fail('tool discovery registered a background service'); },
   };
 
   register(api);
@@ -27,18 +27,18 @@ test('read-only discovery exposes capabilities without constructing the service'
   const { register } = await import('../dist/index.js');
   const tools = [];
   const routes = [];
-  const hooks = [];
+  const services = [];
   const api = {
     registrationMode: 'discovery',
     registerTool(tool) { tools.push(tool.name); },
     registerHttpRoute(route) { routes.push(route.path); },
-    on(name) { hooks.push(name); },
+    registerService(service) { services.push(service.id); },
   };
 
   register(api);
   assert.equal(tools.length, 5);
   assert.deepEqual(routes, ['/webhooks/webex-auto-join', '/webex-auto-join/runner/']);
-  assert.deepEqual(hooks, ['gateway_start', 'gateway_stop']);
+  assert.deepEqual(services, []);
 });
 
 test('full runtime and tool execution resolve the same process-wide service', async () => {
@@ -52,12 +52,12 @@ test('full runtime and tool execution resolve the same process-wide service', as
   delete globalThis[key];
 });
 
-test('full registration owns the fixed webhook and runner routes plus gateway lifecycle', async () => {
+test('full registration owns the fixed routes and a managed background service', async () => {
   const key = Symbol.for('openclaw.webex-auto-join.service');
   delete globalThis[key];
   const { register } = await import('../dist/index.js');
   const routes = [];
-  const hooks = [];
+  const services = [];
   const tools = [];
   register({
     registrationMode: 'full',
@@ -66,14 +66,16 @@ test('full registration owns the fixed webhook and runner routes plus gateway li
     logger: { warn() {}, info() {} },
     registerTool(tool) { tools.push(tool.name); },
     registerHttpRoute(route) { routes.push({ path: route.path, auth: route.auth, match: route.match }); },
-    on(name) { hooks.push(name); },
+    registerService(service) { services.push(service); },
   });
 
   assert.deepEqual(routes, [
     { path: '/webhooks/webex-auto-join', auth: 'plugin', match: 'exact' },
     { path: '/webex-auto-join/runner/', auth: 'plugin', match: 'prefix' },
   ]);
-  assert.deepEqual(hooks, ['gateway_start', 'gateway_stop']);
+  assert.deepEqual(services.map((service) => service.id), ['webex-auto-join']);
+  assert.equal(typeof services[0].start, 'function');
+  assert.equal(typeof services[0].stop, 'function');
   assert.ok(tools.includes('webex_auto_join_status'));
   delete globalThis[key];
 });

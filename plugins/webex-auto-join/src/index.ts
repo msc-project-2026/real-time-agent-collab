@@ -147,14 +147,12 @@ function register(api?: any) {
     handler: (req: any, res: any) => resolveService().handleRunnerRoute(req, res),
   });
 
-  api.on?.('gateway_start', async () => resolveService().start());
-  api.on?.('gateway_stop', async () => resolveService().stop());
-
   if (mode === 'full') {
-    // Older local plugin runtimes do not dispatch gateway lifecycle hooks.
-    // Start asynchronously as a compatibility fallback; the service stays
-    // fail-closed. Discovery only records capabilities and has no side effects.
-    queueMicrotask(() => resolveService().start().catch(() => undefined));
+    api.registerService({
+      id: 'webex-auto-join',
+      start: async () => resolveService().start(),
+      stop: async () => resolveService().stop(),
+    });
   }
 }
 

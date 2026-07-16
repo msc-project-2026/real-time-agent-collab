@@ -115,6 +115,7 @@ test('status exposes only sanitized failure codes', () => {
 test('reports browser-control failures separately from Webex meeting failures', () => {
   assert.equal(safeErrorCode(Object.assign(new Error('fetch failed'), { code: 'browser_control_unavailable' })), 'browser_control_unavailable');
   assert.equal(safeErrorCode(Object.assign(new Error('forbidden'), { code: 'browser_control_unauthorized' })), 'browser_control_unauthorized');
+  assert.equal(safeErrorCode(Object.assign(new Error('bad request'), { status: 400 })), 'webex_request_invalid');
 });
 
 test('session-scoped browser actions send exactly one internally resolved targetId', async () => {

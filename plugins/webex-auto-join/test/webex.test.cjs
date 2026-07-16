@@ -58,6 +58,33 @@ test('webhook registration only replaces hooks carrying plugin-owned names', asy
     assert.ok(!calls.some((call) => call.url.includes('foreign')));
     assert.ok(calls.some((call) => call.method === 'POST' && call.body.name === 'Owned Two' && call.body.secret === 'secret'));
     assert.equal(calls.filter((call) => call.method === 'POST').length, 1);
+    assert.equal(calls[0].url.endsWith('/webhooks?max=100'), true);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('meeting webhook registration includes explicit started and ended events', async () => {
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), method: init.method ?? 'GET', body: init.body && JSON.parse(init.body) });
+    if (String(url).includes('/webhooks?')) return response({ items: [] });
+    return response({}, init.method === 'POST' ? 201 : 200);
+  };
+  try {
+    const service = new MeetingJoinService({}, {
+      botToken: 'bot-token',
+      webhookUrl: 'https://host/webhooks/webex-auto-join',
+      webhookSecret: 'secret',
+    }, { warn() {} });
+    await service.ensureWebhooks('attendee-token');
+
+    const meetingEvents = calls
+      .filter((call) => call.method === 'POST' && call.body.resource === 'meetings')
+      .map((call) => call.body.event)
+      .sort();
+    assert.deepEqual(meetingEvents, ['created', 'deleted', 'ended', 'started', 'updated']);
   } finally {
     global.fetch = originalFetch;
   }

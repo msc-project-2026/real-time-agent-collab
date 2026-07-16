@@ -73,7 +73,7 @@ async function webexList(token, pathname) {
   return items;
 }
 async function ensureOwnedWebhooks(token, targetUrl, secret, specs) {
-  const existing = await webexList(token, "/webhooks?max=1000");
+  const existing = await webexList(token, "/webhooks?max=100");
   for (const spec of specs) {
     const matches = existing.filter((item) => item?.name === spec.name);
     const keeper = matches.find(

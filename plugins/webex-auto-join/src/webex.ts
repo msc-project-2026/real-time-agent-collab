@@ -62,7 +62,9 @@ export async function ensureOwnedWebhooks(
   secret: string,
   specs: OwnedWebhookSpec[]
 ) {
-  const existing = await webexList(token, '/webhooks?max=1000');
+  // Webex rejects values above the List Webhooks API's maximum of 100.
+  // webexList follows the Link header, so this still covers every page.
+  const existing = await webexList(token, '/webhooks?max=100');
   for (const spec of specs) {
     const matches = existing.filter((item) => item?.name === spec.name);
     const keeper = matches.find((item) =>

@@ -6,6 +6,10 @@ space-associated meetings, and joins them through the bundled Webex Meetings
 SDK runner. Automatic work is owned by the Gateway lifecycle; it does not need
 an LLM turn or an OpenClaw cron job.
 
+The plugin registers a native OpenClaw background service and separate Webex
+`meetings` webhooks for `created`, `updated`, `deleted`, `started`, and `ended`.
+Webex does not include `started` or `ended` in an `all` subscription.
+
 The build copies the pinned Webex browser SDK into `dist/webex.min.js`; runtime
 asset serving therefore remains self-contained after the plugin is transferred.
 Its upstream terms are included as `dist/WEBEX-SDK-LICENSE`.

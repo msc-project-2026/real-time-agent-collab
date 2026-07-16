@@ -116,7 +116,7 @@ async function webexList(token, pathname) {
   return items;
 }
 async function ensureOwnedWebhooks(token, targetUrl, secret, specs) {
-  const existing = await webexList(token, "/webhooks?max=1000");
+  const existing = await webexList(token, "/webhooks?max=100");
   for (const spec of specs) {
     const matches = existing.filter((item) => item?.name === spec.name);
     const keeper = matches.find(
@@ -205,7 +205,17 @@ function safeErrorCode(error) {
   if (explicitCode === "webhook_body_too_large") return explicitCode;
   const status = Number(error?.status ?? 0);
   if (status === 401 || status === 403) return "webex_authorization_failed";
+  if (status === 400) return "webex_request_invalid";
+  if (status === 404) return "webex_resource_not_found";
+  if (status === 409) return "webex_conflict";
+  if (status === 429) return "webex_rate_limited";
+  if (status >= 500) return "webex_unavailable";
   const message = String(error?.message ?? error ?? "").toLowerCase();
+  if (message.includes("config is missing")) return "configuration_missing";
+  if (message.includes("could not be decrypted")) return "state_decryption_failed";
+  if (message.includes("encryption key")) return "encryption_key_invalid";
+  if (message.includes("identities must be distinct")) return "identity_conflict";
+  if (message.includes("identity does not match")) return "identity_mismatch";
   if (message.includes("captcha")) return "captcha_required";
   if (message.includes("password")) return "meeting_password_rejected";
   if (message.includes("token") || message.includes("oauth")) return "oauth_unavailable";
@@ -429,15 +439,25 @@ var MeetingJoinService = class {
   heartbeatTimer = null;
   membershipTimer = null;
   meetingTimer = null;
+  startupRetryTimer = null;
+  startupAttempts = 0;
+  startupErrorCode;
   botId = "";
   attendeeId = "";
   cfg;
   browser;
   messages;
   async start() {
+    if (this.enabled) return;
     if (this.startTask) return this.startTask;
-    this.startTask = this.startInternal();
-    return this.startTask;
+    this.stopped = false;
+    const task = this.startInternal();
+    this.startTask = task;
+    try {
+      await task;
+    } finally {
+      if (this.startTask === task) this.startTask = null;
+    }
   }
   async startInternal() {
     const stateDir = process.env.OPENCLAW_STATE_DIR ?? import_node_path.default.join(import_node_os.default.homedir(), ".openclaw");
@@ -470,15 +490,38 @@ var MeetingJoinService = class {
       this.heartbeatTimer.unref?.();
       this.membershipTimer.unref?.();
       this.meetingTimer.unref?.();
+      this.startupAttempts = 0;
+      this.startupErrorCode = void 0;
+      if (this.startupRetryTimer) clearTimeout(this.startupRetryTimer);
+      this.startupRetryTimer = null;
       this.log?.info?.(`[webex-auto-join] ready: ${Object.values(this.state.rooms).filter((room) => room.covered).length} covered spaces`);
     } catch (error) {
       this.enabled = false;
+      this.startupErrorCode = safeErrorCode(error);
       this.logFailure("startup disabled", error);
+      this.scheduleStartupRetry();
     }
+  }
+  scheduleStartupRetry() {
+    if (this.stopped || this.startupRetryTimer) return;
+    const delayMs = Math.min(6e4, this.cfg.recoveryBaseDelayMs * 2 ** Math.min(this.startupAttempts, 6));
+    this.startupAttempts += 1;
+    this.log?.info?.(`[webex-auto-join] retrying startup in ${delayMs}ms`);
+    this.startupRetryTimer = setTimeout(() => {
+      this.startupRetryTimer = null;
+      this.start().catch((error) => this.logFailure("startup retry", error));
+    }, delayMs);
+    this.startupRetryTimer.unref?.();
   }
   async stop() {
     this.stopped = true;
+    this.enabled = false;
     for (const timer of [this.heartbeatTimer, this.membershipTimer, this.meetingTimer]) if (timer) clearInterval(timer);
+    this.heartbeatTimer = null;
+    this.membershipTimer = null;
+    this.meetingTimer = null;
+    if (this.startupRetryTimer) clearTimeout(this.startupRetryTimer);
+    this.startupRetryTimer = null;
     for (const timer of this.scheduleTimers.values()) clearTimeout(timer);
     this.scheduleTimers.clear();
     for (const session of Object.values(this.state.sessions)) {
@@ -518,7 +561,9 @@ var MeetingJoinService = class {
     await ensureOwnedWebhooks(attendeeToken, this.cfg.webhookUrl, this.cfg.webhookSecret, [
       { name: "OpenClaw Webex Auto Join Meeting Created", resource: "meetings", event: "created" },
       { name: "OpenClaw Webex Auto Join Meeting Updated", resource: "meetings", event: "updated" },
-      { name: "OpenClaw Webex Auto Join Meeting Deleted", resource: "meetings", event: "deleted" }
+      { name: "OpenClaw Webex Auto Join Meeting Deleted", resource: "meetings", event: "deleted" },
+      { name: "OpenClaw Webex Auto Join Meeting Started", resource: "meetings", event: "started" },
+      { name: "OpenClaw Webex Auto Join Meeting Ended", resource: "meetings", event: "ended" }
     ]);
   }
   async handleWebhookRoute(req, res) {
@@ -937,7 +982,15 @@ var MeetingJoinService = class {
       error_code: safePublicFailureCode(item.errorCode),
       updated_at: item.updatedAt
     }));
-    return { enabled: this.enabled, rooms, upcoming, active, failures, pending: Object.keys(this.state.pending).length };
+    return {
+      enabled: this.enabled,
+      startup_error_code: this.startupErrorCode,
+      rooms,
+      upcoming,
+      active,
+      failures,
+      pending: Object.keys(this.state.pending).length
+    };
   }
   async inspectRunner(sessionId) {
     await this.start();
