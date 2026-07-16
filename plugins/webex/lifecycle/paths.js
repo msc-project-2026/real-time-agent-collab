@@ -21,20 +21,21 @@ function safeSegment(value) {
 
 // Paths
 
-// -- .collab/space(s)
+// -- .collab/spaces/
 function spacesRoot(explicitRoot) {
   const workspaceRoot = getWorkspaceRoot(explicitRoot);
   return path.join(workspaceRoot, ROOT, 'spaces');
 }
 
-function spaceRoot(spaceId, explicitRoot) {
+// -- .collab/spaces/<spaceId>/
+function spaceDir(spaceId, explicitRoot) {
   const workspaceRoot = getWorkspaceRoot(explicitRoot);
   return path.join(spacesRoot(explicitRoot), safeSegment(spaceId));
 }
 
-// -- ./spaces/pending/
+// -- .collab/spaces/<spaceId>/pending/
 function pendingDir(spaceId, explicitRoot) {
-  return path.join(spaceRoot(spaceId, explicitRoot), 'pending');
+  return path.join(spaceDir(spaceId, explicitRoot), 'pending');
 }
 
 function pendingMessagesPath(spaceId, explicitRoot) {
@@ -45,18 +46,18 @@ function pendingBatchStatePath(spaceId, explicitRoot) {
   return path.join(pendingDir(spaceId, explicitRoot), 'batch-state.json');
 }
 
-// -- ./spaces/processing/
+// -- .collab/spaces/<spaceId>/processing/
 function processingDir(spaceId, explicitRoot) {
-  return path.join(spaceRoot(spaceId, explicitRoot), 'processing');
+  return path.join(spaceDir(spaceId, explicitRoot), 'processing');
 }
 
 function processingBatchPath(spaceId, batchId, explicitRoot) {
   return path.join(processingDir(spaceId, explicitRoot), `${batchId}.jsonl`);
 }
 
-// -- ./spaces/processed/
+// -- .collab/spaces/<spaceId>/processed/
 function processedDir(spaceId, explicitRoot) {
-  return path.join(spaceRoot(spaceId, explicitRoot), 'processed');
+  return path.join(spaceDir(spaceId, explicitRoot), 'processed');
 }
 
 function processedBatchPath(spaceId, batchId, explicitRoot) {
@@ -67,7 +68,7 @@ function processedBatchMetaPath(spaceId, batchId, explicitRoot) {
   return path.join(processedDir(spaceId, explicitRoot), `${batchId}.meta.json`);
 }
 
-// -- ./spaces/<spaceId>/config/
+// -- .collab/spaces/<spaceId>/config/
 function configDir(spaceId, explicitRoot) {
   return path.join(spaceDir(spaceId, explicitRoot), 'config');
 }
