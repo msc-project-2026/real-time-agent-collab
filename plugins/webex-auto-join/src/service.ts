@@ -166,7 +166,7 @@ function safePublicFailureDetail(detail: unknown) {
     .replace(/[`*~<>]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 500);
+    .slice(0, 2000);
 }
 
 function safeErrorDetail(error: unknown, stage: string) {
@@ -174,12 +174,18 @@ function safeErrorDetail(error: unknown, stage: string) {
   const controlCode = configured(item?.controlCode);
   const status = Number(item?.status ?? 0);
   const message = configured(item?.controlError) || configured(item?.message) || String(error ?? '');
+  // WebexApiError.body carries the API's own reason (message + trackingId),
+  // which is the real explanation behind codes like webex_authorization_failed.
+  const body = typeof item?.body === 'string'
+    ? item.body
+    : item?.body ? (() => { try { return JSON.stringify(item.body); } catch { return ''; } })() : '';
   return safePublicFailureDetail([
     `stage=${stage}`,
     ...(item?.name ? [`name=${item.name}`] : []),
     ...(controlCode ? [`control_code=${controlCode}`] : []),
     ...(status ? [`status=${status}`] : []),
     ...(message ? [`message=${message}`] : []),
+    ...(body ? [`body=${body}`] : []),
   ].join('; '));
 }
 
@@ -1200,7 +1206,10 @@ export class MeetingJoinService {
   }
 
   private async persist() { if (this.store) await this.store.save(this.state); }
-  private logFailure(context: string, error: unknown) { this.log?.warn?.(`[webex-auto-join] ${context}: ${safeErrorCode(error)}`); }
+  private logFailure(context: string, error: unknown) {
+    const detail = safeErrorDetail(error, context);
+    this.log?.warn?.(`[webex-auto-join] ${context}: ${safeErrorCode(error)}; ${detail}`);
+  }
 }
 
 export {

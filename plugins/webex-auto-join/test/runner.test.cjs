@@ -136,3 +136,28 @@ test('reports a sanitized stage, SDK code, and message for join failures', async
   assert.match(failure.detail, /\[redacted-url\]/);
   assert.doesNotMatch(failure.detail, /top-secret-value|example\.webex\.com/);
 });
+
+test('unwraps the nested SDK cause so the real join reason surfaces', async () => {
+  // Mirrors Webex JoinMeetingError: generic code 2 wrapper with the true cause on `.error`.
+  const cause = Object.assign(new Error('Meeting is not active'), {
+    name: 'LocusError',
+    statusCode: 403,
+    body: { errorCode: 2409005, message: 'Meeting is not active' },
+  });
+  const error = Object.assign(new Error('Error Joining Meeting'), {
+    name: 'JoinMeetingError',
+    code: 2,
+    sdkMessage: 'There was an issue joining the meeting, meeting could be in a bad state.',
+    error: cause,
+  });
+  const runner = await loadRunner({ joinError: error });
+  await runner.click();
+
+  const failure = runner.events.find((event) => event.type === 'error');
+  assert.equal(failure.code, 'meeting_join_failed');
+  assert.match(failure.detail, /sdk_code=2/);
+  assert.match(failure.detail, /sdk_message=There was an issue joining/);
+  assert.match(failure.detail, /cause1_name=LocusError/);
+  assert.match(failure.detail, /cause1_code=403/);
+  assert.match(failure.detail, /cause1_message=Meeting is not active/);
+});

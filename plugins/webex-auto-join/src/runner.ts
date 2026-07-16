@@ -48,18 +48,56 @@ function sanitizeDiagnostic(value: unknown) {
     .slice(0, 500);
 }
 
-function diagnostic(error: unknown, errorStage = stage) {
-  const item: any = error ?? {};
+// Webex SDK errors wrap the real failure on `.error` (see JoinMeetingError:
+// `e.error=o`), so `sdk_code=2 / "Error Joining Meeting"` is only the generic
+// outer shell. Walk the cause chain so the underlying locus/HTTP reason surfaces.
+function errorChain(error: unknown, limit = 6): any[] {
+  const seen = new Set<any>();
+  const chain: any[] = [];
+  let node: any = error;
+  while (node != null && !seen.has(node) && chain.length < limit) {
+    seen.add(node);
+    chain.push(node);
+    node = node?.error ?? node?.cause ?? node?.originalError ?? node?.wrappedError;
+  }
+  return chain;
+}
+
+function layerFields(item: any) {
   const body = item?.body ?? item?.data?.body ?? item?.data ?? {};
-  const name = sanitizeDiagnostic(item?.name);
-  const sdkCode = sanitizeDiagnostic(item?.code ?? item?.errorCode ?? item?.statusCode ?? item?.status ?? body?.errorCode ?? body?.code);
-  const message = sanitizeDiagnostic(item?.message ?? body?.message ?? body?.error ?? error);
-  return [
+  return {
+    name: sanitizeDiagnostic(item?.name),
+    code: sanitizeDiagnostic(item?.code ?? item?.errorCode ?? item?.statusCode ?? item?.status ?? body?.errorCode ?? body?.code),
+    message: sanitizeDiagnostic(item?.message ?? body?.message ?? body?.error ?? (typeof item === 'string' ? item : '')),
+    sdkMessage: sanitizeDiagnostic(item?.sdkMessage),
+    reason: sanitizeDiagnostic(item?.reason ?? body?.reason ?? body?.errorDescription),
+  };
+}
+
+function diagnostic(error: unknown, errorStage = stage) {
+  const chain = errorChain(error);
+  const root = layerFields(chain[0] ?? {});
+  if (!root.message) root.message = sanitizeDiagnostic(error);
+  const parts = [
     `stage=${sanitizeDiagnostic(errorStage) || 'unknown'}`,
-    ...(name ? [`name=${name}`] : []),
-    ...(sdkCode ? [`sdk_code=${sdkCode}`] : []),
-    ...(message ? [`message=${message}`] : []),
-  ].join('; ');
+    ...(root.name ? [`name=${root.name}`] : []),
+    ...(root.code ? [`sdk_code=${root.code}`] : []),
+    ...(root.message ? [`message=${root.message}`] : []),
+    ...(root.sdkMessage && root.sdkMessage !== root.message ? [`sdk_message=${root.sdkMessage}`] : []),
+    ...(root.reason && root.reason !== root.message ? [`reason=${root.reason}`] : []),
+  ];
+  // Deeper layers carry the true cause the generic wrapper hides.
+  for (let i = 1; i < chain.length; i++) {
+    const layer = layerFields(chain[i]);
+    const detail = layer.message || layer.reason || layer.sdkMessage;
+    const fields = [
+      ...(layer.name ? [`cause${i}_name=${layer.name}`] : []),
+      ...(layer.code ? [`cause${i}_code=${layer.code}`] : []),
+      ...(detail ? [`cause${i}_message=${detail}`] : []),
+    ];
+    if (fields.length) parts.push(...fields);
+  }
+  return parts.join('; ');
 }
 
 async function start() {

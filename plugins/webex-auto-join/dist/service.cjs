@@ -230,19 +230,27 @@ function safePublicFailureCode(code) {
   return /^[a-z0-9_]{1,64}$/.test(normalized) ? normalized : "meeting_join_failed";
 }
 function safePublicFailureDetail(detail) {
-  return String(detail ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/https?:\/\/\S+/gi, "[redacted-url]").replace(/\b(access[_-]?token|refresh[_-]?token|authorization|password|secret)\b\s*[:=]\s*\S+/gi, "$1=[redacted]").replace(/(^|[^A-Za-z0-9_+/=-])[A-Za-z0-9_+/=-]{32,}(?=$|[^A-Za-z0-9_+/=-])/g, "$1[redacted-value]").replace(/[`*~<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 500);
+  return String(detail ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/https?:\/\/\S+/gi, "[redacted-url]").replace(/\b(access[_-]?token|refresh[_-]?token|authorization|password|secret)\b\s*[:=]\s*\S+/gi, "$1=[redacted]").replace(/(^|[^A-Za-z0-9_+/=-])[A-Za-z0-9_+/=-]{32,}(?=$|[^A-Za-z0-9_+/=-])/g, "$1[redacted-value]").replace(/[`*~<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 2e3);
 }
 function safeErrorDetail(error, stage) {
   const item = error ?? {};
   const controlCode = configured(item?.controlCode);
   const status = Number(item?.status ?? 0);
   const message = configured(item?.controlError) || configured(item?.message) || String(error ?? "");
+  const body = typeof item?.body === "string" ? item.body : item?.body ? (() => {
+    try {
+      return JSON.stringify(item.body);
+    } catch {
+      return "";
+    }
+  })() : "";
   return safePublicFailureDetail([
     `stage=${stage}`,
     ...item?.name ? [`name=${item.name}`] : [],
     ...controlCode ? [`control_code=${controlCode}`] : [],
     ...status ? [`status=${status}`] : [],
-    ...message ? [`message=${message}`] : []
+    ...message ? [`message=${message}`] : [],
+    ...body ? [`body=${body}`] : []
   ].join("; "));
 }
 function browserActionFailure(error) {
@@ -1279,7 +1287,8 @@ var MeetingJoinService = class {
     if (this.store) await this.store.save(this.state);
   }
   logFailure(context, error) {
-    this.log?.warn?.(`[webex-auto-join] ${context}: ${safeErrorCode(error)}`);
+    const detail = safeErrorDetail(error, context);
+    this.log?.warn?.(`[webex-auto-join] ${context}: ${safeErrorCode(error)}; ${detail}`);
   }
 };
 // Annotate the CommonJS export names for ESM import in node:

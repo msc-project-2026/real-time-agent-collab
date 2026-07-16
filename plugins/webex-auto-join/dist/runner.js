@@ -38,18 +38,50 @@
   function sanitizeDiagnostic(value) {
     return String(value ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/https?:\/\/\S+/gi, "[redacted-url]").replace(/\b(access[_-]?token|refresh[_-]?token|authorization|password|secret)\b\s*[:=]\s*\S+/gi, "$1=[redacted]").replace(/(^|[^A-Za-z0-9_+/=-])[A-Za-z0-9_+/=-]{32,}(?=$|[^A-Za-z0-9_+/=-])/g, "$1[redacted-value]").replace(/\s+/g, " ").trim().slice(0, 500);
   }
-  function diagnostic(error, errorStage = stage) {
-    const item = error ?? {};
+  function errorChain(error, limit = 6) {
+    const seen = /* @__PURE__ */ new Set();
+    const chain = [];
+    let node = error;
+    while (node != null && !seen.has(node) && chain.length < limit) {
+      seen.add(node);
+      chain.push(node);
+      node = node?.error ?? node?.cause ?? node?.originalError ?? node?.wrappedError;
+    }
+    return chain;
+  }
+  function layerFields(item) {
     const body = item?.body ?? item?.data?.body ?? item?.data ?? {};
-    const name = sanitizeDiagnostic(item?.name);
-    const sdkCode = sanitizeDiagnostic(item?.code ?? item?.errorCode ?? item?.statusCode ?? item?.status ?? body?.errorCode ?? body?.code);
-    const message = sanitizeDiagnostic(item?.message ?? body?.message ?? body?.error ?? error);
-    return [
+    return {
+      name: sanitizeDiagnostic(item?.name),
+      code: sanitizeDiagnostic(item?.code ?? item?.errorCode ?? item?.statusCode ?? item?.status ?? body?.errorCode ?? body?.code),
+      message: sanitizeDiagnostic(item?.message ?? body?.message ?? body?.error ?? (typeof item === "string" ? item : "")),
+      sdkMessage: sanitizeDiagnostic(item?.sdkMessage),
+      reason: sanitizeDiagnostic(item?.reason ?? body?.reason ?? body?.errorDescription)
+    };
+  }
+  function diagnostic(error, errorStage = stage) {
+    const chain = errorChain(error);
+    const root = layerFields(chain[0] ?? {});
+    if (!root.message) root.message = sanitizeDiagnostic(error);
+    const parts = [
       `stage=${sanitizeDiagnostic(errorStage) || "unknown"}`,
-      ...name ? [`name=${name}`] : [],
-      ...sdkCode ? [`sdk_code=${sdkCode}`] : [],
-      ...message ? [`message=${message}`] : []
-    ].join("; ");
+      ...root.name ? [`name=${root.name}`] : [],
+      ...root.code ? [`sdk_code=${root.code}`] : [],
+      ...root.message ? [`message=${root.message}`] : [],
+      ...root.sdkMessage && root.sdkMessage !== root.message ? [`sdk_message=${root.sdkMessage}`] : [],
+      ...root.reason && root.reason !== root.message ? [`reason=${root.reason}`] : []
+    ];
+    for (let i = 1; i < chain.length; i++) {
+      const layer = layerFields(chain[i]);
+      const detail = layer.message || layer.reason || layer.sdkMessage;
+      const fields = [
+        ...layer.name ? [`cause${i}_name=${layer.name}`] : [],
+        ...layer.code ? [`cause${i}_code=${layer.code}`] : [],
+        ...detail ? [`cause${i}_message=${detail}`] : []
+      ];
+      if (fields.length) parts.push(...fields);
+    }
+    return parts.join("; ");
   }
   async function start() {
     if (window.meetingJoinStarted) return;
