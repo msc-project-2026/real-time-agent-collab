@@ -849,10 +849,28 @@ export class MeetingJoinService {
     if (invitation.meetingId && this.isDismissed(invitation.meetingId)) {
       return { accepted: false, state: 'left', error_code: 'meeting_left_by_user' };
     }
-    const existing = Object.values(this.state.sessions).find((session) =>
-      ACTIVE_STATES.has(session.state) && (session.invitation.meetingId === invitation.meetingId || session.roomId === roomId)
+    // A manually joined session knows only the join link, not the REST meeting
+    // id, so identity must also match on the link/destination. Otherwise the
+    // meeting the bot is already in gets queued as pending and rejoins the
+    // moment the user asks it to leave.
+    const sameMeeting = (session: Session) => Boolean(
+      (invitation.meetingId && session.invitation.meetingId === invitation.meetingId)
+      || (invitation.joinLink && session.invitation.joinLink === invitation.joinLink)
+      || session.invitation.destination === invitation.destination
     );
-    if (existing?.invitation.meetingId === invitation.meetingId) return this.browserReadyResult(existing);
+    const existing = Object.values(this.state.sessions).find((session) =>
+      ACTIVE_STATES.has(session.state) && (sameMeeting(session) || session.roomId === roomId)
+    );
+    if (existing && sameMeeting(existing)) {
+      // Backfill the discovered identity onto the manual session so a later
+      // leave records the dismissal against the right meeting instance.
+      if (invitation.meetingId && !existing.invitation.meetingId) {
+        existing.invitation.meetingId = invitation.meetingId;
+        if (invitation.meetingNumber && !existing.invitation.meetingNumber) existing.invitation.meetingNumber = invitation.meetingNumber;
+        await this.persist();
+      }
+      return this.browserReadyResult(existing);
+    }
     const activeCount = Object.values(this.state.sessions).filter((session) => ACTIVE_STATES.has(session.state)).length;
     if (existing || activeCount >= this.cfg.maxConcurrentMeetings) {
       this.state.pending[invitation.meetingId!] = {
@@ -941,16 +959,48 @@ export class MeetingJoinService {
   }
 
   async leave(roomId: string) {
-    const session = Object.values(this.state.sessions).find((item) => item.roomId === roomId && ACTIVE_STATES.has(item.state));
-    if (!session) return { accepted: false, state: 'left', error_code: 'no_active_meeting' };
+    const active = Object.values(this.state.sessions).filter((item) => ACTIVE_STATES.has(item.state));
+    let session = active.find((item) => item.roomId === roomId);
+    // "Leave the meeting" often arrives from a different space — or a 1:1 with the
+    // bot — than the meeting's own room, so the room id will not match. When the
+    // request is unambiguous (exactly one active meeting), leave that one anyway.
+    if (!session && active.length === 1) {
+      session = active[0];
+      this.log?.info?.(`[webex-auto-join] leave: room ${roomId || '(none)'} had no session; leaving the sole active meeting in ${session.roomId}`);
+    }
+    if (!session) {
+      if (active.length > 1) {
+        return {
+          accepted: false, state: 'active', error_code: 'ambiguous_active_meeting',
+          active_meetings: active.map((item) => ({
+            session_id: item.id, room_id: item.roomId, room_title: this.state.rooms[item.roomId]?.title, meeting_id: item.invitation.meetingId,
+          })),
+        };
+      }
+      return { accepted: false, state: 'left', error_code: 'no_active_meeting' };
+    }
     session.leaveRequested = true;
     // Remember this in-progress instance so discovery/reconciliation does not
     // auto-rejoin the meeting the user just chose to leave. A later, different
     // meeting in the same space is unaffected (dismissal is keyed by meeting id).
+    const dismissedAt = nowIso();
+    const expiresAt = new Date(Date.now() + DISMISSAL_TTL_MS).toISOString();
     const meetingId = configured(session.invitation.meetingId);
     if (meetingId) {
-      this.dismissals()[meetingId] = { meetingId, roomId, dismissedAt: nowIso(), expiresAt: new Date(Date.now() + DISMISSAL_TTL_MS).toISOString() };
+      this.dismissals()[meetingId] = { meetingId, roomId: session.roomId, dismissedAt, expiresAt };
       delete this.state.pending[meetingId];
+    }
+    // A manually joined session may not know its REST meeting id. Any pending
+    // entry for the same room with the same link/destination is this same
+    // in-progress instance queued under its discovered id — dismiss it too, or
+    // drainPending rejoins the meeting as soon as the leave completes.
+    for (const pending of Object.values(this.state.pending)) {
+      if (pending.roomId !== session.roomId) continue;
+      const sameLink = session.invitation.joinLink && pending.webLink === session.invitation.joinLink;
+      if (sameLink || pending.destination === session.invitation.destination) {
+        this.dismissals()[pending.meetingId] = { meetingId: pending.meetingId, roomId: session.roomId, dismissedAt, expiresAt };
+        delete this.state.pending[pending.meetingId];
+      }
     }
     await this.transition(session, 'leaving');
     const timer = setTimeout(() => { if (session.state === 'leaving') this.completeLeave(session).catch(() => undefined); }, 15_000);
@@ -1097,6 +1147,9 @@ export class MeetingJoinService {
     else if (type === 'left') await this.completeLeave(session);
     else if (type === 'ended') await this.completeEnd(session);
     else if (type === 'error') {
+      // A runner error while a leave is in flight (e.g. the SDK throws during
+      // hangup) must settle as 'left', not trigger a recovery relaunch.
+      if (session.leaveRequested) return this.completeLeave(session);
       const code = configured(event?.code) || 'meeting_join_failed';
       const detail = safePublicFailureDetail(event?.detail);
       if (session.recoveryAttempts > 0 && session.recoveryAttempts < this.cfg.recoveryMaxAttempts) {
@@ -1141,6 +1194,9 @@ export class MeetingJoinService {
   private async recover(session: Session) {
     let lastErrorDetail = '';
     while (session.recoveryAttempts < this.cfg.recoveryMaxAttempts && ACTIVE_STATES.has(session.state)) {
+      // Never resurrect a session the user asked to leave: relaunching the
+      // runner here would rejoin the meeting right after the explicit leave.
+      if (session.leaveRequested || session.state === 'leaving') return this.completeLeave(session);
       session.recoveryAttempts += 1;
       await this.transition(session, 'recovering');
       try {
@@ -1154,6 +1210,7 @@ export class MeetingJoinService {
         await delay(this.cfg.recoveryBaseDelayMs * 2 ** (session.recoveryAttempts - 1) + Math.floor(Math.random() * 250));
       }
     }
+    if (session.leaveRequested || session.state === 'leaving') return this.completeLeave(session);
     await this.fail(session, 'recovery_exhausted', lastErrorDetail || 'stage=runner_recovery; message=Recovery attempts were exhausted');
   }
 

@@ -864,10 +864,20 @@ var MeetingJoinService = class {
     if (invitation.meetingId && this.isDismissed(invitation.meetingId)) {
       return { accepted: false, state: "left", error_code: "meeting_left_by_user" };
     }
-    const existing = Object.values(this.state.sessions).find(
-      (session) => ACTIVE_STATES.has(session.state) && (session.invitation.meetingId === invitation.meetingId || session.roomId === roomId)
+    const sameMeeting = (session) => Boolean(
+      invitation.meetingId && session.invitation.meetingId === invitation.meetingId || invitation.joinLink && session.invitation.joinLink === invitation.joinLink || session.invitation.destination === invitation.destination
     );
-    if (existing?.invitation.meetingId === invitation.meetingId) return this.browserReadyResult(existing);
+    const existing = Object.values(this.state.sessions).find(
+      (session) => ACTIVE_STATES.has(session.state) && (sameMeeting(session) || session.roomId === roomId)
+    );
+    if (existing && sameMeeting(existing)) {
+      if (invitation.meetingId && !existing.invitation.meetingId) {
+        existing.invitation.meetingId = invitation.meetingId;
+        if (invitation.meetingNumber && !existing.invitation.meetingNumber) existing.invitation.meetingNumber = invitation.meetingNumber;
+        await this.persist();
+      }
+      return this.browserReadyResult(existing);
+    }
     const activeCount = Object.values(this.state.sessions).filter((session) => ACTIVE_STATES.has(session.state)).length;
     if (existing || activeCount >= this.cfg.maxConcurrentMeetings) {
       this.state.pending[invitation.meetingId] = {
@@ -970,13 +980,43 @@ var MeetingJoinService = class {
     };
   }
   async leave(roomId) {
-    const session = Object.values(this.state.sessions).find((item) => item.roomId === roomId && ACTIVE_STATES.has(item.state));
-    if (!session) return { accepted: false, state: "left", error_code: "no_active_meeting" };
+    const active = Object.values(this.state.sessions).filter((item) => ACTIVE_STATES.has(item.state));
+    let session = active.find((item) => item.roomId === roomId);
+    if (!session && active.length === 1) {
+      session = active[0];
+      this.log?.info?.(`[webex-auto-join] leave: room ${roomId || "(none)"} had no session; leaving the sole active meeting in ${session.roomId}`);
+    }
+    if (!session) {
+      if (active.length > 1) {
+        return {
+          accepted: false,
+          state: "active",
+          error_code: "ambiguous_active_meeting",
+          active_meetings: active.map((item) => ({
+            session_id: item.id,
+            room_id: item.roomId,
+            room_title: this.state.rooms[item.roomId]?.title,
+            meeting_id: item.invitation.meetingId
+          }))
+        };
+      }
+      return { accepted: false, state: "left", error_code: "no_active_meeting" };
+    }
     session.leaveRequested = true;
+    const dismissedAt = nowIso();
+    const expiresAt = new Date(Date.now() + DISMISSAL_TTL_MS).toISOString();
     const meetingId = configured(session.invitation.meetingId);
     if (meetingId) {
-      this.dismissals()[meetingId] = { meetingId, roomId, dismissedAt: nowIso(), expiresAt: new Date(Date.now() + DISMISSAL_TTL_MS).toISOString() };
+      this.dismissals()[meetingId] = { meetingId, roomId: session.roomId, dismissedAt, expiresAt };
       delete this.state.pending[meetingId];
+    }
+    for (const pending of Object.values(this.state.pending)) {
+      if (pending.roomId !== session.roomId) continue;
+      const sameLink = session.invitation.joinLink && pending.webLink === session.invitation.joinLink;
+      if (sameLink || pending.destination === session.invitation.destination) {
+        this.dismissals()[pending.meetingId] = { meetingId: pending.meetingId, roomId: session.roomId, dismissedAt, expiresAt };
+        delete this.state.pending[pending.meetingId];
+      }
     }
     await this.transition(session, "leaving");
     const timer = setTimeout(() => {
@@ -1141,6 +1181,7 @@ var MeetingJoinService = class {
     } else if (type === "left") await this.completeLeave(session);
     else if (type === "ended") await this.completeEnd(session);
     else if (type === "error") {
+      if (session.leaveRequested) return this.completeLeave(session);
       const code = configured(event?.code) || "meeting_join_failed";
       const detail = safePublicFailureDetail(event?.detail);
       if (session.recoveryAttempts > 0 && session.recoveryAttempts < this.cfg.recoveryMaxAttempts) {
@@ -1184,6 +1225,7 @@ var MeetingJoinService = class {
   async recover(session) {
     let lastErrorDetail = "";
     while (session.recoveryAttempts < this.cfg.recoveryMaxAttempts && ACTIVE_STATES.has(session.state)) {
+      if (session.leaveRequested || session.state === "leaving") return this.completeLeave(session);
       session.recoveryAttempts += 1;
       await this.transition(session, "recovering");
       try {
@@ -1197,6 +1239,7 @@ var MeetingJoinService = class {
         await delay(this.cfg.recoveryBaseDelayMs * 2 ** (session.recoveryAttempts - 1) + Math.floor(Math.random() * 250));
       }
     }
+    if (session.leaveRequested || session.state === "leaving") return this.completeLeave(session);
     await this.fail(session, "recovery_exhausted", lastErrorDetail || "stage=runner_recovery; message=Recovery attempts were exhausted");
   }
   async endMeeting(meetingId, roomId) {
@@ -1409,7 +1452,7 @@ function registerTools(api, resolveService) {
   }, { optional: true });
   api.registerTool({
     name: "leave_webex_meeting",
-    description: "Leave the active Webex meeting for the specified originating Webex space.",
+    description: "Leave an active Webex meeting. Pass the current room ID; if that space has no active session, the sole active meeting is left instead, so call this whenever any meeting is active \u2014 no meeting link is needed. If several meetings are active it returns ambiguous_active_meeting with the candidates.",
     parameters: {
       type: "object",
       properties: { room_id: { type: "string", description: "The current Webex room ID from the inbound context." } },

@@ -131,6 +131,128 @@ test('a user-left meeting is not auto-rejoined, but a new meeting still joins', 
   assert.equal(other.accepted, true);
 });
 
+test('a manually joined meeting is deduplicated by link, leavable from another space, and not rejoined', async () => {
+  const service = new MeetingJoinService({}, { maxConcurrentMeetings: 4 }, { warn() {} });
+  service.enabled = true;
+  service.store = { save: async () => {} };
+  service.browser = { close: async () => {} };
+  service.state = {
+    version: 2,
+    sessions: {},
+    rooms: { room: { roomId: 'room', covered: true, updatedAt: 'now' } },
+    schedules: {}, pending: {}, dismissed: {}, notifications: {},
+  };
+  service.launch = async (session) => { session.tabId = 'runner-tab'; };
+
+  const joined = await service.join({ room_id: 'room', meeting_link: JOIN_LINK, meeting_password: 'pw' });
+  assert.equal(joined.accepted, true);
+
+  // Discovery sees the same in-progress meeting under its REST id: it must
+  // recognize the manual session by link — not queue the meeting as pending —
+  // and backfill the id so a later leave dismisses the right instance.
+  const discovered = { id: 'meeting-1', meetingType: 'meeting', state: 'inProgress', roomId: 'room', webLink: JOIN_LINK };
+  const dedup = await service.joinDiscoveredMeeting(discovered);
+  assert.equal(dedup.accepted, true);
+  assert.equal(dedup.session_id, joined.session_id);
+  assert.deepEqual(service.state.pending, {});
+  assert.equal(service.state.sessions[joined.session_id].invitation.meetingId, 'meeting-1');
+
+  // "Leave the meeting" arrives from a different space (e.g. a 1:1 with the
+  // bot): the sole active meeting is still left.
+  const left = await service.leave('direct-room');
+  assert.equal(left.accepted, true);
+  await service.completeLeave(service.state.sessions[joined.session_id]);
+  assert.equal(service.state.sessions[joined.session_id].state, 'left');
+
+  // Reconciliation re-discovers the still-in-progress meeting: must NOT rejoin.
+  const rejoin = await service.joinDiscoveredMeeting(discovered);
+  assert.equal(rejoin.accepted, false);
+  assert.equal(rejoin.error_code, 'meeting_left_by_user');
+});
+
+test('leaving purges a pending duplicate of the same meeting so it cannot rejoin', async () => {
+  const service = new MeetingJoinService({}, { maxConcurrentMeetings: 4 }, { warn() {} });
+  service.enabled = true;
+  service.store = { save: async () => {} };
+  service.browser = { close: async () => {} };
+  service.launch = async (session) => { session.tabId = 'runner-tab'; };
+  // Pre-fix persisted state: the meeting the bot manually joined was also
+  // queued as pending under its discovered id.
+  service.state = {
+    version: 2,
+    sessions: {
+      manual: {
+        id: 'manual', roomId: 'room', source: 'manual', state: 'joined',
+        invitation: { destination: JOIN_LINK, destinationKind: 'web_link', joinLink: JOIN_LINK, password: 'pw', discoveredAt: 'now' },
+        recoveryAttempts: 0, createdAt: 'now', updatedAt: 'now',
+      },
+    },
+    rooms: { room: { roomId: 'room', covered: true, updatedAt: 'now' } },
+    schedules: {},
+    pending: {
+      'meeting-1': {
+        meetingId: 'meeting-1', roomId: 'room', destination: JOIN_LINK, webLink: JOIN_LINK,
+        expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(), updatedAt: 'now',
+      },
+    },
+    dismissed: {}, notifications: {},
+  };
+
+  const left = await service.leave('room');
+  assert.equal(left.accepted, true);
+  assert.equal(service.state.pending['meeting-1'], undefined);
+  assert.ok(service.state.dismissed['meeting-1']);
+
+  // completeLeave drains pending; nothing may rejoin.
+  await service.completeLeave(service.state.sessions.manual);
+  assert.equal(service.state.sessions.manual.state, 'left');
+  assert.equal(Object.keys(service.state.sessions).length, 1);
+});
+
+test('a runner error during a requested leave settles as left instead of recovering', async () => {
+  const service = new MeetingJoinService({}, { maxConcurrentMeetings: 4 }, { warn() {} });
+  service.enabled = true;
+  service.store = { save: async () => {} };
+  service.browser = { close: async () => {} };
+  service.state = {
+    version: 2,
+    sessions: {},
+    rooms: { room: { roomId: 'room', covered: true, updatedAt: 'now' } },
+    schedules: {}, pending: {}, dismissed: {}, notifications: {},
+  };
+  service.launch = async (session) => { session.tabId = 'runner-tab'; };
+
+  const joined = await service.join({ room_id: 'room', meeting_link: JOIN_LINK, meeting_password: 'pw' });
+  const session = service.state.sessions[joined.session_id];
+  session.recoveryAttempts = 1; // an error would otherwise trigger a recovery relaunch
+  await service.leave('room');
+  await service.handleRunnerEvent(session, { type: 'error', code: 'meeting_join_failed' });
+  assert.equal(session.state, 'left');
+});
+
+test('leave with several active meetings and no room match reports the candidates', async () => {
+  const service = new MeetingJoinService({}, { maxConcurrentMeetings: 4 }, { warn() {} });
+  service.enabled = true;
+  service.store = { save: async () => {} };
+  const activeSession = (id, roomId) => ({
+    id, roomId, source: 'automatic', state: 'joined',
+    invitation: { destination: JOIN_LINK, joinLink: JOIN_LINK, meetingId: `${id}-meeting`, discoveredAt: 'now' },
+    recoveryAttempts: 0, createdAt: 'now', updatedAt: 'now',
+  });
+  service.state = {
+    version: 2,
+    sessions: { one: activeSession('one', 'room-1'), two: activeSession('two', 'room-2') },
+    rooms: { 'room-1': { roomId: 'room-1', title: 'Design', covered: true, updatedAt: 'now' } },
+    schedules: {}, pending: {}, dismissed: {}, notifications: {},
+  };
+
+  const result = await service.leave('room-3');
+  assert.equal(result.accepted, false);
+  assert.equal(result.error_code, 'ambiguous_active_meeting');
+  assert.equal(result.active_meetings.length, 2);
+  assert.equal(result.active_meetings[0].room_title, 'Design');
+});
+
 test('capacity-blocked automatic meetings remain pending', async () => {
   const service = new MeetingJoinService({}, { maxConcurrentMeetings: 1 }, { warn() {} });
   service.startTask = Promise.resolve();

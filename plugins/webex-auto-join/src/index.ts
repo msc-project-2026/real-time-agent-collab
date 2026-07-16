@@ -62,7 +62,7 @@ function registerTools(api: any, resolveService: () => MeetingJoinService) {
 
   api.registerTool({
     name: 'leave_webex_meeting',
-    description: 'Leave the active Webex meeting for the specified originating Webex space.',
+    description: 'Leave an active Webex meeting. Pass the current room ID; if that space has no active session, the sole active meeting is left instead, so call this whenever any meeting is active — no meeting link is needed. If several meetings are active it returns ambiguous_active_meeting with the candidates.',
     parameters: {
       type: 'object',
       properties: { room_id: { type: 'string', description: 'The current Webex room ID from the inbound context.' } },
