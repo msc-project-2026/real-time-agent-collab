@@ -17,6 +17,7 @@ function buildMsgBody(to, content, parentId) {
   if (content.text) body.text = content.text;
   if (content.markdown) body.markdown = content.markdown;
   if (content.files?.length) body.files = [content.files[0]];
+  if (content.attachments?.length) body.attachments = content.attachments;
   if (parentId) body.parentId = parentId;
   return body;
 }

@@ -8,6 +8,7 @@ const { getPluginRuntime } = require('./runtime');
 const { stagePendingBatch } = require('./lifecycle/stage-pending');
 const { appendPendingMessage } = require('./lifecycle/append-pending');
 const { schedulePendingBatchStaging } = require('./lifecycle/schedule-pending');
+const { handleConfigRequest } = require('./config/handle-config-request');
 
 // *** Helpers
 // Make handler for parsing message routing result
@@ -94,6 +95,16 @@ async function handleRouteResult({ routeResult, message, account, log }) {
       await appendPendingMessage({ spaceId, message });
 
       await handleStagePendingBatchRequest({ spaceId, account, log });
+
+      return;
+    }
+
+    case 'config_request': {
+      await handleConfigRequest({
+        spaceId,
+        account,
+        log,
+      });
 
       return;
     }

@@ -85,13 +85,14 @@ async function handleInboundWebexMessage(
       CommandBody: [
         routingInstruction,
         '',
-        'Webex message context:',
+        '## Webex message:',
         '',
+        '### Context:',
         '```json',
         JSON.stringify(contextHeader, null, 2),
         '```',
         '',
-        'Inbound message:',
+        '### Inbound message:',
         msg.text ?? '',
       ].join('\n'),
 

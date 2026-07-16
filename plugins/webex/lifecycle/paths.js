@@ -22,17 +22,17 @@ function safeSegment(value) {
 // Paths
 
 // -- .collab/space(s)
-function spaceRoot(spaceId, explicitRoot) {
-  const workspaceRoot = getWorkspaceRoot(explicitRoot);
-  return path.join(workspaceRoot, ROOT, 'spaces', safeSegment(spaceId));
-}
-
 function spacesRoot(explicitRoot) {
   const workspaceRoot = getWorkspaceRoot(explicitRoot);
   return path.join(workspaceRoot, ROOT, 'spaces');
 }
 
-// -- ./pending/
+function spaceRoot(spaceId, explicitRoot) {
+  const workspaceRoot = getWorkspaceRoot(explicitRoot);
+  return path.join(spacesRoot(explicitRoot), safeSegment(spaceId));
+}
+
+// -- ./spaces/pending/
 function pendingDir(spaceId, explicitRoot) {
   return path.join(spaceRoot(spaceId, explicitRoot), 'pending');
 }
@@ -45,7 +45,7 @@ function pendingBatchStatePath(spaceId, explicitRoot) {
   return path.join(pendingDir(spaceId, explicitRoot), 'batch-state.json');
 }
 
-// -- ./processing/
+// -- ./spaces/processing/
 function processingDir(spaceId, explicitRoot) {
   return path.join(spaceRoot(spaceId, explicitRoot), 'processing');
 }
@@ -54,7 +54,7 @@ function processingBatchPath(spaceId, batchId, explicitRoot) {
   return path.join(processingDir(spaceId, explicitRoot), `${batchId}.jsonl`);
 }
 
-// -- ./processed/
+// -- ./spaces/processed/
 function processedDir(spaceId, explicitRoot) {
   return path.join(spaceRoot(spaceId, explicitRoot), 'processed');
 }
@@ -65,6 +65,23 @@ function processedBatchPath(spaceId, batchId, explicitRoot) {
 
 function processedBatchMetaPath(spaceId, batchId, explicitRoot) {
   return path.join(processedDir(spaceId, explicitRoot), `${batchId}.meta.json`);
+}
+
+// -- ./spaces/<spaceId>/config/
+function configDir(spaceId, explicitRoot) {
+  return path.join(spaceDir(spaceId, explicitRoot), 'config');
+}
+
+function activeConfigPath(spaceId, explicitRoot) {
+  return path.join(configDir(spaceId, explicitRoot), 'active.json');
+}
+
+function pendingConfigPath(spaceId, explicitRoot) {
+  return path.join(configDir(spaceId, explicitRoot), 'pending.json');
+}
+
+function configAuditPath(spaceId, explicitRoot) {
+  return path.join(configDir(spaceId, explicitRoot), 'audit.jsonl');
 }
 
 module.exports = {
@@ -79,4 +96,8 @@ module.exports = {
   processedDir,
   processedBatchPath,
   processedBatchMetaPath,
+  configDir,
+  activeConfigPath,
+  pendingConfigPath,
+  configAuditPath,
 };
