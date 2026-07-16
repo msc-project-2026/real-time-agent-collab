@@ -11,6 +11,34 @@ const { schedulePendingBatchStaging } = require('./lifecycle/schedule-pending');
 const { handleConfigRequest } = require('./config/handle-config-request');
 
 // *** Helpers
+function parseJsonObjectFromText(text) {
+  if (!text || typeof text !== 'string') {
+    throw new Error('text is required');
+  }
+
+  const trimmed = text.trim();
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // Not strict JSON; try markdown-fenced JSON or embedded JSON below.
+  }
+
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fenced?.[1]) {
+    return JSON.parse(fenced[1].trim());
+  }
+
+  const start = trimmed.indexOf('{');
+  const end = trimmed.lastIndexOf('}');
+
+  if (start !== -1 && end !== -1 && end > start) {
+    return JSON.parse(trimmed.slice(start, end + 1));
+  }
+
+  throw new Error('No JSON object found in text');
+}
+
 // Make handler for parsing message routing result
 function makeRouteResultHandler({ message, account, log }) {
   const spaceId = message.roomId;
@@ -23,10 +51,10 @@ function makeRouteResultHandler({ message, account, log }) {
 
     let parsed;
     try {
-      parsed = JSON.parse(text);
+      parsed = parseJsonObjectFromText(text);
     } catch (err) {
       log?.warn?.(
-        `[webex:${account.accountId}] agent route output was not JSON ${JSON.stringify(
+        `[webex:${account.accountId}] agent route output was not parseable ${JSON.stringify(
           {
             spaceId,
             error: err?.message ?? String(err),

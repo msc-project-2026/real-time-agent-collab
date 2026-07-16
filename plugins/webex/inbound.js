@@ -92,7 +92,7 @@ async function handleInboundWebexMessage(
         JSON.stringify(contextHeader, null, 2),
         '```',
         '',
-        '### Inbound message:',
+        '### Content:',
         msg.text ?? '',
       ].join('\n'),
 
