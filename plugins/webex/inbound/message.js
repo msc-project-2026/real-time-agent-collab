@@ -1,13 +1,13 @@
-// ********* INBOUND.JS *********
+// ********* INBOUND/MESSAGE.JS *********
 'use strict';
 
 // Inbound message filtering, membership checks, and agent pipeline dispatch.
-const { webexFetch } = require('./api');
-const { getAccessToken } = require('./token');
-const { buildRoutingInstruction } = require('./instructions/routing');
-const { dispatchToAgentForSpace } = require('./dispatch');
-const { makeRouteResultHandler } = require('./internal-events');
-const { getPluginRuntime } = require('./runtime');
+const { webexFetch } = require('../api');
+const { getAccessToken } = require('../token');
+const { buildRoutingInstruction } = require('../instructions/routing');
+const { dispatchToAgentForSpace } = require('../dispatch');
+const { makeRouteResultHandler } = require('../internal-events');
+const { getPluginRuntime } = require('../runtime');
 
 // DmPolicy enforcement
 function isDmAllowed(cfg, personId, personEmail) {

@@ -4,20 +4,19 @@
 // Webex channel plugin object implementing the OpenClaw channel contract.
 
 const { WEBEX_API, webexFetch } = require('./api');
+const { ensureWebhook, deregisterWebhooks } = require('./webhook/registration');
 const {
   getAccessToken,
   setAccessToken,
   refreshAccessToken,
-  ensureWebhook,
-  deregisterWebhooks,
 } = require('./token');
-const { targets, normPath } = require('./webhook');
+const { targets, normPath } = require('./webhook/router');
+const { handleInboundWebexWebhook } = require('./inbound');
 const { buildMsgBody } = require('./send');
-const { handleInboundWebexMessage } = require('./inbound');
-const { handleStagePendingBatchRequest } = require('./internal-events');
 const {
   runPendingBatchStagingRecovery,
 } = require('./lifecycle/schedule-pending');
+const { handleStagePendingBatchRequest } = require('./internal-events');
 
 const DEFAULT_ACCOUNT = 'default';
 
@@ -320,6 +319,16 @@ const webexPlugin = {
   },
 
   gateway: {
+    /*
+    start account
+    → set/refresh OAuth access token
+    → fetch bot identity with /people/me
+    → start periodic token refresh
+    → ensureWebhook(cfg)
+    → register local target in targets map
+    → run pending batch recovery
+    → stay alive until stopped
+    */
     startAccount: async (ctx) => {
       const { account, log, setStatus } = ctx;
       const cfg = account.config;
@@ -375,7 +384,7 @@ const webexPlugin = {
       targets.set(webhookPath, {
         account,
         handle: (payload) =>
-          handleInboundWebexMessage(payload, { botId, cfg, account, log }),
+          handleInboundWebexWebhook(payload, { botId, cfg, account, log }),
       });
       log?.info?.(`[webex:${account.accountId}] ready at ${webhookPath}`);
 
@@ -394,13 +403,12 @@ const webexPlugin = {
         if (refreshInterval) clearInterval(refreshInterval);
         log?.info?.(`[webex:${account.accountId}] stopping`);
         targets.delete(webhookPath);
-        /*
+
         await deregisterWebhooks(cfg).catch((err) =>
           log?.warn?.(
             `[webex:${account.accountId}] webhook deregister failed: ${err?.message}`
           )
         );
-        */
       }
     },
   },

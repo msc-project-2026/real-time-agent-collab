@@ -9,7 +9,7 @@ const {
 } = require('./tools/complete-processing-batch');
 
 const { webexPlugin } = require('./channel');
-const { webhookRouter } = require('./webhook');
+const { webhookRouter } = require('./webhook/router');
 const { setPluginRuntime } = require('./runtime');
 
 function register(api) {

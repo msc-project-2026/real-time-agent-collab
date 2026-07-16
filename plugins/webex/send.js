@@ -1,5 +1,7 @@
-// Outbound message body builder: infers roomId vs toPersonId vs email destination.
+// ********* SEND.JS *********
 'use strict';
+
+// Outbound message body builder: infers roomId vs toPersonId vs email destination.
 
 // Build a Webex Messages API POST body, inferring roomId vs toPersonId vs email.
 function buildMsgBody(to, content, parentId) {

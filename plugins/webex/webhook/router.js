@@ -1,9 +1,15 @@
-// HTTP route handler for incoming Webex webhook POSTs; HMAC-SHA1 verification; dispatch target registry.
+// ********* WEBHOOK/ROUTER.JS *********
 'use strict';
+
+const {
+  handleInboundWebexAttachmentAction,
+} = require('../inbound/attachment-actions');
 
 const { createHmac, timingSafeEqual } = require('node:crypto');
 
 const MAX_BODY_BYTES = 1024 * 1024;
+
+// *** Helpers
 
 // Active webhook targets registered by startAccount, keyed by normalized path.
 // Each entry: { account, handle(payload) → Promise }
@@ -32,6 +38,8 @@ function verifyHmac(secret, rawBody, signature) {
     return false;
   }
 }
+
+// *** HTTP webhook router
 
 // Registered at /webhooks/webex/ (prefix match, auth: plugin).
 // Dispatches to the right account target based on the full path.
@@ -107,4 +115,8 @@ async function webhookRouter(req, res) {
   return true;
 }
 
-module.exports = { targets, normPath, webhookRouter };
+module.exports = {
+  targets,
+  normPath,
+  webhookRouter,
+};

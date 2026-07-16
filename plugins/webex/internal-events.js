@@ -112,7 +112,11 @@ function makeRouteResultHandler({ message, account, log }) {
 // *** Handlers
 // Handle route result
 async function handleRouteResult({ routeResult, message, account, log }) {
+  if (!message?.roomId) throw new Error('message.roomId is required');
+  if (!account) throw new Error('account is required');
+
   const spaceId = message.roomId;
+
   if (!routeResult?.route) {
     log?.warn?.(`[webex:${account.accountId}] route result missing route`, {
       spaceId,

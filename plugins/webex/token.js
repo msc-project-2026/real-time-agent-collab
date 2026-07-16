@@ -1,5 +1,7 @@
-// OAuth access token state, refresh logic, and Webex webhook registration/deregistration.
+// ********* TOKEN.JS *********
 'use strict';
+
+// OAuth access token state and refresh logic.
 
 const { WEBEX_API, webexFetch } = require('./api');
 
@@ -35,42 +37,8 @@ async function refreshAccessToken(cfg) {
   return data.access_token;
 }
 
-// Deregisters any existing webhooks pointing at cfg.webhookUrl then creates a
-// fresh one.  Idempotent — safe to call on every startAccount.
-async function ensureWebhook(cfg) {
-  const token = currentAccessToken ?? cfg.token;
-  const data = await webexFetch(token, '/webhooks');
-  await Promise.all(
-    (data?.items ?? [])
-      .filter((w) => w.targetUrl === cfg.webhookUrl)
-      .map((w) => webexFetch(token, `/webhooks/${w.id}`, { method: 'DELETE' }))
-  );
-  await webexFetch(token, '/webhooks', {
-    method: 'POST',
-    body: {
-      name: 'OpenClaw Message Handler',
-      targetUrl: cfg.webhookUrl,
-      resource: 'messages',
-      event: 'created',
-      ...(cfg.webhookSecret ? { secret: cfg.webhookSecret } : {}),
-    },
-  });
-}
-
-async function deregisterWebhooks(cfg) {
-  const token = currentAccessToken ?? cfg.token;
-  const data = await webexFetch(token, '/webhooks');
-  await Promise.all(
-    (data?.items ?? [])
-      .filter((w) => w.targetUrl === cfg.webhookUrl)
-      .map((w) => webexFetch(token, `/webhooks/${w.id}`, { method: 'DELETE' }))
-  );
-}
-
 module.exports = {
   getAccessToken,
   setAccessToken,
   refreshAccessToken,
-  ensureWebhook,
-  deregisterWebhooks,
 };
