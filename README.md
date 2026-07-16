@@ -136,6 +136,7 @@ Located at `plugins/webex/`. Registered with OpenClaw via `openclaw.plugin.json`
 | `index.js` | Plugin entry — calls `api.registerChannel` and `api.registerHttpRoute` |
 | `channel.js` | Full OpenClaw channel contract: account resolution, DM policy, outbound send, status/probe, `startAccount` lifecycle |
 | `inbound.js` | Post-webhook async handler: filters self/DM/membership, fetches full message, dispatches to agent pipeline |
+| `address.js` | Recognizes explicit assistant names and vocative direct addresses |
 | `webhook.js` | `webhookRouter` HTTP handler: HMAC-SHA1 verification, body read, target dispatch registry |
 | `token.js` | In-memory OAuth access token; `ensureWebhook` (deregister-then-recreate); `deregisterWebhooks`; 12-day refresh interval |
 | `send.js` | `buildMsgBody` — infers `roomId` vs `toPersonId` vs `toPersonEmail` from the `to` string |
@@ -172,6 +173,9 @@ Located at `plugins/webex/`. Registered with OpenClaw via `openclaw.plugin.json`
 | `SenderName` | `msg.personEmail` (falls back to `personId`) |
 | `MessageThreadId` | `msg.parentId` (thread parent) |
 | `IsMentioned` | `true` if the bot's ID is in `msg.mentionedPeople` |
+| `IsDirectlyAddressed` | `true` for an explicit mention or a recognized direct address such as `bot, ...` or `AI, ...` |
+
+Direct address names bypass debounce, the relevance gate, and the lull delay. The defaults include common names such as `bot`, `ai`, `assistant`, `agent`, `chatbot`, `robot`, `chatgpt`, `gpt`, `copilot`, `claude`, `gemini`, `openclaw`, and `claw`. Add project-specific names under `channels.webex.proactivity.directAddressNames`.
 
 #### Webhook route (`webhook.js`)
 

@@ -90,6 +90,7 @@
       ],
       "proactivity": {
         "_comment": "Tune without redeploying — only a container restart is needed. All fields have in-code defaults.",
+        "directAddressNames": [],
         "gateThreshold": 0.6,
         "system1Prob": 0.05,
         "lullWindowMs": 8000,
