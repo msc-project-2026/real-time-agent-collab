@@ -18,7 +18,7 @@ async function ensureWebhooks(cfg) {
 
   const secret = cfg.webhookSecret ? { secret: cfg.webhookSecret } : {};
 
-  await webexFetch(token, '/webhooks', {
+  const messageWebhook = await webexFetch(token, '/webhooks', {
     method: 'POST',
     body: {
       name: 'OpenClaw Message Handler',
@@ -29,7 +29,7 @@ async function ensureWebhooks(cfg) {
     },
   });
 
-  await webexFetch(token, '/webhooks', {
+  const actionWebhook = await webexFetch(token, '/webhooks', {
     method: 'POST',
     body: {
       name: 'Openclaw Card Action Handler',
