@@ -33,11 +33,38 @@ test('rejects a non-Webex link or an empty meeting password', () => {
 
 test('accepts a discovered meeting ID without requiring a password', () => {
   const invitation = createDiscoveredInvitation({ id: 'meeting-1', webLink: JOIN_LINK }, 'room-1');
-  assert.equal(invitation.destination, 'meeting-1');
+  // destination must be an SDK-resolvable target (web link/SIP), never the raw
+  // REST id, which the SDK misreads as a phone number.
+  assert.equal(invitation.destination, JOIN_LINK);
+  assert.equal(invitation.destinationKind, 'web_link');
   assert.equal(invitation.joinLink, JOIN_LINK);
   assert.equal(invitation.meetingId, 'meeting-1');
   assert.equal(invitation.password, undefined);
   assert.ok(Number.isFinite(Date.parse(invitation.discoveredAt)));
+});
+
+test('discovered destination prefers the web link, then falls back by kind', () => {
+  const full = createDiscoveredInvitation(
+    { id: 'meeting-1', sipAddress: '25501234567@webex.com', webLink: JOIN_LINK, meetingNumber: '2550 123 4567' },
+    'room-1',
+  );
+  assert.equal(full.destination, JOIN_LINK);
+  assert.equal(full.destinationKind, 'web_link');
+
+  const noLink = createDiscoveredInvitation(
+    { id: 'meeting-1', sipAddress: '25501234567@webex.com', meetingNumber: '2550 123 4567' },
+    'room-1',
+  );
+  assert.equal(noLink.destination, '25501234567@webex.com');
+  assert.equal(noLink.destinationKind, 'sip_address');
+
+  const numberOnly = createDiscoveredInvitation({ id: 'meeting-1', meetingNumber: '2550 123 4567' }, 'room-1');
+  assert.equal(numberOnly.destination, '2550 123 4567');
+  assert.equal(numberOnly.destinationKind, 'meeting_number');
+
+  const idOnly = createDiscoveredInvitation({ id: 'meeting-1' }, 'room-1');
+  assert.equal(idOnly.destination, 'meeting-1');
+  assert.equal(idOnly.destinationKind, 'meeting_id');
 });
 
 test('automatic joins deduplicate by meeting ID and room without an agent turn', async () => {

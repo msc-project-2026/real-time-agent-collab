@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:
 import { access, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createDiscoveredInvitation, isJoinableMeeting, isTerminalMeeting } from './discovery';
+import { createDiscoveredInvitation, isJoinableMeeting, isTerminalMeeting, type DestinationKind } from './discovery';
 import { WebexMessageDelivery } from './notifications';
 import {
   delay,
@@ -28,6 +28,7 @@ const ACTIVE_STATES = new Set([
 
 type Invitation = {
   destination: string;
+  destinationKind?: DestinationKind;
   joinLink?: string;
   password?: string;
   meetingId?: string;
@@ -245,7 +246,7 @@ function createInvitation(joinLink: unknown, password: unknown): Invitation | nu
   if (parsed.protocol !== 'https:' || !(parsed.hostname === 'webex.com' || parsed.hostname.endsWith('.webex.com'))) return null;
   const normalizedPassword = String(password ?? '').trim();
   if (!normalizedPassword) return null;
-  return { destination: parsed.toString(), joinLink: parsed.toString(), password: normalizedPassword, discoveredAt: nowIso() };
+  return { destination: parsed.toString(), destinationKind: 'web_link', joinLink: parsed.toString(), password: normalizedPassword, discoveredAt: nowIso() };
 }
 
 async function fileExists(filename: string) {
@@ -747,7 +748,9 @@ export class MeetingJoinService {
     if (!start || !meetingId || !Number.isFinite(Date.parse(start))) return;
     const webLink = configured(meeting?.webLink);
     const sipAddress = configured(meeting?.sipAddress);
-    const destination = meetingId || sipAddress || webLink;
+    // Prefer the web link, then SIP address, over the REST meeting id: the SDK
+    // misreads an id as a phone number ("TOO_LONG"). See selectDestination.
+    const destination = webLink || sipAddress || configured(meeting?.meetingNumber) || meetingId;
     this.state.schedules[meetingId] = {
       id: meetingId,
       seriesId: configured(meeting?.meetingSeriesId) || undefined,
@@ -871,6 +874,14 @@ export class MeetingJoinService {
       id: randomUUID(), roomId, parentId, source, invitation, state: 'preparing', recoveryAttempts: 0,
       createdAt: nowIso(), updatedAt: nowIso(),
     };
+    const kind = invitation.destinationKind ?? 'web_link';
+    if (kind === 'web_link') {
+      this.log?.info?.(`[webex-auto-join] session ${session.id} joining ${roomId} via web_link`);
+    } else {
+      // A non-web_link destination means the preferred web link was unavailable;
+      // surface which fallback the SDK will receive so join failures are traceable.
+      this.log?.warn?.(`[webex-auto-join] session ${session.id} joining ${roomId} via ${kind} (web_link unavailable; fallback destination)`);
+    }
     this.state.sessions[session.id] = session;
     await this.persist();
     try {

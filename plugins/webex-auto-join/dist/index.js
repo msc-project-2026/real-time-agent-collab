@@ -9,14 +9,25 @@ function value(input) {
   const normalized = String(input ?? "").trim();
   return normalized && !normalized.startsWith("${") ? normalized : "";
 }
+function selectDestination(meeting) {
+  const webLink = value(meeting?.webLink);
+  if (webLink) return { destination: webLink, kind: "web_link" };
+  const sipAddress = value(meeting?.sipAddress);
+  if (sipAddress) return { destination: sipAddress, kind: "sip_address" };
+  const meetingNumber = value(meeting?.meetingNumber);
+  if (meetingNumber) return { destination: meetingNumber, kind: "meeting_number" };
+  const meetingId = value(meeting?.id);
+  if (meetingId) return { destination: meetingId, kind: "meeting_id" };
+  return null;
+}
 function createDiscoveredInvitation(meeting, roomId) {
   const meetingId = value(meeting?.id);
-  const sipAddress = value(meeting?.sipAddress);
   const webLink = value(meeting?.webLink);
-  const destination = meetingId || sipAddress || webLink;
-  if (!roomId || !destination) return null;
+  const selected = selectDestination(meeting);
+  if (!roomId || !selected) return null;
   return {
-    destination,
+    destination: selected.destination,
+    destinationKind: selected.kind,
     ...webLink ? { joinLink: webLink } : {},
     ...value(meeting?.password) ? { password: value(meeting.password) } : {},
     ...meetingId ? { meetingId } : {},
@@ -266,7 +277,7 @@ function createInvitation(joinLink, password) {
   if (parsed.protocol !== "https:" || !(parsed.hostname === "webex.com" || parsed.hostname.endsWith(".webex.com"))) return null;
   const normalizedPassword = String(password ?? "").trim();
   if (!normalizedPassword) return null;
-  return { destination: parsed.toString(), joinLink: parsed.toString(), password: normalizedPassword, discoveredAt: nowIso() };
+  return { destination: parsed.toString(), destinationKind: "web_link", joinLink: parsed.toString(), password: normalizedPassword, discoveredAt: nowIso() };
 }
 async function fileExists(filename) {
   try {
@@ -767,7 +778,7 @@ var MeetingJoinService = class {
     if (!start || !meetingId || !Number.isFinite(Date.parse(start))) return;
     const webLink = configured(meeting?.webLink);
     const sipAddress = configured(meeting?.sipAddress);
-    const destination = meetingId || sipAddress || webLink;
+    const destination = webLink || sipAddress || configured(meeting?.meetingNumber) || meetingId;
     this.state.schedules[meetingId] = {
       id: meetingId,
       seriesId: configured(meeting?.meetingSeriesId) || void 0,
@@ -899,6 +910,12 @@ var MeetingJoinService = class {
       createdAt: nowIso(),
       updatedAt: nowIso()
     };
+    const kind = invitation.destinationKind ?? "web_link";
+    if (kind === "web_link") {
+      this.log?.info?.(`[webex-auto-join] session ${session.id} joining ${roomId} via web_link`);
+    } else {
+      this.log?.warn?.(`[webex-auto-join] session ${session.id} joining ${roomId} via ${kind} (web_link unavailable; fallback destination)`);
+    }
     this.state.sessions[session.id] = session;
     await this.persist();
     try {
