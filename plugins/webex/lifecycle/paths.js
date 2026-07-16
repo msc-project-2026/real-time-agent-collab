@@ -87,8 +87,8 @@ function configAuditPath(spaceId, explicitRoot) {
 
 module.exports = {
   getWorkspaceRoot,
-  spaceRoot,
   spacesRoot,
+  spaceDir,
   pendingDir,
   pendingMessagesPath,
   pendingBatchStatePath,
