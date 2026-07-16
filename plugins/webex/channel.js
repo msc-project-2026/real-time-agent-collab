@@ -380,7 +380,7 @@ const webexPlugin = {
 
       // Register (or refresh) the Webex webhooks for this account
       await ensureWebhooks(cfg);
-      log?.info?.(`[webex:${account.accountId}] Webex webhook registered`);
+      log?.info?.(`[webex:${account.accountId}] Webex webhooks registered`);
 
       // Register the HTTP dispatch target for incoming POSTs
       const webhookPath = normPath(`/webhooks/webex/${account.accountId}`);

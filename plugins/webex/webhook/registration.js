@@ -7,7 +7,8 @@ const { getAccessToken } = require('../token');
 // Deregisters (deletes) any existing webhooks pointing at cfg.webhookUrl then creates a
 // fresh set.  Idempotent (safe to call on every startAccount).
 async function ensureWebhooks(cfg) {
-  const token = getAccessToken() ?? cfg.token;
+  // const token = getAccessToken() ?? cfg.token;
+  const token = account.config?.token;
   const data = await webexFetch(token, '/webhooks');
 
   await Promise.all(
@@ -47,11 +48,30 @@ async function ensureWebhooks(cfg) {
       targetUrl: cfg.webhookUrl,
     })}`
   );
+
+  const after = await webexFetch(token, '/webhooks');
+
+  console.log(
+    '[webex] matching webhooks after registration',
+    JSON.stringify(
+      (after?.items ?? [])
+        .filter((w) => w.targetUrl === cfg.webhookUrl)
+        .map((w) => ({
+          id: w.id,
+          name: w.name,
+          resource: w.resource,
+          event: w.event,
+          targetUrl: w.targetUrl,
+          status: w.status,
+        }))
+    )
+  );
 }
 
 // Deregisters (deletes) any existing webhooks pointing at cfg.webhookUrl.
 async function deregisterWebhooks(cfg) {
-  const token = getAccessToken() ?? cfg.token;
+  // const token = getAccessToken() ?? cfg.token;
+  const token = account.config?.token;
   const data = await webexFetch(token, '/webhooks');
   await Promise.all(
     (data?.items ?? [])
