@@ -4,7 +4,10 @@
 // Webex channel plugin object implementing the OpenClaw channel contract.
 
 const { WEBEX_API, webexFetch } = require('./api');
-const { ensureWebhook, deregisterWebhooks } = require('./webhook/registration');
+const {
+  ensureWebhooks,
+  deregisterWebhooks,
+} = require('./webhook/registration');
 const {
   getAccessToken,
   setAccessToken,
@@ -324,7 +327,7 @@ const webexPlugin = {
     → set/refresh OAuth access token
     → fetch bot identity with /people/me
     → start periodic token refresh
-    → ensureWebhook(cfg)
+    → ensureWebhooks(cfg)
     → register local target in targets map
     → run pending batch recovery
     → stay alive until stopped
@@ -375,8 +378,8 @@ const webexPlugin = {
         }, TWELVE_DAYS_MS);
       }
 
-      // Register (or refresh) the Webex webhook for this account
-      await ensureWebhook(cfg);
+      // Register (or refresh) the Webex webhooks for this account
+      await ensureWebhooks(cfg);
       log?.info?.(`[webex:${account.accountId}] Webex webhook registered`);
 
       // Register the HTTP dispatch target for incoming POSTs

@@ -2,11 +2,12 @@
 'use strict';
 
 const { webexFetch } = require('../api');
+const { getAccessToken } = require('../token');
 
 // Deregisters (deletes) any existing webhooks pointing at cfg.webhookUrl then creates a
 // fresh set.  Idempotent (safe to call on every startAccount).
-async function ensureWebhook(cfg) {
-  const token = currentAccessToken ?? cfg.token;
+async function ensureWebhooks(cfg) {
+  const token = getAccessToken() ?? cfg.token;
   const data = await webexFetch(token, '/webhooks');
 
   await Promise.all(
@@ -42,7 +43,7 @@ async function ensureWebhook(cfg) {
 
 // Deregisters (deletes) any existing webhooks pointing at cfg.webhookUrl.
 async function deregisterWebhooks(cfg) {
-  const token = currentAccessToken ?? cfg.token;
+  const token = getAccessToken() ?? cfg.token;
   const data = await webexFetch(token, '/webhooks');
   await Promise.all(
     (data?.items ?? [])
@@ -52,6 +53,6 @@ async function deregisterWebhooks(cfg) {
 }
 
 module.exports = {
-  ensureWebhook,
+  ensureWebhooks,
   deregisterWebhooks,
 };
