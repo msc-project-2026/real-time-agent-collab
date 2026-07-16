@@ -26,12 +26,13 @@ function makeRouteResultHandler({ message, account, log }) {
       parsed = JSON.parse(text);
     } catch (err) {
       log?.warn?.(
-        `[webex:${account.accountId}] agent route output was not JSON`,
-        {
-          spaceId,
-          error: err?.message ?? String(err),
-          text,
-        }
+        `[webex:${account.accountId}] agent route output was not JSON ${JSON.stringify(
+          {
+            spaceId,
+            error: err?.message ?? String(err),
+            text,
+          }
+        )}`
       );
       return;
     }
