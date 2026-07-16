@@ -94,6 +94,43 @@ test('automatic joins deduplicate by meeting ID and room without an agent turn',
   assert.equal(service.state.sessions[first.session_id].invitation.password, undefined);
 });
 
+test('a user-left meeting is not auto-rejoined, but a new meeting still joins', async () => {
+  const service = new MeetingJoinService({}, { maxConcurrentMeetings: 4 }, { warn() {} });
+  service.startTask = Promise.resolve();
+  service.enabled = true;
+  service.store = { save: async () => {} };
+  service.browser = { close: async () => {} };
+  service.state = {
+    version: 2,
+    sessions: {},
+    rooms: { room: { roomId: 'room', covered: true, updatedAt: 'now' } },
+    schedules: {}, pending: {}, dismissed: {}, notifications: {},
+  };
+  service.launch = async (session) => { session.tabId = 'runner-tab'; };
+
+  const discovered = { id: 'meeting-1', meetingType: 'meeting', state: 'inProgress', roomId: 'room', webLink: JOIN_LINK };
+
+  const joined = await service.joinDiscoveredMeeting(discovered);
+  assert.equal(joined.accepted, true);
+
+  // User asks to leave; leaving completes to the terminal 'left' state.
+  await service.leave('room');
+  await service.completeLeave(service.state.sessions[joined.session_id]);
+  assert.equal(service.state.sessions[joined.session_id].state, 'left');
+
+  // Reconciliation re-discovers the same still-in-progress meeting: must NOT rejoin.
+  const rejoin = await service.joinDiscoveredMeeting(discovered);
+  assert.equal(rejoin.accepted, false);
+  assert.equal(rejoin.error_code, 'meeting_left_by_user');
+  assert.equal(Object.values(service.state.sessions).filter((s) => s.state === 'joined').length, 0);
+
+  // A different meeting in the same space is unaffected and still auto-joins.
+  const other = await service.joinDiscoveredMeeting({
+    id: 'meeting-2', meetingType: 'meeting', state: 'inProgress', roomId: 'room', webLink: JOIN_LINK,
+  });
+  assert.equal(other.accepted, true);
+});
+
 test('capacity-blocked automatic meetings remain pending', async () => {
   const service = new MeetingJoinService({}, { maxConcurrentMeetings: 1 }, { warn() {} });
   service.startTask = Promise.resolve();
@@ -352,6 +389,7 @@ test('encrypted state keeps active-session and OAuth credentials out of plaintex
       rooms: {},
       schedules: {},
       pending: {},
+      dismissed: {},
       notifications: {},
       token: { accessToken: 'access-secret', refreshToken: 'refresh-secret', expiresAt: 1 },
     };

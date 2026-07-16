@@ -199,8 +199,9 @@ var ACTIVE_STATES = /* @__PURE__ */ new Set([
   "recovering"
 ]);
 function emptyState() {
-  return { version: 2, sessions: {}, rooms: {}, schedules: {}, pending: {}, notifications: {} };
+  return { version: 2, sessions: {}, rooms: {}, schedules: {}, pending: {}, dismissed: {}, notifications: {} };
 }
+var DISMISSAL_TTL_MS = 12 * 60 * 6e4;
 function nowIso() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -352,6 +353,7 @@ var EncryptedState = class {
         rooms: parsed.rooms ?? {},
         schedules: parsed.schedules ?? {},
         pending: parsed.pending ?? {},
+        dismissed: parsed.dismissed ?? {},
         notifications: parsed.notifications ?? {},
         token: parsed.token
       };
@@ -736,6 +738,7 @@ var MeetingJoinService = class {
     const room = this.state.rooms[roomId];
     for (const schedule of Object.values(this.state.schedules)) if (schedule.roomId === roomId) this.deleteSchedule(schedule.id);
     for (const pending of Object.values(this.state.pending)) if (pending.roomId === roomId) delete this.state.pending[pending.meetingId];
+    for (const dismissal of Object.values(this.dismissals())) if (dismissal.roomId === roomId) delete this.dismissals()[dismissal.meetingId];
     const active = Object.values(this.state.sessions).find((session) => session.roomId === roomId && ACTIVE_STATES.has(session.state));
     if (active) await this.leave(roomId);
     if (room?.membershipProvenance === "created" && room.membershipId) {
@@ -879,12 +882,31 @@ var MeetingJoinService = class {
       if (expiry < cutoff) this.deleteSchedule(schedule.id);
     }
     for (const pending of Object.values(this.state.pending)) if (Date.parse(pending.expiresAt) < Date.now()) delete this.state.pending[pending.meetingId];
+    for (const dismissal of Object.values(this.dismissals())) if (Date.parse(dismissal.expiresAt) < Date.now()) delete this.dismissals()[dismissal.meetingId];
+  }
+  // State persisted before this field existed decrypts without it; initialize on
+  // demand so every access is safe regardless of the stored schema version.
+  dismissals() {
+    return this.state.dismissed ??= {};
+  }
+  /** True while the user's explicit leave of this meeting instance still holds. */
+  isDismissed(meetingId) {
+    const dismissal = this.dismissals()[meetingId];
+    if (!dismissal) return false;
+    if (Date.parse(dismissal.expiresAt) < Date.now()) {
+      delete this.dismissals()[meetingId];
+      return false;
+    }
+    return true;
   }
   async joinDiscoveredMeeting(meeting, roomId = this.resolveMeetingRoomId(meeting)) {
     if (!this.enabled) await this.start();
     if (!roomId || !this.state.rooms[roomId]?.covered) return { accepted: false, state: "failed", error_code: "space_not_covered" };
     const invitation = createDiscoveredInvitation(meeting, roomId);
     if (!invitation) return { accepted: false, state: "failed", error_code: "meeting_destination_invalid" };
+    if (invitation.meetingId && this.isDismissed(invitation.meetingId)) {
+      return { accepted: false, state: "left", error_code: "meeting_left_by_user" };
+    }
     const existing = Object.values(this.state.sessions).find(
       (session) => ACTIVE_STATES.has(session.state) && (session.invitation.meetingId === invitation.meetingId || session.roomId === roomId)
     );
@@ -934,6 +956,9 @@ var MeetingJoinService = class {
   }
   async joinTarget(roomId, parentId, invitation, source) {
     if (!this.enabled) return { accepted: false, state: "failed", error_code: "meeting_join_unavailable" };
+    if (source === "manual") {
+      for (const dismissal of Object.values(this.dismissals())) if (dismissal.roomId === roomId) delete this.dismissals()[dismissal.meetingId];
+    }
     const existing = Object.values(this.state.sessions).find((session2) => session2.roomId === roomId && ACTIVE_STATES.has(session2.state));
     if (existing) {
       if (existing.invitation.destination === invitation.destination || existing.invitation.meetingId === invitation.meetingId) return this.browserReadyResult(existing);
@@ -991,6 +1016,11 @@ var MeetingJoinService = class {
     const session = Object.values(this.state.sessions).find((item) => item.roomId === roomId && ACTIVE_STATES.has(item.state));
     if (!session) return { accepted: false, state: "left", error_code: "no_active_meeting" };
     session.leaveRequested = true;
+    const meetingId = configured(session.invitation.meetingId);
+    if (meetingId) {
+      this.dismissals()[meetingId] = { meetingId, roomId, dismissedAt: nowIso(), expiresAt: new Date(Date.now() + DISMISSAL_TTL_MS).toISOString() };
+      delete this.state.pending[meetingId];
+    }
     await this.transition(session, "leaving");
     const timer = setTimeout(() => {
       if (session.state === "leaving") this.completeLeave(session).catch(() => void 0);
@@ -1214,6 +1244,7 @@ var MeetingJoinService = class {
   }
   async endMeeting(meetingId, roomId) {
     delete this.state.pending[meetingId];
+    delete this.dismissals()[meetingId];
     this.deleteSchedule(configured(Object.values(this.state.schedules).find((schedule) => schedule.roomId === roomId && (schedule.id === meetingId || schedule.seriesId === meetingId))?.id));
     const session = Object.values(this.state.sessions).find((item) => item.invitation.meetingId === meetingId || item.roomId === roomId);
     if (session && ACTIVE_STATES.has(session.state)) await this.completeEnd(session);
@@ -1222,6 +1253,7 @@ var MeetingJoinService = class {
   async removeMeeting(meetingId, roomId) {
     if (meetingId) this.deleteSchedule(meetingId);
     if (meetingId) delete this.state.pending[meetingId];
+    if (meetingId) delete this.dismissals()[meetingId];
     const session = Object.values(this.state.sessions).find((item) => item.invitation.meetingId === meetingId);
     if (roomId || session) await this.endMeeting(meetingId, roomId || session?.roomId || "");
     await this.persist();
