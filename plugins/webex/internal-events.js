@@ -62,7 +62,21 @@ function makeRouteResultHandler({ message, account, log }) {
           }
         )}`
       );
-      return;
+
+      parsed = {
+        route: 'append_only',
+        reason: 'Fallback: route output was not parseable.',
+      };
+
+      log?.info?.(
+        `[webex:${account.accountId}] falling back to append_only route ${JSON.stringify(
+          {
+            spaceId,
+            route: parsed.route,
+            reason: parsed.reason,
+          }
+        )}`
+      );
     }
 
     log?.info?.(
@@ -81,13 +95,15 @@ function makeRouteResultHandler({ message, account, log }) {
       });
     } catch (err) {
       log?.error?.(
-        `[webex:${account.accountId}] failed to handle route result`,
-        {
-          spaceId,
-          route: parsed.route,
-          error: err?.message ?? String(err),
-        }
+        `[webex:${account.accountId}] failed to handle route result ${JSON.stringify(
+          {
+            spaceId,
+            route: parsed.route,
+            error: err?.message ?? String(err),
+          }
+        )}`
       );
+
       throw err;
     }
   };
