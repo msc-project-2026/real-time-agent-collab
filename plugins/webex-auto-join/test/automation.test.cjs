@@ -240,3 +240,22 @@ test('joined notifications are deduplicated per meeting', async () => {
   await service.transition(session, 'joined');
   assert.equal(sends, 1);
 });
+
+test('failure notifications include sanitized diagnostics and a session correlation id', async () => {
+  const service = membershipService();
+  let markdown = '';
+  service.browser = { close: async () => {} };
+  service.messages = { send: async (_roomId, value) => { markdown = value; } };
+  const session = {
+    id: 'session-debug', roomId: 'room', source: 'automatic', state: 'joining',
+    invitation: { destination: 'meeting', meetingId: 'meeting-debug', discoveredAt: 'now' },
+    recoveryAttempts: 0, createdAt: 'now', updatedAt: 'now',
+  };
+  service.state.sessions[session.id] = session;
+
+  await service.fail(session, 'meeting_join_failed', 'stage=meeting_join; sdk_code=30105; message=unsupported destination');
+
+  assert.match(markdown, /Error code: meeting_join_failed/);
+  assert.match(markdown, /stage=meeting_join; sdk_code=30105/);
+  assert.match(markdown, /Session: session-debug/);
+});

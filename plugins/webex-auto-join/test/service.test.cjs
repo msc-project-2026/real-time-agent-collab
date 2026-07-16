@@ -14,6 +14,7 @@ const {
   EncryptedState,
   MeetingJoinService,
   safeErrorCode,
+  safePublicFailureDetail,
   snapshotRefs,
 } = require('../dist/service.cjs');
 
@@ -105,11 +106,23 @@ test('status exposes only sanitized failure codes', () => {
         id: 'failed', roomId: 'room', source: 'automatic', state: 'failed',
         invitation: { destination: 'meeting-1', meetingId: 'meeting-1', discoveredAt: 'now' },
         errorCode: 'secret=do-not-return', recoveryAttempts: 0, createdAt: 'now', updatedAt: '2026-01-01T00:00:00.000Z',
+        errorDetail: 'stage=meeting_join; access_token=top-secret; url=https://example.webex.com/private',
       },
     },
     rooms: {}, schedules: {}, pending: {}, notifications: {},
   };
   assert.equal(service.status().failures[0].error_code, 'meeting_join_failed');
+  assert.match(service.status().failures[0].error_detail, /stage=meeting_join/);
+  assert.doesNotMatch(service.status().failures[0].error_detail, /top-secret|example\.webex\.com/);
+});
+
+test('sanitizes verbose diagnostics before they reach status or notifications', () => {
+  const opaque = 'a'.repeat(40) + '==';
+  const detail = safePublicFailureDetail(`stage=meeting_join; password=hunter2; https://example.webex.com/private; opaque=${opaque}`);
+  assert.equal(detail.includes('stage=meeting_join'), true);
+  assert.equal(detail.includes('password=[redacted]'), true);
+  assert.equal(detail.includes('[redacted-url]'), true);
+  assert.doesNotMatch(detail, /hunter2|example\.webex\.com|aaaaaaaaaa/);
 });
 
 test('reports browser-control failures separately from Webex meeting failures', () => {

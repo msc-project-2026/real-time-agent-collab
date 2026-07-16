@@ -8,6 +8,7 @@ const base = window.location.pathname.replace(/\/$/, '');
 let meeting: any;
 let leaving = false;
 let waitingForAdmission = false;
+let stage = 'runner_start';
 
 function setStatus(message: string) {
   const status = document.querySelector<HTMLElement>('#meeting-status');
@@ -20,11 +21,11 @@ async function request(path: string, init: RequestInit = {}) {
   return response.json();
 }
 
-async function event(type: string, code?: string) {
+async function event(type: string, code?: string, detail?: string) {
   await request('events', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type, ...(code ? { code } : {}) }),
+    body: JSON.stringify({ type, ...(code ? { code } : {}), ...(detail ? { detail } : {}) }),
   });
 }
 
@@ -36,6 +37,31 @@ function classify(error: unknown) {
   return 'meeting_join_failed';
 }
 
+function sanitizeDiagnostic(value: unknown) {
+  return String(value ?? '')
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .replace(/https?:\/\/\S+/gi, '[redacted-url]')
+    .replace(/\b(access[_-]?token|refresh[_-]?token|authorization|password|secret)\b\s*[:=]\s*\S+/gi, '$1=[redacted]')
+    .replace(/(^|[^A-Za-z0-9_+/=-])[A-Za-z0-9_+/=-]{32,}(?=$|[^A-Za-z0-9_+/=-])/g, '$1[redacted-value]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 500);
+}
+
+function diagnostic(error: unknown, errorStage = stage) {
+  const item: any = error ?? {};
+  const body = item?.body ?? item?.data?.body ?? item?.data ?? {};
+  const name = sanitizeDiagnostic(item?.name);
+  const sdkCode = sanitizeDiagnostic(item?.code ?? item?.errorCode ?? item?.statusCode ?? item?.status ?? body?.errorCode ?? body?.code);
+  const message = sanitizeDiagnostic(item?.message ?? body?.message ?? body?.error ?? error);
+  return [
+    `stage=${sanitizeDiagnostic(errorStage) || 'unknown'}`,
+    ...(name ? [`name=${name}`] : []),
+    ...(sdkCode ? [`sdk_code=${sdkCode}`] : []),
+    ...(message ? [`message=${message}`] : []),
+  ].join('; ');
+}
+
 async function start() {
   if (window.meetingJoinStarted) return;
   window.meetingJoinStarted = true;
@@ -43,20 +69,25 @@ async function start() {
   if (joinButton) joinButton.disabled = true;
   setStatus('Connecting to Webex…');
   try {
+    stage = 'bootstrap';
     const boot = await request('bootstrap');
     await event('joining');
     setStatus('Authenticating the configured Webex user…');
+    stage = 'sdk_initialization';
     const webex: any = window.Webex?.init({
       appName: 'openclaw-webex-auto-join',
       appPlatform: 'openclaw',
       credentials: { access_token: boot.accessToken },
     });
     if (!webex) throw new Error('Webex Meetings SDK is unavailable');
+    stage = 'sdk_ready';
     await new Promise<void>((resolve, reject) => {
       webex.once('ready', resolve);
       webex.once('error', reject);
     });
+    stage = 'device_registration';
     await webex.meetings.register();
+    stage = 'meeting_lookup';
     meeting = await webex.meetings.create(boot.destination ?? boot.meetingId ?? boot.joinLink);
     meeting.on?.('meeting:self:left', () => {
       if (!leaving) event('ended').catch(() => undefined);
@@ -71,20 +102,23 @@ async function start() {
       setStatus('Waiting for the host to admit this Webex user.');
       event('waiting_for_admission').catch(() => undefined);
     });
-    meeting.on?.('error', (error: unknown) => event('error', classify(error)).catch(() => undefined));
+    meeting.on?.('error', (error: unknown) => event('error', classify(error), diagnostic(error, 'meeting_event')).catch(() => undefined));
     if (meeting.passwordStatus === 'REQUIRED') {
       if (!boot.password) throw new Error('meeting password required');
       setStatus('Verifying the meeting password…');
+      stage = 'password_verification';
       const result = await meeting.verifyPassword(boot.password);
       if (result?.requiredCaptcha) throw new Error('captcha required');
       if (!result?.isPasswordValid) throw new Error('meeting password rejected');
     }
     setStatus('Joining the Webex meeting without media…');
+    stage = 'meeting_join';
     await noMediaAdapter.join(meeting);
     webex.meetings.on?.('meeting:removed', (removed: any) => {
       if (!leaving && (!removed?.id || removed.id === meeting?.id)) event('ended').catch(() => undefined);
     });
     if (!waitingForAdmission) {
+      stage = 'joined';
       setStatus('Joined the Webex meeting.');
       await event('joined');
     }
@@ -93,7 +127,7 @@ async function start() {
   } catch (error) {
     const code = classify(error);
     setStatus(`Could not join the Webex meeting (${code}).`);
-    await event('error', code).catch(() => undefined);
+    await event('error', code, diagnostic(error)).catch(() => undefined);
   }
 }
 

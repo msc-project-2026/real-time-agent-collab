@@ -6,7 +6,7 @@ const { readFile } = require('node:fs/promises');
 const path = require('node:path');
 const vm = require('node:vm');
 
-async function loadRunner({ enterLobby = false, autoStart = false, passwordRequired = false, includePassword = true } = {}) {
+async function loadRunner({ enterLobby = false, autoStart = false, passwordRequired = false, includePassword = true, joinError } = {}) {
   const source = await readFile(path.join(__dirname, '../dist/runner.js'), 'utf8');
   const events = [];
   const listeners = new Map();
@@ -25,6 +25,7 @@ async function loadRunner({ enterLobby = false, autoStart = false, passwordRequi
     on(name, handler) { listeners.set(name, handler); },
     async verifyPassword() { return { isPasswordValid: true }; },
     async join() {
+      if (joinError) throw joinError;
       if (enterLobby) listeners.get('meeting:self:lobbyWaiting')?.();
     },
   };
@@ -121,4 +122,17 @@ test('passwordless discovery only fails when the SDK reports a required password
 
   assert.deepEqual(runner.events.map((event) => event.type), ['joining', 'error']);
   assert.equal(runner.events[1].code, 'meeting_password_required');
+});
+
+test('reports a sanitized stage, SDK code, and message for join failures', async () => {
+  const error = Object.assign(new Error('Join rejected at https://example.webex.com/x access_token=top-secret-value'), { code: 30105 });
+  const runner = await loadRunner({ joinError: error });
+  await runner.click();
+
+  const failure = runner.events.find((event) => event.type === 'error');
+  assert.equal(failure.code, 'meeting_join_failed');
+  assert.match(failure.detail, /stage=meeting_join/);
+  assert.match(failure.detail, /sdk_code=30105/);
+  assert.match(failure.detail, /\[redacted-url\]/);
+  assert.doesNotMatch(failure.detail, /top-secret-value|example\.webex\.com/);
 });

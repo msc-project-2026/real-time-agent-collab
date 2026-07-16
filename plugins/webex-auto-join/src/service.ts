@@ -48,6 +48,7 @@ type Session = {
   inspectedRefs?: string[];
   recoveryAttempts: number;
   errorCode?: string;
+  errorDetail?: string;
   leaveRequested?: boolean;
   createdAt: string;
   updatedAt: string;
@@ -154,6 +155,32 @@ function safeErrorCode(error: unknown) {
 function safePublicFailureCode(code: unknown) {
   const normalized = String(code ?? '').trim().toLowerCase();
   return /^[a-z0-9_]{1,64}$/.test(normalized) ? normalized : 'meeting_join_failed';
+}
+
+function safePublicFailureDetail(detail: unknown) {
+  return String(detail ?? '')
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .replace(/https?:\/\/\S+/gi, '[redacted-url]')
+    .replace(/\b(access[_-]?token|refresh[_-]?token|authorization|password|secret)\b\s*[:=]\s*\S+/gi, '$1=[redacted]')
+    .replace(/(^|[^A-Za-z0-9_+/=-])[A-Za-z0-9_+/=-]{32,}(?=$|[^A-Za-z0-9_+/=-])/g, '$1[redacted-value]')
+    .replace(/[`*~<>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 500);
+}
+
+function safeErrorDetail(error: unknown, stage: string) {
+  const item: any = error ?? {};
+  const controlCode = configured(item?.controlCode);
+  const status = Number(item?.status ?? 0);
+  const message = configured(item?.controlError) || configured(item?.message) || String(error ?? '');
+  return safePublicFailureDetail([
+    `stage=${stage}`,
+    ...(item?.name ? [`name=${item.name}`] : []),
+    ...(controlCode ? [`control_code=${controlCode}`] : []),
+    ...(status ? [`status=${status}`] : []),
+    ...(message ? [`message=${message}`] : []),
+  ].join('; '));
 }
 
 function browserActionFailure(error: unknown) {
@@ -847,8 +874,9 @@ export class MeetingJoinService {
       return this.browserReadyResult(session);
     } catch (error) {
       const code = safeErrorCode(error);
-      await this.fail(session, code);
-      return { accepted: false, session_id: session.id, state: 'failed', error_code: code };
+      const detail = safeErrorDetail(error, 'runner_launch');
+      await this.fail(session, code, detail);
+      return { accepted: false, session_id: session.id, state: 'failed', error_code: code, error_detail: detail };
     }
   }
 
@@ -892,6 +920,7 @@ export class MeetingJoinService {
         meeting_id: item.invitation.meetingId,
         room_id: item.roomId,
         error_code: safePublicFailureCode(item.errorCode),
+        error_detail: safePublicFailureDetail(item.errorDetail),
         updated_at: item.updatedAt,
       }));
     return {
@@ -1012,10 +1041,11 @@ export class MeetingJoinService {
     else if (type === 'ended') await this.completeEnd(session);
     else if (type === 'error') {
       const code = configured(event?.code) || 'meeting_join_failed';
+      const detail = safePublicFailureDetail(event?.detail);
       if (session.recoveryAttempts > 0 && session.recoveryAttempts < this.cfg.recoveryMaxAttempts) {
         await this.transition(session, 'interrupted');
-        this.recover(session).catch(() => this.fail(session, code));
-      } else await this.fail(session, code);
+        this.recover(session).catch(() => this.fail(session, code, detail));
+      } else await this.fail(session, code, detail);
     } else if (type === 'heartbeat') { session.updatedAt = nowIso(); await this.persist(); }
   }
 
@@ -1047,11 +1077,12 @@ export class MeetingJoinService {
     for (const session of Object.values(this.state.sessions)) {
       if (!['joining', 'waiting_for_admission', 'joined'].includes(session.state) || Date.parse(session.updatedAt) >= cutoff) continue;
       await this.transition(session, 'interrupted');
-      this.recover(session).catch(() => this.fail(session, 'runner_heartbeat_lost'));
+      this.recover(session).catch(() => this.fail(session, 'runner_heartbeat_lost', 'stage=runner_heartbeat; message=Meeting runner stopped reporting heartbeats'));
     }
   }
 
   private async recover(session: Session) {
+    let lastErrorDetail = '';
     while (session.recoveryAttempts < this.cfg.recoveryMaxAttempts && ACTIVE_STATES.has(session.state)) {
       session.recoveryAttempts += 1;
       await this.transition(session, 'recovering');
@@ -1061,11 +1092,12 @@ export class MeetingJoinService {
         await this.launch(session);
         if (this.cfg.requireBrowserReview) await this.transition(session, 'ready_for_browser');
         return;
-      } catch {
+      } catch (error) {
+        lastErrorDetail = safeErrorDetail(error, 'runner_recovery');
         await delay(this.cfg.recoveryBaseDelayMs * 2 ** (session.recoveryAttempts - 1) + Math.floor(Math.random() * 250));
       }
     }
-    await this.fail(session, 'recovery_exhausted');
+    await this.fail(session, 'recovery_exhausted', lastErrorDetail || 'stage=runner_recovery; message=Recovery attempts were exhausted');
   }
 
   private async endMeeting(meetingId: string, roomId: string) {
@@ -1100,19 +1132,24 @@ export class MeetingJoinService {
     await this.drainPending();
   }
 
-  private async fail(session: Session, code: string) {
+  private async fail(session: Session, code: string, detail?: string) {
     await this.browser.close(session.tabId);
     this.invalidateRunnerAuth(session.id);
     session.tabId = undefined;
-    await this.transition(session, 'failed', safePublicFailureCode(code));
+    await this.transition(session, 'failed', safePublicFailureCode(code), safePublicFailureDetail(detail));
     await this.drainPending();
   }
 
-  private async transition(session: Session, next: string, errorCode?: string) {
+  private async transition(session: Session, next: string, errorCode?: string, errorDetail?: string) {
     session.state = next;
     session.updatedAt = nowIso();
-    if (next === 'failed') session.errorCode = safePublicFailureCode(errorCode);
-    else if (!['interrupted', 'recovering'].includes(next)) session.errorCode = undefined;
+    if (next === 'failed') {
+      session.errorCode = safePublicFailureCode(errorCode);
+      session.errorDetail = safePublicFailureDetail(errorDetail) || undefined;
+    } else if (!['interrupted', 'recovering'].includes(next)) {
+      session.errorCode = undefined;
+      session.errorDetail = undefined;
+    }
     if (['left', 'ended', 'failed'].includes(next)) session.leaveRequested = false;
     await this.persist();
     if (next === 'joined' && this.cfg.notificationMode === 'join-and-failure') {
@@ -1120,7 +1157,16 @@ export class MeetingJoinService {
       await this.notifyOnce(`joined:${session.invitation.meetingId ?? session.id}`, session.roomId, message)
         .catch((error) => this.logFailure('joined notification', error));
     } else if (next === 'failed') {
-      await this.notifyOnce(`failed:${session.invitation.meetingId ?? session.id}`, session.roomId, `Could not join or continue the Webex meeting (${errorCode ?? 'meeting_join_failed'}).`)
+      const code = session.errorCode ?? 'meeting_join_failed';
+      const detail = session.errorDetail || 'No additional diagnostic was supplied by the Webex SDK.';
+      this.log?.warn?.(`[webex-auto-join] session ${session.id} failed: ${code}; ${detail}`);
+      const notification = [
+        'Could not join or continue the Webex meeting.',
+        `Error code: ${code}`,
+        `Diagnostic: ${detail}`,
+        `Session: ${session.id}`,
+      ].join('\n\n');
+      await this.notifyOnce(`failed-v2:${session.invitation.meetingId ?? session.id}`, session.roomId, notification)
         .catch((error) => this.logFailure('failure notification', error));
     }
   }
@@ -1165,5 +1211,7 @@ export {
   createInvitation,
   EncryptedState,
   safeErrorCode,
+  safeErrorDetail,
+  safePublicFailureDetail,
   snapshotRefs,
 };

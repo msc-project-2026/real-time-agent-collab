@@ -75,6 +75,11 @@ Manual compatibility tools remain available for pasted external meeting links:
 `join_webex_meeting`, `leave_webex_meeting`,
 `inspect_webex_meeting_runner`, and `act_webex_meeting_runner`.
 
+Failed joins report a sanitized diagnostic containing the runner stage, Webex
+SDK error name/code/message when available, and a session ID for log
+correlation. The same detail is returned by `webex_auto_join_status`; meeting
+URLs, credentials, tokens, passwords, and secrets are redacted.
+
 ## Development
 
 ```sh
