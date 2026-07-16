@@ -39,6 +39,14 @@ async function ensureWebhooks(cfg) {
       ...secret,
     },
   });
+
+  console.log(
+    `[webex] webhooks registered ${JSON.stringify({
+      messageWebhookId: messageWebhook.id,
+      actionWebhookId: actionWebhook.id,
+      targetUrl: cfg.webhookUrl,
+    })}`
+  );
 }
 
 // Deregisters (deletes) any existing webhooks pointing at cfg.webhookUrl.

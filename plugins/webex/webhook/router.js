@@ -49,6 +49,11 @@ async function webhookRouter(req, res) {
   const target = targets.get(path);
   if (!target) return false; // not our path
 
+  console.log('[webex] webhook target lookup', {
+    path,
+    knownTargets: Array.from(targets.keys()),
+  });
+
   if (req.method !== 'POST') {
     res.statusCode = 405;
     res.setHeader('Allow', 'POST');

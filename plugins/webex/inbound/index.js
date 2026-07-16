@@ -8,6 +8,14 @@ const { handleInboundWebexAttachmentAction } = require('./attachment-actions');
 async function handleInboundWebexWebhook(payload, ctx) {
   const { account, log } = ctx;
 
+  log?.info?.(
+    `[webex:${account.accountId}] inbound webhook payload ${JSON.stringify({
+      resource: payload.resource,
+      event: payload.event,
+      data: payload.data,
+    })}`
+  );
+
   if (payload.resource === 'messages' && payload.event === 'created') {
     return handleInboundWebexMessage(payload, ctx);
   }

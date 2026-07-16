@@ -17,6 +17,14 @@ async function handleInboundWebexAttachmentAction(
     return;
   }
 
+  log?.info?.(
+    `[webex:${account.accountId}] handling attachment action webhook ${JSON.stringify(
+      {
+        actionId: payload.data?.id,
+      }
+    )}`
+  );
+
   const action = await webexFetch(
     getAccessToken() ?? cfg.token,
     `/attachment/actions/${actionId}`
