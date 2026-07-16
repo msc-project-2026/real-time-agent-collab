@@ -202,6 +202,12 @@ function emptyState() {
   return { version: 2, sessions: {}, rooms: {}, schedules: {}, pending: {}, dismissed: {}, notifications: {} };
 }
 var DISMISSAL_TTL_MS = 12 * 60 * 6e4;
+function meetingIdRoot(id) {
+  return id.replace(/_I_\d+$/, "").replace(/_\d{8}T\d{6}Z$/, "");
+}
+function sameMeetingId(a, b) {
+  return Boolean(a && b && meetingIdRoot(a) === meetingIdRoot(b));
+}
 function nowIso() {
   return (/* @__PURE__ */ new Date()).toISOString();
 }
@@ -889,26 +895,34 @@ var MeetingJoinService = class {
   dismissals() {
     return this.state.dismissed ??= {};
   }
-  /** True while the user's explicit leave of this meeting instance still holds. */
-  isDismissed(meetingId) {
-    const dismissal = this.dismissals()[meetingId];
-    if (!dismissal) return false;
-    if (Date.parse(dismissal.expiresAt) < Date.now()) {
-      delete this.dismissals()[meetingId];
-      return false;
+  /**
+   * True while the user's explicit leave of this meeting still holds. Matches
+   * by id root, and by room + link/destination for id forms the session never
+   * learned (manual link joins, webhook/list id divergence).
+   */
+  isDismissedInvitation(invitation, roomId) {
+    for (const dismissal of Object.values(this.dismissals())) {
+      if (Date.parse(dismissal.expiresAt) < Date.now()) {
+        delete this.dismissals()[dismissal.meetingId];
+        continue;
+      }
+      if (sameMeetingId(dismissal.meetingId, invitation.meetingId)) return true;
+      if (dismissal.roomId !== roomId) continue;
+      if (dismissal.webLink && invitation.joinLink && dismissal.webLink === invitation.joinLink) return true;
+      if (dismissal.destination && dismissal.destination === invitation.destination) return true;
     }
-    return true;
+    return false;
   }
   async joinDiscoveredMeeting(meeting, roomId = this.resolveMeetingRoomId(meeting)) {
     if (!this.enabled) await this.start();
     if (!roomId || !this.state.rooms[roomId]?.covered) return { accepted: false, state: "failed", error_code: "space_not_covered" };
     const invitation = createDiscoveredInvitation(meeting, roomId);
     if (!invitation) return { accepted: false, state: "failed", error_code: "meeting_destination_invalid" };
-    if (invitation.meetingId && this.isDismissed(invitation.meetingId)) {
+    if (this.isDismissedInvitation(invitation, roomId)) {
       return { accepted: false, state: "left", error_code: "meeting_left_by_user" };
     }
     const sameMeeting = (session) => Boolean(
-      invitation.meetingId && session.invitation.meetingId === invitation.meetingId || invitation.joinLink && session.invitation.joinLink === invitation.joinLink || session.invitation.destination === invitation.destination
+      sameMeetingId(invitation.meetingId, session.invitation.meetingId) || invitation.joinLink && session.invitation.joinLink === invitation.joinLink || session.invitation.destination === invitation.destination
     );
     const existing = Object.values(this.state.sessions).find(
       (session) => ACTIVE_STATES.has(session.state) && (sameMeeting(session) || session.roomId === roomId)
@@ -1049,15 +1063,28 @@ var MeetingJoinService = class {
     const dismissedAt = nowIso();
     const expiresAt = new Date(Date.now() + DISMISSAL_TTL_MS).toISOString();
     const meetingId = configured(session.invitation.meetingId);
-    if (meetingId) {
-      this.dismissals()[meetingId] = { meetingId, roomId: session.roomId, dismissedAt, expiresAt };
-      delete this.state.pending[meetingId];
-    }
+    const dismissalKey = meetingId || `link:${session.invitation.destination}`;
+    this.dismissals()[dismissalKey] = {
+      meetingId: dismissalKey,
+      roomId: session.roomId,
+      webLink: session.invitation.joinLink,
+      destination: session.invitation.destination,
+      dismissedAt,
+      expiresAt
+    };
+    if (meetingId) delete this.state.pending[meetingId];
     for (const pending of Object.values(this.state.pending)) {
       if (pending.roomId !== session.roomId) continue;
       const sameLink = session.invitation.joinLink && pending.webLink === session.invitation.joinLink;
-      if (sameLink || pending.destination === session.invitation.destination) {
-        this.dismissals()[pending.meetingId] = { meetingId: pending.meetingId, roomId: session.roomId, dismissedAt, expiresAt };
+      if (sameMeetingId(pending.meetingId, meetingId) || sameLink || pending.destination === session.invitation.destination) {
+        this.dismissals()[pending.meetingId] = {
+          meetingId: pending.meetingId,
+          roomId: session.roomId,
+          webLink: pending.webLink,
+          destination: pending.destination,
+          dismissedAt,
+          expiresAt
+        };
         delete this.state.pending[pending.meetingId];
       }
     }
@@ -1287,7 +1314,9 @@ var MeetingJoinService = class {
   }
   async endMeeting(meetingId, roomId) {
     delete this.state.pending[meetingId];
-    delete this.dismissals()[meetingId];
+    for (const dismissal of Object.values(this.dismissals())) {
+      if (sameMeetingId(dismissal.meetingId, meetingId) || roomId && dismissal.roomId === roomId) delete this.dismissals()[dismissal.meetingId];
+    }
     this.deleteSchedule(configured(Object.values(this.state.schedules).find((schedule) => schedule.roomId === roomId && (schedule.id === meetingId || schedule.seriesId === meetingId))?.id));
     const session = Object.values(this.state.sessions).find((item) => item.invitation.meetingId === meetingId || item.roomId === roomId);
     if (session && ACTIVE_STATES.has(session.state)) await this.completeEnd(session);
@@ -1336,7 +1365,7 @@ var MeetingJoinService = class {
     await this.persist();
     if (next === "joined" && this.cfg.notificationMode === "join-and-failure") {
       const message = session.source === "automatic" ? "Joined the Webex meeting automatically." : "Joined the Webex meeting.";
-      await this.notifyOnce(`joined:${session.invitation.meetingId ?? session.id}`, session.roomId, message).catch((error) => this.logFailure("joined notification", error));
+      await this.notifyOnce(`joined:${session.invitation.meetingId ? meetingIdRoot(session.invitation.meetingId) : session.id}`, session.roomId, message).catch((error) => this.logFailure("joined notification", error));
     } else if (next === "failed") {
       const code = session.errorCode ?? "meeting_join_failed";
       const detail = session.errorDetail || "No additional diagnostic was supplied by the Webex SDK.";

@@ -124,11 +124,51 @@ test('a user-left meeting is not auto-rejoined, but a new meeting still joins', 
   assert.equal(rejoin.error_code, 'meeting_left_by_user');
   assert.equal(Object.values(service.state.sessions).filter((s) => s.state === 'joined').length, 0);
 
-  // A different meeting in the same space is unaffected and still auto-joins.
+  // The same physical meeting under a different REST id form (instance suffix
+  // or same join link) is still the meeting the user left: must NOT rejoin.
+  const instanceForm = await service.joinDiscoveredMeeting({
+    id: 'meeting-1_I_23', meetingType: 'meeting', state: 'inProgress', roomId: 'room', webLink: JOIN_LINK,
+  });
+  assert.equal(instanceForm.error_code, 'meeting_left_by_user');
+  const sameLinkNewId = await service.joinDiscoveredMeeting({
+    id: 'meeting-9', meetingType: 'meeting', state: 'inProgress', roomId: 'room', webLink: JOIN_LINK,
+  });
+  assert.equal(sameLinkNewId.error_code, 'meeting_left_by_user');
+
+  // A different meeting (own link) in the same space is unaffected and still auto-joins.
   const other = await service.joinDiscoveredMeeting({
-    id: 'meeting-2', meetingType: 'meeting', state: 'inProgress', roomId: 'room', webLink: JOIN_LINK,
+    id: 'meeting-2', meetingType: 'meeting', state: 'inProgress', roomId: 'room',
+    webLink: 'https://meet1753491728593-7008.webex.com/meet1753491728593-7008/j.php?MTID=mfff0000000000000000000000000000',
   });
   assert.equal(other.accepted, true);
+});
+
+test('once the left meeting ends, a new meeting reusing the space link auto-joins again', async () => {
+  const service = new MeetingJoinService({}, { maxConcurrentMeetings: 4 }, { warn() {} });
+  service.startTask = Promise.resolve();
+  service.enabled = true;
+  service.store = { save: async () => {} };
+  service.browser = { close: async () => {} };
+  service.state = {
+    version: 2,
+    sessions: {},
+    rooms: { room: { roomId: 'room', covered: true, updatedAt: 'now' } },
+    schedules: {}, pending: {}, dismissed: {}, notifications: {},
+  };
+  service.launch = async (session) => { session.tabId = 'runner-tab'; };
+
+  const discovered = { id: 'meeting-1', meetingType: 'meeting', state: 'inProgress', roomId: 'room', webLink: JOIN_LINK };
+  const joined = await service.joinDiscoveredMeeting(discovered);
+  await service.leave('room');
+  await service.completeLeave(service.state.sessions[joined.session_id]);
+  assert.equal((await service.joinDiscoveredMeeting(discovered)).error_code, 'meeting_left_by_user');
+
+  // The meeting ends for everyone; the suppression is lifted for the space.
+  await service.endMeeting('meeting-1', 'room');
+  const next = await service.joinDiscoveredMeeting({
+    id: 'meeting-2', meetingType: 'meeting', state: 'inProgress', roomId: 'room', webLink: JOIN_LINK,
+  });
+  assert.equal(next.accepted, true);
 });
 
 test('a manually joined meeting is deduplicated by link, leavable from another space, and not rejoined', async () => {

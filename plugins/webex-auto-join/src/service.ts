@@ -94,8 +94,10 @@ type PendingMeeting = {
 type OAuthState = { accessToken: string; refreshToken: string; expiresAt: number };
 
 // A meeting the user explicitly left; suppresses auto-rejoin of that same
-// in-progress instance until it ends or the TTL lapses.
-type Dismissal = { meetingId: string; roomId: string; dismissedAt: string; expiresAt: string };
+// in-progress instance until it ends or the TTL lapses. The link/destination
+// are kept because Webex lists one physical meeting under several REST id
+// forms, so an id-only match is not sufficient.
+type Dismissal = { meetingId: string; roomId: string; webLink?: string; destination?: string; dismissedAt: string; expiresAt: string };
 
 type PersistedState = {
   version: 2;
@@ -121,6 +123,18 @@ function emptyState(): PersistedState {
 }
 
 const DISMISSAL_TTL_MS = 12 * 60 * 60_000;
+
+// Webex exposes one physical meeting under several REST id forms: the series
+// id, a scheduled occurrence (`<id>_YYYYMMDDThhmmssZ`), and an in-progress
+// instance (`<id>_I_<n>`). Strip those suffixes so identity checks hold across
+// discovery passes and webhooks that report different forms.
+function meetingIdRoot(id: string) {
+  return id.replace(/_I_\d+$/, '').replace(/_\d{8}T\d{6}Z$/, '');
+}
+
+function sameMeetingId(a?: string, b?: string) {
+  return Boolean(a && b && meetingIdRoot(a) === meetingIdRoot(b));
+}
 
 function nowIso() {
   return new Date().toISOString();
@@ -831,12 +845,20 @@ export class MeetingJoinService {
     return (this.state.dismissed ??= {});
   }
 
-  /** True while the user's explicit leave of this meeting instance still holds. */
-  private isDismissed(meetingId: string) {
-    const dismissal = this.dismissals()[meetingId];
-    if (!dismissal) return false;
-    if (Date.parse(dismissal.expiresAt) < Date.now()) { delete this.dismissals()[meetingId]; return false; }
-    return true;
+  /**
+   * True while the user's explicit leave of this meeting still holds. Matches
+   * by id root, and by room + link/destination for id forms the session never
+   * learned (manual link joins, webhook/list id divergence).
+   */
+  private isDismissedInvitation(invitation: Invitation, roomId: string) {
+    for (const dismissal of Object.values(this.dismissals())) {
+      if (Date.parse(dismissal.expiresAt) < Date.now()) { delete this.dismissals()[dismissal.meetingId]; continue; }
+      if (sameMeetingId(dismissal.meetingId, invitation.meetingId)) return true;
+      if (dismissal.roomId !== roomId) continue;
+      if (dismissal.webLink && invitation.joinLink && dismissal.webLink === invitation.joinLink) return true;
+      if (dismissal.destination && dismissal.destination === invitation.destination) return true;
+    }
+    return false;
   }
 
   async joinDiscoveredMeeting(meeting: any, roomId = this.resolveMeetingRoomId(meeting)) {
@@ -846,7 +868,7 @@ export class MeetingJoinService {
     if (!roomId || !this.state.rooms[roomId]?.covered) return { accepted: false, state: 'failed', error_code: 'space_not_covered' };
     const invitation = createDiscoveredInvitation(meeting, roomId);
     if (!invitation) return { accepted: false, state: 'failed', error_code: 'meeting_destination_invalid' };
-    if (invitation.meetingId && this.isDismissed(invitation.meetingId)) {
+    if (this.isDismissedInvitation(invitation, roomId)) {
       return { accepted: false, state: 'left', error_code: 'meeting_left_by_user' };
     }
     // A manually joined session knows only the join link, not the REST meeting
@@ -854,7 +876,7 @@ export class MeetingJoinService {
     // meeting the bot is already in gets queued as pending and rejoins the
     // moment the user asks it to leave.
     const sameMeeting = (session: Session) => Boolean(
-      (invitation.meetingId && session.invitation.meetingId === invitation.meetingId)
+      sameMeetingId(invitation.meetingId, session.invitation.meetingId)
       || (invitation.joinLink && session.invitation.joinLink === invitation.joinLink)
       || session.invitation.destination === invitation.destination
     );
@@ -986,19 +1008,28 @@ export class MeetingJoinService {
     const dismissedAt = nowIso();
     const expiresAt = new Date(Date.now() + DISMISSAL_TTL_MS).toISOString();
     const meetingId = configured(session.invitation.meetingId);
-    if (meetingId) {
-      this.dismissals()[meetingId] = { meetingId, roomId: session.roomId, dismissedAt, expiresAt };
-      delete this.state.pending[meetingId];
-    }
-    // A manually joined session may not know its REST meeting id. Any pending
-    // entry for the same room with the same link/destination is this same
-    // in-progress instance queued under its discovered id — dismiss it too, or
-    // drainPending rejoins the meeting as soon as the leave completes.
+    // A manual link join may never learn its REST meeting id; fall back to a
+    // link-derived key so the dismissal is recorded regardless.
+    const dismissalKey = meetingId || `link:${session.invitation.destination}`;
+    this.dismissals()[dismissalKey] = {
+      meetingId: dismissalKey, roomId: session.roomId,
+      webLink: session.invitation.joinLink, destination: session.invitation.destination,
+      dismissedAt, expiresAt,
+    };
+    if (meetingId) delete this.state.pending[meetingId];
+    // Any pending entry for the same room with the same link/destination is
+    // this same in-progress instance queued under another discovered id —
+    // dismiss it too, or drainPending rejoins the meeting as soon as the leave
+    // completes.
     for (const pending of Object.values(this.state.pending)) {
       if (pending.roomId !== session.roomId) continue;
       const sameLink = session.invitation.joinLink && pending.webLink === session.invitation.joinLink;
-      if (sameLink || pending.destination === session.invitation.destination) {
-        this.dismissals()[pending.meetingId] = { meetingId: pending.meetingId, roomId: session.roomId, dismissedAt, expiresAt };
+      if (sameMeetingId(pending.meetingId, meetingId) || sameLink || pending.destination === session.invitation.destination) {
+        this.dismissals()[pending.meetingId] = {
+          meetingId: pending.meetingId, roomId: session.roomId,
+          webLink: pending.webLink, destination: pending.destination,
+          dismissedAt, expiresAt,
+        };
         delete this.state.pending[pending.meetingId];
       }
     }
@@ -1216,7 +1247,12 @@ export class MeetingJoinService {
 
   private async endMeeting(meetingId: string, roomId: string) {
     delete this.state.pending[meetingId];
-    delete this.dismissals()[meetingId];
+    // The meeting is over, so its leave suppression has done its job. Purge by
+    // id root and by room so a later, new meeting in the space — which may
+    // reuse the same persistent space link — auto-joins normally.
+    for (const dismissal of Object.values(this.dismissals())) {
+      if (sameMeetingId(dismissal.meetingId, meetingId) || (roomId && dismissal.roomId === roomId)) delete this.dismissals()[dismissal.meetingId];
+    }
     this.deleteSchedule(configured(Object.values(this.state.schedules).find((schedule) => schedule.roomId === roomId && (schedule.id === meetingId || schedule.seriesId === meetingId))?.id));
     const session = Object.values(this.state.sessions).find((item) => item.invitation.meetingId === meetingId || item.roomId === roomId);
     if (session && ACTIVE_STATES.has(session.state)) await this.completeEnd(session);
@@ -1270,7 +1306,7 @@ export class MeetingJoinService {
     await this.persist();
     if (next === 'joined' && this.cfg.notificationMode === 'join-and-failure') {
       const message = session.source === 'automatic' ? 'Joined the Webex meeting automatically.' : 'Joined the Webex meeting.';
-      await this.notifyOnce(`joined:${session.invitation.meetingId ?? session.id}`, session.roomId, message)
+      await this.notifyOnce(`joined:${session.invitation.meetingId ? meetingIdRoot(session.invitation.meetingId) : session.id}`, session.roomId, message)
         .catch((error) => this.logFailure('joined notification', error));
     } else if (next === 'failed') {
       const code = session.errorCode ?? 'meeting_join_failed';
