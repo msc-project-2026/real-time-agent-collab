@@ -6,11 +6,12 @@ const { handleInboundWebexAttachmentAction } = require('./attachment-actions');
 
 /// Inbound webhook handler
 async function handleInboundWebexWebhook(payload, ctx) {
-  const { account, log } = ctx;
+  const { identity, account, log } = ctx;
 
   log?.info?.(
     `[webex:${account.accountId}] inbound webhook payload ${JSON.stringify({
-      id: payload.id,
+      identity,
+      webhookId: payload.id,
       name: payload.name,
       resource: payload.resource,
       event: payload.event,
@@ -18,15 +19,25 @@ async function handleInboundWebexWebhook(payload, ctx) {
       personEmail: payload.data?.personEmail,
     })}`
   );
-  if (payload.resource === 'messages' && payload.event === 'created') {
+
+  if (
+    identity === 'oauth' &&
+    payload.resource === 'messages' &&
+    payload.event === 'created'
+  ) {
     return handleInboundWebexMessage(payload, ctx);
   }
 
-  if (payload.resource === 'attachmentActions' && payload.event === 'created') {
+  if (
+    identity === 'bot' &&
+    payload.resource === 'attachmentActions' &&
+    payload.event === 'created'
+  ) {
     return handleInboundWebexAttachmentAction(payload, ctx);
   }
 
   log?.info?.(`[webex:${account.accountId}] ignored webhook payload`, {
+    identity,
     resource: payload.resource,
     event: payload.event,
   });

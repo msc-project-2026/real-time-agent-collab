@@ -379,17 +379,43 @@ const webexPlugin = {
       }
 
       // Register (or refresh) the Webex webhooks for this account
-      await ensureWebhooks(cfg);
+      await ensureWebhooks({ cfg, account, log });
       log?.info?.(`[webex:${account.accountId}] Webex webhooks registered`);
 
-      // Register the HTTP dispatch target for incoming POSTs
-      const webhookPath = normPath(`/webhooks/webex/${account.accountId}`);
-      targets.set(webhookPath, {
+      // Register the HTTP dispatch targets for incoming POSTs
+      const botWebhookPath = normPath(
+        `/webhooks/webex/bot/${account.accountId}`
+      );
+      targets.set(botWebhookPath, {
         account,
         handle: (payload) =>
-          handleInboundWebexWebhook(payload, { botId, cfg, account, log }),
+          handleInboundWebexWebhook(payload, {
+            identity: 'bot',
+            tokenKind: 'bot',
+            botId,
+            cfg,
+            account,
+            log,
+          }),
       });
-      log?.info?.(`[webex:${account.accountId}] ready at ${webhookPath}`);
+      log?.info?.(`[webex:${account.accountId}] ready at ${botWebhookPath}`);
+
+      const oauthWebhookPath = normPath(
+        `/webhooks/webex/oauth/${account.accountId}`
+      );
+      targets.set(oauthWebhookPath, {
+        account,
+        handle: (payload) =>
+          handleInboundWebexWebhook(payload, {
+            identity: 'oauth',
+            tokenKind: 'oauth',
+            botId,
+            cfg,
+            account,
+            log,
+          }),
+      });
+      log?.info?.(`[webex:${account.accountId}] ready at ${oauthWebhookPath}`);
 
       // *** Batch recovery scan run
       void runPendingBatchStagingRecovery({
@@ -405,9 +431,9 @@ const webexPlugin = {
       } finally {
         if (refreshInterval) clearInterval(refreshInterval);
         log?.info?.(`[webex:${account.accountId}] stopping`);
-        targets.delete(webhookPath);
+        targets.delete(botWebhookPath);
 
-        await deregisterWebhooks(cfg).catch((err) =>
+        await deregisterWebhooks(cfg, { log }).catch((err) =>
           log?.warn?.(
             `[webex:${account.accountId}] webhook deregister failed: ${err?.message}`
           )

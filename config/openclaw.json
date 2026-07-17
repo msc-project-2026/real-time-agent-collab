@@ -79,7 +79,8 @@
       "refreshToken": "${WEBEX_REFRESH_TOKEN}",
       "clientId": "${WEBEX_CLIENT_ID}",
       "clientSecret": "${WEBEX_CLIENT_SECRET}",
-      "webhookUrl": "https://real-time-agent-collab-production.up.railway.app/webhooks/webex/default",
+      "botWebhookUrl": "https://real-time-agent-collab-production.up.railway.app/webhooks/webex/bot/default",
+      "oauthWebhookUrl": "https://real-time-agent-collab-production.up.railway.app/webhooks/webex/oauth/default",
       "webhookSecret": "${WEBEX_WEBHOOK_SECRET}",
       "dmPolicy": "allowlisted",
       "allowFrom": [
