@@ -21,12 +21,15 @@ async function readProcessingBatch({ spaceId, batchId, explicitRoot }) {
       .filter(Boolean)
       .map((line) => JSON.parse(line));
 
+    const lastMessage = messages.at(-1);
+
     return {
       ok: true,
       spaceId,
       batchId,
       messageCount: messages.length,
       messages,
+      suggestedReplyToId: lastMessage?.parentId ?? null,
     };
   } catch (err) {
     if (err?.code === 'ENOENT') {

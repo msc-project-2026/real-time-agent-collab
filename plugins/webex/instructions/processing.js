@@ -16,6 +16,12 @@ Use the batchId and spaceId from the internal event.
 Do not call append or stage tools.
 Do not rely on final assistant output to send Webex messages.
 
+Threading:
+- collab_read_processing_batch may return suggestedReplyToId.
+- If you send a Webex response and suggestedReplyToId is present, pass that value as replyToId to the Message tool.
+- If suggestedReplyToId is null or missing, omit replyToId.
+- Do not infer, invent, or transform thread IDs.
+
 A response is needed when the batch contains a clear question, request, or action for the agent.
 A response may also be sent when the agent can add clear, useful value without interrupting the conversation.
 If the batch does not benefit from an agent response, do not send a message.
