@@ -146,6 +146,19 @@ docker compose up -d --build
 
 Custom plugin assets are built in an isolated build stage and copied into `/app/plugins/`. The build never replaces OpenClaw's `/app/package.json` or runs npm against its dependency tree. The small local `@collab/github` package is installed under the source-observer plugin for runtime resolution.
 
+### Dedicated Webex meeting login
+
+`plugins/webex-meeting-login/` runs once whenever the OpenClaw gateway starts,
+including after a Docker deployment. It sends the `main` agent a browser-only
+task to open `https://web.webex.com/sign-in/enter-email`, enter the dedicated
+agent credentials, and stop after sign-in. It does not join or interact with
+meetings.
+
+Set `MEETING_JOIN_EXPECTED_EMAIL` and `MEETING_JOIN_WEB_PASSWORD` in `.env`.
+The plugin reads them only at runtime, does not commit them, and discards the
+agent's response rather than delivering it to a channel. Browser JavaScript
+evaluation is enabled for this controlled browser session.
+
 **Healthcheck:**
 
 ```

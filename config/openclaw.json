@@ -136,7 +136,7 @@
   },
   "browser": {
     "enabled": true,
-    "evaluateEnabled": false,
+    "evaluateEnabled": true,
     "tabCleanup": {
       "enabled": false
     },
@@ -148,6 +148,7 @@
     "load": {
       "paths": [
         "plugins/webex",
+        "plugins/webex-meeting-login",
         "plugins/openclaw",
         "plugins/source-observer"
       ]
@@ -157,6 +158,9 @@
         "enabled": true
       },
       "webex": {
+        "enabled": true
+      },
+      "webex-meeting-login": {
         "enabled": true
       },
       "collab-writer": {
