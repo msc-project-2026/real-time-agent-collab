@@ -1,71 +1,31 @@
 'use strict';
 
-const { createHmac, timingSafeEqual } = require('node:crypto');
 const { webexFetch } = require('../webex/api');
 const { registerMeetingJoiner } = require('../webex/meeting-joiner-bridge');
 
-const WEBHOOK_PATH = '/webhooks/webex-meetings/';
-const MAX_BODY_BYTES = 1024 * 1024;
 const JOINED_REPLY = 'WEBEX_MEETING_JOINED';
 const LEFT_REPLY = 'WEBEX_MEETING_LEFT';
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+const DEFAULT_POLL_INTERVAL_MS = 15_000;
 
 function getConfig(env = process.env) {
-  const accessToken = env.WEBEX_MEETING_ACCESS_TOKEN?.trim();
+  // Reuse the existing Webex OAuth identity when it is the dedicated meeting
+  // user. WEBEX_MEETING_ACCESS_TOKEN is available when deployments keep the
+  // meeting account separate from the channel's OAuth identity.
+  const accessToken = env.WEBEX_MEETING_ACCESS_TOKEN?.trim() ?? env.WEBEX_ACCESS_TOKEN?.trim();
   const botToken = env.WEBEX_BOT_TOKEN?.trim();
-  const webhookUrl = env.WEBEX_MEETING_WEBHOOK_URL?.trim();
-  const webhookSecret = env.WEBEX_MEETING_WEBHOOK_SECRET?.trim();
+  const pollIntervalMs = Number(env.WEBEX_MEETING_POLL_INTERVAL_MS ?? DEFAULT_POLL_INTERVAL_MS);
   const missing = [
-    !accessToken && 'WEBEX_MEETING_ACCESS_TOKEN',
+    !accessToken && 'WEBEX_MEETING_ACCESS_TOKEN (or WEBEX_ACCESS_TOKEN)',
     !botToken && 'WEBEX_BOT_TOKEN',
-    !webhookUrl && 'WEBEX_MEETING_WEBHOOK_URL',
-    !webhookSecret && 'WEBEX_MEETING_WEBHOOK_SECRET',
   ].filter(Boolean);
   if (missing.length) throw new Error(`missing ${missing.join(', ')}`);
-  return { accessToken, botToken, webhookUrl, webhookSecret };
-}
-
-function verifyHmac(secret, rawBody, signature) {
-  if (!signature) return false;
-  const expected = Buffer.from(createHmac('sha1', secret).update(rawBody).digest('hex'));
-  const received = Buffer.from(String(signature));
-  return expected.length === received.length && timingSafeEqual(expected, received);
-}
-
-function webhookDefinitions(webhookUrl, secret) {
-  return [{
-    name: 'OpenClaw Webex Meeting Started Handler',
-    resource: 'meetings',
-    event: 'started',
-    targetUrl: webhookUrl,
-    secret,
-  }];
-}
-
-async function ensureMeetingWebhook(config) {
-  const current = await webexFetch(config.accessToken, '/webhooks');
-  const managedNames = new Set(webhookDefinitions(config.webhookUrl, config.webhookSecret).map((w) => w.name));
-  await Promise.all((current?.items ?? [])
-    .filter((webhook) => webhook.targetUrl === config.webhookUrl && managedNames.has(webhook.name))
-    .map((webhook) => webexFetch(config.accessToken, `/webhooks/${webhook.id}`, { method: 'DELETE' })));
-  for (const webhook of webhookDefinitions(config.webhookUrl, config.webhookSecret)) {
-    await webexFetch(config.accessToken, '/webhooks', { method: 'POST', body: webhook });
-  }
-}
-
-async function removeMeetingWebhook(config) {
-  const current = await webexFetch(config.accessToken, '/webhooks');
-  const managedNames = new Set(webhookDefinitions(config.webhookUrl, config.webhookSecret).map((w) => w.name));
-  await Promise.all((current?.items ?? [])
-    .filter((webhook) => webhook.targetUrl === config.webhookUrl && managedNames.has(webhook.name))
-    .map((webhook) => webexFetch(config.accessToken, `/webhooks/${webhook.id}`, { method: 'DELETE' })));
-}
-
-function meetingIdFrom(payload) {
-  return payload?.data?.id ?? payload?.data?.meetingId ?? payload?.data?.meetingSeriesId;
+  return {
+    accessToken,
+    botToken,
+    pollIntervalMs: Number.isFinite(pollIntervalMs) && pollIntervalMs >= 5_000
+      ? pollIntervalMs
+      : DEFAULT_POLL_INTERVAL_MS,
+  };
 }
 
 function meetingLink(meeting) {
@@ -76,19 +36,28 @@ function meetingLink(meeting) {
   return null;
 }
 
-async function getMeetingWithRetry(accessToken, id, { attempts = 5, wait = sleep } = {}) {
-  let lastError;
-  for (let attempt = 0; attempt < attempts; attempt++) {
-    try {
-      const meeting = await webexFetch(accessToken, `/meetings/${encodeURIComponent(id)}`);
-      if (meetingLink(meeting)) return meeting;
-      lastError = new Error('meeting link is not available yet');
-    } catch (err) {
-      lastError = err;
-    }
-    if (attempt < attempts - 1) await wait(1000 * (attempt + 1));
-  }
-  throw lastError ?? new Error('could not retrieve meeting details');
+function isStartedMeeting(meeting) {
+  const type = String(meeting?.meetingType ?? '').toLowerCase();
+  const state = String(meeting?.state ?? meeting?.status ?? '').toLowerCase();
+  return type === 'meeting' || ['inprogress', 'started', 'active'].includes(state) ||
+    Boolean(meeting?.actualStart && !meeting?.actualEnd);
+}
+
+async function listVisibleMeetings(accessToken, now = Date.now()) {
+  // A started meeting is represented by a `meeting` record in Webex. The
+  // window also includes scheduled records, which lets the same account see
+  // forthcoming invitations without confusing them for a meeting to join.
+  const query = new URLSearchParams({
+    from: new Date(now - 10 * 60 * 1000).toISOString(),
+    to: new Date(now + 60 * 60 * 1000).toISOString(),
+    max: '100',
+  });
+  const result = await webexFetch(accessToken, `/meetings?${query}`);
+  return result?.items ?? [];
+}
+
+async function getMeeting(accessToken, id) {
+  return webexFetch(accessToken, `/meetings/${encodeURIComponent(id)}`);
 }
 
 async function isRoomMember(token, roomId, personId) {
@@ -152,86 +121,79 @@ function makeSessionKey(action, meetingId) {
 function commandAction(text) {
   const normalized = String(text ?? '').trim().toLowerCase();
   const actions = new Map([
-    ['/meeting', 'status'],
-    ['/meeting status', 'status'],
-    ['/meeting leave', 'leave'],
-    ['/leave meeting', 'leave'],
-    ['leave meeting', 'leave'],
-    ['leave the meeting', 'leave'],
-    ['/meeting join', 'join'],
-    ['/join meeting', 'join'],
-    ['join meeting', 'join'],
-    ['join the meeting', 'join'],
+    ['/meeting', 'status'], ['/meeting status', 'status'],
+    ['/meeting leave', 'leave'], ['/leave meeting', 'leave'],
+    ['leave meeting', 'leave'], ['leave the meeting', 'leave'],
+    ['/meeting join', 'join'], ['/join meeting', 'join'],
+    ['join meeting', 'join'], ['join the meeting', 'join'],
   ]);
   return actions.get(normalized) ?? null;
 }
 
 class MeetingJoiner {
-  constructor({ runtime, logger, config, wait = sleep }) {
+  constructor({ runtime, logger, config }) {
     this.runtime = runtime;
     this.logger = logger;
     this.config = config;
-    this.wait = wait;
     this.activeByRoom = new Map();
+    this.joinedMeetingIds = new Set();
     this.suppressedMeetingIds = new Set();
     this.inFlight = new Map();
+    this.scanPromise = null;
   }
 
   async announce(roomId, markdown) {
-    await webexFetch(this.config.botToken, '/messages', {
-      method: 'POST', body: { roomId, markdown },
-    });
+    await webexFetch(this.config.botToken, '/messages', { method: 'POST', body: { roomId, markdown } });
   }
 
   async join(record) {
     if (this.suppressedMeetingIds.has(record.id)) return { skipped: 'left-by-user' };
+    if (this.joinedMeetingIds.has(record.id)) return { skipped: 'already-joined' };
     if (this.inFlight.has(record.id)) return this.inFlight.get(record.id);
     const task = (async () => {
-      const reply = await dispatchBrowserTask(
-        this.runtime,
-        buildJoinPrompt(record.link),
-        makeSessionKey('join', record.id),
-      );
-      if (!isExactReply(reply, JOINED_REPLY)) {
-        throw new Error('browser agent did not confirm joining the meeting');
-      }
+      const reply = await dispatchBrowserTask(this.runtime, buildJoinPrompt(record.link), makeSessionKey('join', record.id));
+      if (!isExactReply(reply, JOINED_REPLY)) throw new Error('browser agent did not confirm joining the meeting');
       if (this.suppressedMeetingIds.has(record.id)) return { skipped: 'left-by-user' };
+      this.joinedMeetingIds.add(record.id);
       this.activeByRoom.set(record.roomId, { ...record, joined: true });
       await this.announce(record.roomId, 'joined the meeting');
       this.logger?.info?.(`[webex-meeting-joiner] joined meeting=${record.id} room=${record.roomId}`);
       return { joined: true };
     })();
     this.inFlight.set(record.id, task);
-    try {
-      return await task;
-    } finally {
-      this.inFlight.delete(record.id);
-    }
-  }
-
-  async processMeetingStarted(payload) {
-    if (payload?.resource !== 'meetings' || payload?.event !== 'started') return false;
-    const id = meetingIdFrom(payload);
-    if (!id || this.suppressedMeetingIds.has(id)) return false;
-    const meeting = await getMeetingWithRetry(this.config.accessToken, id, { wait: this.wait });
-    const roomId = meeting.roomId ?? payload.data?.roomId;
-    const link = meetingLink(meeting);
-    if (!roomId || !link) return false;
-    if (!await isRoomMember(this.config.botToken, roomId, this.config.botId)) return false;
-    if (payload.actorId && !await isRoomMember(this.config.botToken, roomId, payload.actorId)) return false;
-    return this.join({ id, roomId, link, title: meeting.title ?? 'Webex meeting' });
+    try { return await task; } finally { this.inFlight.delete(record.id); }
   }
 
   async currentMeetingInRoom(roomId) {
     const active = this.activeByRoom.get(roomId);
     if (active) return active;
-    const from = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const to = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-    const query = new URLSearchParams({ roomId, from, to });
-    const result = await webexFetch(this.config.accessToken, `/meetings?${query}`);
-    const meeting = (result?.items ?? []).find((item) => meetingLink(item));
-    if (!meeting) return null;
-    return { id: meeting.id, roomId, link: meetingLink(meeting), title: meeting.title ?? 'Webex meeting' };
+    const meetings = await listVisibleMeetings(this.config.accessToken);
+    const candidate = meetings.find((meeting) => meeting.roomId === roomId && isStartedMeeting(meeting));
+    if (!candidate?.id) return null;
+    const meeting = await getMeeting(this.config.accessToken, candidate.id);
+    const link = meetingLink(meeting);
+    return link ? { id: meeting.id, roomId, link, title: meeting.title ?? 'Webex meeting' } : null;
+  }
+
+  async scanActiveMeetings() {
+    if (this.scanPromise) return this.scanPromise;
+    this.scanPromise = (async () => {
+      const visibleMeetings = await listVisibleMeetings(this.config.accessToken);
+      const started = visibleMeetings.filter((meeting) => isStartedMeeting(meeting) && meeting.id && meeting.roomId);
+      for (const candidate of started) {
+        try {
+          if (this.suppressedMeetingIds.has(candidate.id) || this.joinedMeetingIds.has(candidate.id)) continue;
+          if (!await isRoomMember(this.config.botToken, candidate.roomId, this.config.botId)) continue;
+          const meeting = await getMeeting(this.config.accessToken, candidate.id);
+          const link = meetingLink(meeting);
+          if (!link) continue;
+          await this.join({ id: meeting.id, roomId: candidate.roomId, link, title: meeting.title ?? 'Webex meeting' });
+        } catch (err) {
+          this.logger?.warn?.(`[webex-meeting-joiner] scan candidate failed: ${err?.message ?? err}`);
+        }
+      }
+    })();
+    try { return await this.scanPromise; } finally { this.scanPromise = null; }
   }
 
   async handleCommand({ text, roomId }) {
@@ -257,6 +219,7 @@ class MeetingJoiner {
     this.suppressedMeetingIds.add(meeting.id);
     const reply = await dispatchBrowserTask(this.runtime, buildLeavePrompt(), makeSessionKey('leave', meeting.id));
     if (!isExactReply(reply, LEFT_REPLY)) throw new Error('browser agent did not confirm leaving the meeting');
+    this.joinedMeetingIds.delete(meeting.id);
     this.activeByRoom.set(roomId, { ...meeting, joined: false, left: true });
     await this.announce(roomId, 'left the meeting');
     this.logger?.info?.(`[webex-meeting-joiner] left meeting=${meeting.id} room=${roomId}`);
@@ -264,53 +227,28 @@ class MeetingJoiner {
   }
 }
 
-function createWebhookHandler(joiner, config) {
-  return async (req, res) => {
-    if (req.method !== 'POST') {
-      res.statusCode = 405; res.setHeader('Allow', 'POST'); res.end('Method Not Allowed'); return true;
-    }
-    const chunks = [];
-    let size = 0;
-    for await (const chunk of req) {
-      size += chunk.length;
-      if (size > MAX_BODY_BYTES) { res.statusCode = 413; res.end('Payload Too Large'); return true; }
-      chunks.push(chunk);
-    }
-    const raw = Buffer.concat(chunks);
-    if (!verifyHmac(config.webhookSecret, raw, req.headers['x-spark-signature'])) {
-      res.statusCode = 401; res.end('Unauthorized'); return true;
-    }
-    let payload;
-    try { payload = JSON.parse(raw.toString('utf8')); } catch { res.statusCode = 400; res.end('Bad Request'); return true; }
-    res.statusCode = 200; res.setHeader('Content-Type', 'application/json'); res.end('{"ok":true}');
-    joiner.processMeetingStarted(payload).catch((err) =>
-      joiner.logger?.error?.(`[webex-meeting-joiner] meeting event failed: ${err?.message ?? err}`));
-    return true;
-  };
-}
-
 function register(api) {
   let config;
-  try {
-    config = getConfig();
-  } catch (err) {
+  try { config = getConfig(); } catch (err) {
     api.logger?.warn?.(`[webex-meeting-joiner] disabled: ${err.message}`);
     return;
   }
   const joiner = new MeetingJoiner({ runtime: api.runtime, logger: api.logger, config });
-  api.registerHttpRoute({ path: WEBHOOK_PATH, auth: 'plugin', match: 'prefix', handler: createWebhookHandler(joiner, config) });
   const unregister = registerMeetingJoiner(joiner);
+  let pollTimer = null;
   api.on('gateway_start', async () => {
     const bot = await webexFetch(config.botToken, '/people/me');
     joiner.config.botId = bot.id;
-    await ensureMeetingWebhook(config);
-    api.logger?.info?.('[webex-meeting-joiner] meeting-start webhook registered');
+    const poll = () => joiner.scanActiveMeetings().catch((err) =>
+      api.logger?.warn?.(`[webex-meeting-joiner] polling failed: ${err?.message ?? err}`));
+    poll();
+    pollTimer = setInterval(poll, config.pollIntervalMs);
+    api.logger?.info?.(`[webex-meeting-joiner] polling visible meetings every ${config.pollIntervalMs}ms`);
   }, { timeoutMs: 30000 });
-  api.on('gateway_stop', async () => {
+  api.on('gateway_stop', () => {
     unregister();
-    await removeMeetingWebhook(config).catch((err) =>
-      api.logger?.warn?.(`[webex-meeting-joiner] webhook cleanup failed: ${err?.message ?? err}`));
-  }, { timeoutMs: 30000 });
+    if (pollTimer) clearInterval(pollTimer);
+  });
 }
 
 module.exports = register;
@@ -318,10 +256,9 @@ module.exports.default = register;
 module.exports.MeetingJoiner = MeetingJoiner;
 module.exports.buildJoinPrompt = buildJoinPrompt;
 module.exports.buildLeavePrompt = buildLeavePrompt;
-module.exports.createWebhookHandler = createWebhookHandler;
-module.exports.ensureMeetingWebhook = ensureMeetingWebhook;
-module.exports.getConfig = getConfig;
-module.exports.getMeetingWithRetry = getMeetingWithRetry;
-module.exports.isExactReply = isExactReply;
-module.exports.meetingLink = meetingLink;
 module.exports.commandAction = commandAction;
+module.exports.getConfig = getConfig;
+module.exports.isExactReply = isExactReply;
+module.exports.isStartedMeeting = isStartedMeeting;
+module.exports.listVisibleMeetings = listVisibleMeetings;
+module.exports.meetingLink = meetingLink;

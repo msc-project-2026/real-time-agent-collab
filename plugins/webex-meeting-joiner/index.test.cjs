@@ -9,6 +9,7 @@ const {
   commandAction,
   getConfig,
   isExactReply,
+  isStartedMeeting,
   meetingLink,
 } = require('./index');
 
@@ -42,12 +43,46 @@ test('getConfig keeps the meeting OAuth account distinct from the bot account', 
   const config = getConfig({
     WEBEX_MEETING_ACCESS_TOKEN: 'meeting-oauth',
     WEBEX_BOT_TOKEN: 'bot-token',
-    WEBEX_MEETING_WEBHOOK_URL: 'https://example.test/webhooks/webex-meetings/default',
-    WEBEX_MEETING_WEBHOOK_SECRET: 'secret',
+    WEBEX_MEETING_POLL_INTERVAL_MS: '6000',
   });
   assert.equal(config.accessToken, 'meeting-oauth');
   assert.equal(config.botToken, 'bot-token');
+  assert.equal(config.pollIntervalMs, 6000);
   assert.throws(() => getConfig({ WEBEX_BOT_TOKEN: 'bot-token' }), /WEBEX_MEETING_ACCESS_TOKEN/);
+  assert.equal(getConfig({
+    WEBEX_ACCESS_TOKEN: 'existing-oauth', WEBEX_BOT_TOKEN: 'bot-token',
+  }).accessToken, 'existing-oauth');
+});
+
+test('scan joins a started meeting visible to the meeting account', async () => {
+  const originalFetch = global.fetch;
+  const sent = [];
+  global.fetch = async (url, options = {}) => {
+    const path = String(url);
+    if (path.includes('/meetings?')) return response({
+      items: [{ id: 'meeting-1', roomId: 'room-1', meetingType: 'meeting' }],
+    });
+    if (path.includes('/memberships?')) return response({ items: [{ id: 'membership-1' }] });
+    if (path.endsWith('/meetings/meeting-1')) return response({
+      id: 'meeting-1', roomId: 'room-1', webLink: 'https://example.webex.com/meet/1',
+    });
+    if (path.endsWith('/messages')) {
+      sent.push(JSON.parse(options.body));
+      return response({ id: 'message-id' });
+    }
+    throw new Error(`unexpected request: ${path}`);
+  };
+  try {
+    const joiner = new MeetingJoiner({
+      runtime: runtimeReply('WEBEX_MEETING_JOINED'),
+      config: { botToken: 'bot-token', accessToken: 'oauth-token', botId: 'bot-id' },
+    });
+    await joiner.scanActiveMeetings();
+    assert.equal(joiner.joinedMeetingIds.has('meeting-1'), true);
+    assert.equal(sent[0].markdown, 'joined the meeting');
+  } finally {
+    global.fetch = originalFetch;
+  }
 });
 
 test('join announces success only after the browser agent confirms entry', async () => {
@@ -105,4 +140,6 @@ test('meeting link selection does not parse text or use URL regexes', () => {
   assert.equal(isExactReply('done\nWEBEX_MEETING_JOINED', 'WEBEX_MEETING_JOINED'), true);
   assert.equal(commandAction('leave the meeting'), 'leave');
   assert.equal(commandAction('/meeting join'), 'join');
+  assert.equal(isStartedMeeting({ meetingType: 'scheduledMeeting' }), false);
+  assert.equal(isStartedMeeting({ meetingType: 'meeting' }), true);
 });
