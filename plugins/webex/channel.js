@@ -15,7 +15,7 @@ const {
 } = require('./token');
 const { targets, normPath } = require('./webhook/router');
 const { handleInboundWebexWebhook } = require('./inbound');
-const { buildMsgBody } = require('./send');
+const { sendWebexMessage } = require('./send');
 const {
   runPendingBatchStagingRecovery,
 } = require('./lifecycle/schedule-pending');
@@ -216,9 +216,11 @@ const webexPlugin = {
         );
       }
 
-      const msg = await webexFetch(resolvedAccount.config.token, '/messages', {
-        method: 'POST',
-        body: buildMsgBody(to, { text }, replyToId),
+      const msg = await sendWebexMessage({
+        token: resolvedAccount.config.token,
+        to,
+        text,
+        parentId: replyToId,
       });
 
       return { channel: 'webex', messageId: msg.id, roomId: msg.roomId };
@@ -251,13 +253,12 @@ const webexPlugin = {
         );
       }
 
-      const msg = await webexFetch(resolvedAccount.config.token, '/messages', {
-        method: 'POST',
-        body: buildMsgBody(
-          to,
-          { text, files: mediaUrl ? [mediaUrl] : undefined },
-          replyToId
-        ),
+      const msg = await sendWebexMessage({
+        token: resolvedAccount.config.token,
+        to,
+        text,
+        files: mediaUrl ? [mediaUrl] : undefined,
+        parentId: replyToId,
       });
 
       return { channel: 'webex', messageId: msg.id, roomId: msg.roomId };

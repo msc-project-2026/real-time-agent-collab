@@ -2,7 +2,7 @@
 'use strict';
 
 const { webexFetch } = require('../api');
-const { buildMsgBody } = require('../send');
+const { sendWebexMessage } = require('../send');
 
 function valueOrEmpty(value) {
   return value == null ? '' : String(value);
@@ -86,17 +86,16 @@ async function sendConfigCard({ spaceId, account, log, config }) {
 
   const card = buildConfigCard({ config: config ?? {} });
 
-  const msg = await webexFetch(token, '/messages', {
-    method: 'POST',
-    body: buildMsgBody(spaceId, {
-      markdown: 'Please review this collaboration space configuration.',
-      attachments: [
-        {
-          contentType: 'application/vnd.microsoft.card.adaptive',
-          content: card,
-        },
-      ],
-    }),
+  const msg = await sendWebexMessage({
+    token,
+    to: spaceId,
+    markdown: 'Please review this collaboration space configuration.',
+    attachments: [
+      {
+        contentType: 'application/vnd.microsoft.card.adaptive',
+        content: card,
+      },
+    ],
   });
 
   log?.info?.(`[webex:${account.accountId}] config card sent`, {
