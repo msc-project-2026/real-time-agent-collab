@@ -105,7 +105,7 @@ async function dispatchToAgentForSpace({
             if (!out.text) return;
 
             log?.info?.(
-              `[webex:${account.accountId}] agent output suppressed: ${out.text}`
+              `[webex:${account.accountId}] dispatched agent output: ${out.text}`
             );
 
             void Promise.resolve(

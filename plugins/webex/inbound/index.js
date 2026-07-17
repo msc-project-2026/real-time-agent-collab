@@ -10,12 +10,14 @@ async function handleInboundWebexWebhook(payload, ctx) {
 
   log?.info?.(
     `[webex:${account.accountId}] inbound webhook payload ${JSON.stringify({
+      id: payload.id,
+      name: payload.name,
       resource: payload.resource,
       event: payload.event,
-      data: payload.data,
+      dataId: payload.data?.id,
+      personEmail: payload.data?.personEmail,
     })}`
   );
-
   if (payload.resource === 'messages' && payload.event === 'created') {
     return handleInboundWebexMessage(payload, ctx);
   }

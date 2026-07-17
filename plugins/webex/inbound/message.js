@@ -35,7 +35,10 @@ async function handleInboundWebexMessage(
   if (payload.resource !== 'messages' || payload.event !== 'created') return;
 
   // Ignore messages sent by the bot itself
-  if (payload.data?.personId === botId) return;
+  if (payload.data?.personId === botId) {
+    log?.info?.(`[webex:${account.accountId}] ignoring bot message`);
+    return;
+  }
 
   // Apply DM policy for direct messages
   if (payload.data?.roomType === 'direct') {
