@@ -63,6 +63,9 @@ test('dispatchLogin propagates dispatcher failures', async () => {
 
 test('assertSignInConfirmed accepts only the explicit confirmation', () => {
   assert.doesNotThrow(() => assertSignInConfirmed('WEBEX_SIGN_IN_CONFIRMED'));
+  assert.doesNotThrow(() =>
+    assertSignInConfirmed('Webex is fully signed in.\n\nWEBEX_SIGN_IN_CONFIRMED')
+  );
   assert.throws(() => assertSignInConfirmed('WEBEX_SIGN_IN_BLOCKED'), /blocked/);
   assert.throws(() => assertSignInConfirmed('looks signed in'), /did not confirm/);
 });

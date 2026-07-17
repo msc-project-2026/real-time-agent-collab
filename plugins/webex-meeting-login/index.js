@@ -76,9 +76,9 @@ async function dispatchLogin(runtime, prompt) {
 }
 
 function assertSignInConfirmed(agentReply) {
-  if (agentReply === 'WEBEX_SIGN_IN_CONFIRMED') return;
+  if (/^WEBEX_SIGN_IN_CONFIRMED$/m.test(agentReply)) return;
   throw new Error(
-    agentReply === 'WEBEX_SIGN_IN_BLOCKED'
+    /^WEBEX_SIGN_IN_BLOCKED$/m.test(agentReply)
       ? 'Webex sign-in was blocked by the page'
       : 'agent did not confirm Webex sign-in'
   );
