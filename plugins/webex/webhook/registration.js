@@ -8,9 +8,10 @@ const { getAccessToken } = require('../token');
 // fresh set.  Idempotent (safe to call on every startAccount).
 async function ensureWebhooks(cfg) {
   // const token = getAccessToken() ?? cfg.token;
-  const token = account.config?.token;
-  const data = await webexFetch(token, '/webhooks');
+  const token = cfg.token;
+  if (!token) throw new Error('Webex bot token is required');
 
+  const data = await webexFetch(token, '/webhooks');
   await Promise.all(
     (data?.items ?? [])
       .filter((w) => w.targetUrl === cfg.webhookUrl)
@@ -71,7 +72,9 @@ async function ensureWebhooks(cfg) {
 // Deregisters (deletes) any existing webhooks pointing at cfg.webhookUrl.
 async function deregisterWebhooks(cfg) {
   // const token = getAccessToken() ?? cfg.token;
-  const token = account.config?.token;
+  const token = cfg.token;
+  if (!token) throw new Error('Webex bot token is required');
+
   const data = await webexFetch(token, '/webhooks');
   await Promise.all(
     (data?.items ?? [])
