@@ -139,6 +139,36 @@ The plugin reads them only at runtime, does not commit them, and discards the
 agent's response rather than delivering it to a channel. Browser JavaScript
 evaluation is enabled for this controlled browser session.
 
+### Webex meeting auto-joiner
+
+`plugins/webex-meeting-joiner/` subscribes to the Webex Meetings API's
+`meetings:started` event. This covers scheduled space meetings and ad-hoc
+space meetings once they actually start; it deliberately does not join merely
+because somebody creates a calendar invitation. The plugin retrieves the
+meeting record using the dedicated meeting-account OAuth token, verifies that
+the bot is a member of the meeting's Webex space, and hands the returned join
+link to the signed-in Brave browser agent. The browser agent reasons from the
+visible page, joins with microphone and camera disabled, and the bot then posts
+`joined the meeting` in the space.
+
+The meeting OAuth token needs the `meeting:schedules_read` scope, including for
+creating the meeting webhook. Configure these additional `.env` values:
+
+```dotenv
+WEBEX_MEETING_ACCESS_TOKEN=        # OAuth token for the meeting-joining user
+WEBEX_MEETING_WEBHOOK_URL=https://<domain>/webhooks/webex-meetings/default
+WEBEX_MEETING_WEBHOOK_SECRET=      # openssl rand -hex 32
+```
+
+`WEBEX_MEETING_ACCESS_TOKEN` is intentionally separate from `WEBEX_BOT_TOKEN`:
+the former accesses meeting metadata; the latter verifies bot membership and
+sends the space notification. The browser account is still configured by
+`MEETING_JOIN_EXPECTED_EMAIL` and `MEETING_JOIN_WEB_PASSWORD`.
+
+In a space, use `/meeting leave` to leave its active meeting. That meeting is
+suppressed from automatic rejoin until someone sends `/meeting join`; use
+`/meeting status` to check the current state.
+
 **Healthcheck:**
 
 ```
@@ -428,6 +458,9 @@ All variables live in `.env` (gitignored). Copy `.env.example` to `.env` and fil
 | `WEBEX_CLIENT_SECRET` | openclaw | Webex Integration client secret (for token refresh) |
 | `WEBEX_WEBHOOK_SECRET` | openclaw | HMAC-SHA1 secret Webex signs webhook POSTs with — `openssl rand -hex 32` |
 | `WEBEX_WEBHOOK_URL` | openclaw | Must be `https://claw.asabizanjo.dev/webhooks/webex/default` |
+| `WEBEX_MEETING_ACCESS_TOKEN` | meeting joiner | OAuth token for the browser user's meeting integration; requires `meeting:schedules_read` |
+| `WEBEX_MEETING_WEBHOOK_URL` | meeting joiner | Public URL: `https://<domain>/webhooks/webex-meetings/default` |
+| `WEBEX_MEETING_WEBHOOK_SECRET` | meeting joiner | HMAC-SHA1 secret for the meetings webhook — `openssl rand -hex 32` |
 | `GITHUB_APP_ID` | setup-ui | Numeric GitHub App ID |
 | `GITHUB_APP_NAME` | setup-ui | GitHub App slug (shown in the install URL) |
 | `GITHUB_APP_PRIVATE_KEY_FILE` | setup-ui | Path to the mounted PEM — `/run/secrets/github-app-private-key.pem` |

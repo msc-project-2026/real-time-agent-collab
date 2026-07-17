@@ -1,0 +1,15 @@
+{
+  "id": "webex-meeting-joiner",
+  "name": "Webex Meeting Joiner",
+  "description": "Joins Webex space meetings in the signed-in Brave browser when a member starts them.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "default": true
+      }
+    }
+  }
+}
