@@ -8,7 +8,7 @@
 // (👍/👎) can't capture because those messages were never sent.
 //
 // File: $OPENCLAW_WORKSPACE_DIR/gate-audit.jsonl
-// Each line: { ts, roomId, senderId, type, score, threshold, accepted, system1Override, isMentioned }
+// Each line: { ts, roomId, senderId, type, score, threshold, accepted, system1Override, isMentioned, isDirectAddressed }
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -26,6 +26,7 @@ async function logDecision({
   accepted,
   system1Override = false,
   isMentioned = false,
+  isDirectAddressed = isMentioned,
 }) {
   const line =
     JSON.stringify({
@@ -38,6 +39,7 @@ async function logDecision({
       accepted,
       system1Override,
       isMentioned,
+      isDirectAddressed,
     }) + '\n';
 
   try {

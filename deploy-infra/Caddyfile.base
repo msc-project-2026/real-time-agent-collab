@@ -1,5 +1,0 @@
-# Global options merged with the per-app config that caddy-docker-proxy derives
-# from container labels. The ACME email is substituted by the bootstrap script.
-{
-	email {$ACME_EMAIL}
-}

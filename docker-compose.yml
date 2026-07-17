@@ -31,30 +31,17 @@ services:
       context: .
       dockerfile: openclaw.Dockerfile
     env_file: .env
-    environment:
-      # Required for the meeting-join plugin's loopback HTTP integration.
-      # Keep this in versioned Compose config because production .env files
-      # are intentionally not updated by git pulls.
-      OPENCLAW_EAGER_BROWSER_CONTROL_SERVER: "1"
-    # Run as root so the entrypoint can write into the named volume.
-    # (On Railway this was done with RAILWAY_RUN_UID=0.)
+    # Start as root only for the entrypoint's state-volume ownership migration.
+    # The entrypoint drops to the image's `node` user before launching OpenClaw.
     user: "0:0"
     volumes:
       - openclaw_state:/home/node/.openclaw
       # GitHub App private key mounted read-only; referenced via
       # GITHUB_APP_PRIVATE_KEY_FILE in .env. The secrets/ dir is gitignored.
       - ./secrets/github-app-private-key.pem:/run/secrets/github-app-private-key.pem:ro
-      # Workspace skills the agent loads on demand (e.g. deploy-app). OpenClaw
+      # Workspace skills the agent loads on demand. OpenClaw
       # auto-discovers SKILL.md files under <workspace>/skills.
       - ./skills:/home/node/.openclaw/workspace/skills:ro
-      # SSH private key the deploy-agent plugin uses to reach the hosting VPS.
-      # Restricted on the target to a forced command (deploy-cli only).
-      # Referenced via DEPLOY_VPS_KEY in .env. Keep this file chmod 600.
-      - ./secrets/deploy-vps-key:/run/secrets/deploy-vps-key:ro
-      - ./sub-agents/meeting-agent/AGENTS.md:/home/node/.openclaw/workspace-meeting-notes/AGENTS.md
-      # Meeting notes skill the agent loads on demand (e.g. meeting-notes). OpenClaw
-      # auto-discovers SKILL.md files under <workspace>/skills.
-
     expose:
       - "18789"
     networks:

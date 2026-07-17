@@ -98,7 +98,7 @@ real-time-agent-collab/
 
 ### OpenClaw gateway
 
-Built from `openclaw.Dockerfile`. Extends the official `ghcr.io/openclaw/openclaw:latest` image (Node 24, tini as PID 1).
+Built from `openclaw.Dockerfile`. Extends a digest-pinned official `ghcr.io/openclaw/openclaw:latest-browser` image (Node 24, tini as PID 1).
 
 **Why a custom Dockerfile?**
 
@@ -108,13 +108,66 @@ Docker volumes mask image-layer files at the mounted path, so the versioned `con
 
 1. `mkdir -p /home/node/.openclaw`
 2. `cp /app/config/openclaw.json /home/node/.openclaw/openclaw.json`
-3. `exec node openclaw.mjs gateway`
+3. Migrate persisted state ownership to the `node` user, excluding the read-only skills mount
+4. `exec gosu node node openclaw.mjs gateway`
 
-The container is declared with `user: "0:0"` in `docker-compose.yml` (runs as root) so the entrypoint has write access to the named volume.
+The container starts with `user: "0:0"` so the entrypoint can repair state created by older root-running releases. It drops permanently to the image's non-root `node` user before OpenClaw starts.
+
+### Gateway-managed Brave browser
+
+Agent and browser sandboxing are disabled. The gateway image installs Brave and
+OpenClaw launches it headlessly using its dedicated `openclaw` browser profile.
+The entrypoint removes only that profile's user-data directory before every
+gateway start, so the Webex login plugin always starts with a fresh browser and
+no stale `Singleton*` lock or persisted Webex session. The plugin then signs in
+using its environment-provided dedicated-agent credentials.
 
 **Installed plugins:**
 
-`plugins/webex` is copied into `/app/plugins/` at build time. The root `package.json` npm workspace and `lib/` are also copied so `npm install --workspaces` can create the `@collab/*` symlinks that plugins import at runtime.
+Custom plugin assets are built in an isolated build stage and copied into `/app/plugins/`. The build never replaces OpenClaw's `/app/package.json` or runs npm against its dependency tree. The small local `@collab/github` package is installed under the source-observer plugin for runtime resolution.
+
+### Dedicated Webex meeting login
+
+`plugins/webex-meeting-login/` runs once whenever the OpenClaw gateway starts,
+including after a Docker deployment. It sends the `main` agent a browser-only
+task to open `https://web.webex.com/sign-in/enter-email`, enter the dedicated
+agent credentials, and stop after sign-in. It does not join or interact with
+meetings.
+
+Set `MEETING_JOIN_EXPECTED_EMAIL` and `MEETING_JOIN_WEB_PASSWORD` in `.env`.
+The plugin reads them only at runtime, does not commit them, and discards the
+agent's response rather than delivering it to a channel. Browser JavaScript
+evaluation is enabled for this controlled browser session.
+
+### Webex meeting auto-joiner
+
+`plugins/webex-meeting-joiner/` polls the dedicated meeting account's visible
+Meetings API list every 15 seconds by default. It ignores scheduled invitations
+until Webex exposes the corresponding started `meeting` record, then verifies
+that the bot is a member of that record's space and hands the retrieved link to
+the signed-in Brave browser agent. This avoids depending on a separate
+meeting-start webhook, which may not be delivered for an instant space-meeting
+flow. The browser agent reasons from the visible page, joins with microphone
+and camera disabled, and the bot then posts `joined the meeting` in the space.
+
+The meeting OAuth token needs the `meeting:schedules_read` scope. Configure
+these additional `.env` values:
+
+```dotenv
+WEBEX_MEETING_ACCESS_TOKEN=        # OAuth token for the meeting-joining user
+WEBEX_MEETING_POLL_INTERVAL_MS=15000
+```
+
+`WEBEX_MEETING_ACCESS_TOKEN` is intentionally separate from `WEBEX_BOT_TOKEN`:
+the former accesses meeting metadata; the latter verifies bot membership and
+sends the space notification. The browser account is still configured by
+`MEETING_JOIN_EXPECTED_EMAIL` and `MEETING_JOIN_WEB_PASSWORD`. When the
+existing `WEBEX_ACCESS_TOKEN` already belongs to the joining account, the
+plugin uses it automatically; otherwise set `WEBEX_MEETING_ACCESS_TOKEN`.
+
+In a space, use `/meeting leave` to leave its active meeting. That meeting is
+suppressed from automatic rejoin until someone sends `/meeting join`; use
+`/meeting status` to check the current state.
 
 **Healthcheck:**
 
@@ -135,6 +188,7 @@ Located at `plugins/webex/`. Registered with OpenClaw via `openclaw.plugin.json`
 | `index.js` | Plugin entry — calls `api.registerChannel` and `api.registerHttpRoute` |
 | `channel.js` | Full OpenClaw channel contract: account resolution, DM policy, outbound send, status/probe, `startAccount` lifecycle |
 | `inbound.js` | Post-webhook async handler: filters self/DM/membership, fetches full message, dispatches to agent pipeline |
+| `address.js` | Recognizes explicit assistant names and vocative direct addresses |
 | `webhook.js` | `webhookRouter` HTTP handler: HMAC-SHA1 verification, body read, target dispatch registry |
 | `token.js` | In-memory OAuth access token; `ensureWebhook` (deregister-then-recreate); `deregisterWebhooks`; 12-day refresh interval |
 | `send.js` | `buildMsgBody` — infers `roomId` vs `toPersonId` vs `toPersonEmail` from the `to` string |
@@ -171,6 +225,9 @@ Located at `plugins/webex/`. Registered with OpenClaw via `openclaw.plugin.json`
 | `SenderName` | `msg.personEmail` (falls back to `personId`) |
 | `MessageThreadId` | `msg.parentId` (thread parent) |
 | `IsMentioned` | `true` if the bot's ID is in `msg.mentionedPeople` |
+| `IsDirectlyAddressed` | `true` for an explicit mention or a recognized direct address such as `bot, ...` or `AI, ...` |
+
+Direct address names bypass debounce, the relevance gate, and the lull delay. The defaults include common names such as `bot`, `ai`, `assistant`, `agent`, `chatbot`, `robot`, `chatgpt`, `gpt`, `copilot`, `claude`, `gemini`, `openclaw`, and `claw`. Add project-specific names under `channels.webex.proactivity.directAddressNames`.
 
 #### Webhook route (`webhook.js`)
 
@@ -192,20 +249,6 @@ Currently restricted to:
 Configured in `config/openclaw.json` under `channels.webex.allowFrom`. Edit that file and redeploy to change.
 
 ---
-
-### Meeting Join plugin
-
-`plugins/meeting-join` lets a Webex space member mention the bot with a natural-language meeting request (for example, `@bot join the meeting`) and include the meeting link and ordinary password in that message. The plugin opens a secure local runner in the OpenClaw-managed headless browser and automatically joins through the Webex Meetings SDK as the dedicated licensed Webex OAuth user. Set `plugins.entries.meeting-join.config.requireBrowserReview` to `true` only when an agent-reviewed snapshot-and-click handoff is explicitly required; session-scoped meeting tools then resolve the runner tab internally so the agent reasons over fresh refs without constructing generic browser `targetId` values.
-
-- The invitation must be in the same mentioned request as the join instruction.
-- Phase 1 joins without microphone, camera, screen-share, or media processing.
-- OAuth bearer and refresh tokens are used only by the local SDK runner and are never typed into the public Webex meeting page.
-- `@bot leave the meeting` ends that space's active session; meeting-end and container-restart recovery are handled automatically.
-- OAuth and active-session state are encrypted in the persistent OpenClaw volume using `MEETING_JOIN_ENCRYPTION_KEY`.
-- A maximum of four sessions is configured by default, with one active meeting per space.
-
-The `MEETING_JOIN_*` variables in `.env.example` must be supplied before enabling it in production. The Docker image uses OpenClaw's browser variant and enables the loopback-only browser-control server.
-Authorize the dedicated user's Webex Integration with the `spark:all spark:kms` scopes used by the Webex Meetings SDK, and store the resulting refresh token in `MEETING_JOIN_REFRESH_TOKEN`. `OPENCLAW_EAGER_BROWSER_CONTROL_SERVER=1` is required because this plugin uses OpenClaw's documented loopback browser-control HTTP API.
 
 ### Setup UI
 
@@ -415,6 +458,8 @@ All variables live in `.env` (gitignored). Copy `.env.example` to `.env` and fil
 | `WEBEX_CLIENT_SECRET` | openclaw | Webex Integration client secret (for token refresh) |
 | `WEBEX_WEBHOOK_SECRET` | openclaw | HMAC-SHA1 secret Webex signs webhook POSTs with — `openssl rand -hex 32` |
 | `WEBEX_WEBHOOK_URL` | openclaw | Must be `https://claw.asabizanjo.dev/webhooks/webex/default` |
+| `WEBEX_MEETING_ACCESS_TOKEN` | meeting joiner | OAuth token for the browser user's meeting integration; requires `meeting:schedules_read` |
+| `WEBEX_MEETING_POLL_INTERVAL_MS` | meeting joiner | Optional scan interval; default `15000`, minimum `5000` |
 | `GITHUB_APP_ID` | setup-ui | Numeric GitHub App ID |
 | `GITHUB_APP_NAME` | setup-ui | GitHub App slug (shown in the install URL) |
 | `GITHUB_APP_PRIVATE_KEY_FILE` | setup-ui | Path to the mounted PEM — `/run/secrets/github-app-private-key.pem` |
@@ -556,6 +601,11 @@ The gateway re-registers the Webex webhook on every start (`plugins/webex/token.
 - `WEBEX_WEBHOOK_URL` is exactly `https://claw.asabizanjo.dev/webhooks/webex/default`.
 - The domain resolves and port 443 is reachable from the internet.
 - `docker compose logs openclaw` should show `[webex:default] Webex webhook registered` and `[webex] webhookRouter called` on incoming messages.
+
+**Brave reports that the Webex browser profile is locked**
+The gateway entrypoint removes the dedicated OpenClaw browser profile before
+each startup. This clears stale `Singleton*` locks; check `docker compose logs
+openclaw` if Brave still cannot start.
 
 **DMs not reaching the agent**
 The channel is set to `dmPolicy: allowlisted`. The sender's email or Webex `personId` must be in `channels.webex.allowFrom` in `config/openclaw.json`.

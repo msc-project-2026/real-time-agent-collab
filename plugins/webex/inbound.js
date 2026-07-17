@@ -4,6 +4,7 @@
 const { webexFetch } = require('./api');
 const { getAccessToken } = require('./token');
 const { buildMsgBody } = require('./send');
+const { isDirectAddress } = require('./address');
 const { scoreMessage } = require('./gate');
 const { recordMessage: lullRecord, waitForLull, getLastSeen } = require('./lull');
 const { recordMessage: ctxRecord, getRecentMessages } = require('./context');
@@ -13,6 +14,7 @@ const prefs = require('./prefs');
 const { dispatchWithRetry } = require('../../lib/dispatch-retry.js');
 const { buildWelcomeCard, buildPresetCard } = require('./card');
 const { enqueueSessionDispatch } = require('./session-dispatch');
+const { handleMeetingCommand } = require('./meeting-joiner-bridge');
 
 let pluginRuntime = null;
 function setRuntime(r) {
@@ -39,6 +41,7 @@ function isDmAllowed(cfg, personId, personEmail) {
 function getProactivityCfg(loadedCfg) {
   const p = loadedCfg?.channels?.webex?.proactivity ?? {};
   return {
+    directAddressNames: Array.isArray(p.directAddressNames) ? p.directAddressNames : [],
     gateThreshold: p.gateThreshold ?? 0.6,
     system1Prob: p.system1Prob ?? 0.05,
     lullWindowMs: p.lullWindowMs ?? 8000,
@@ -261,7 +264,7 @@ async function handleCardAction(payload, { botId, cfg, log }) {
 
 // ── Main inbound handler ───────────────────────────────────────────────────────
 
-async function handleInbound(payload, { botId, cfg, account, log }) {
+async function handleInbound(payload, { botId, botName, cfg, account, log }) {
   // Bot was added to a new space → send the welcome card.
   if (payload.resource === 'memberships' && payload.event === 'created') {
     if (payload.data?.personId === botId) {
@@ -314,12 +317,6 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
   const senderName = msg.personEmail ?? msg.personId;
   const personId = msg.personId;
 
-  const isMentioned =
-    Array.isArray(msg.mentionedPeople) && msg.mentionedPeople.includes(botId);
-
-  // Meeting credentials are intentionally passed to the agent with the request.
-  // The agent supplies them directly to the meeting-join tool; invitations are
-  // not cached or resolved from room history.
   const agentText = msg.text ?? '';
 
   // Capture lastSeen BEFORE recording so we can detect how long the room was silent.
@@ -332,6 +329,29 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
 
   const loadedCfg = pluginRuntime.config?.current?.() ?? {};
   const proactivity = getProactivityCfg(loadedCfg);
+  const isMentioned =
+    Array.isArray(msg.mentionedPeople) && msg.mentionedPeople.includes(botId);
+  const isDirectlyAddressed =
+    isMentioned ||
+    isDirectAddress(agentText, {
+      aliases: proactivity.directAddressNames,
+      botName,
+    });
+
+  // The meeting joiner owns its explicit /meeting commands. Do this after the
+  // normal membership check above, so only people in the Webex space can ask
+  // it to leave or rejoin a meeting.
+  const wasMeetingCommand = await handleMeetingCommand({
+    text: agentText,
+    roomId,
+    personId,
+    personEmail: msg.personEmail,
+    botToken: cfg.token,
+  }).catch((err) => {
+    log?.error?.(`[webex:meeting] command error: ${err?.message ?? err}`);
+    return false;
+  });
+  if (wasMeetingCommand) return;
 
   // ── /collab commands ─────────────────────────────────────────────────────────
   const wasCommand = await handleCommand(agentText, {
@@ -348,8 +368,8 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
 
   // ── Debounce ─────────────────────────────────────────────────────────────────
   // Skip gate + dispatch for rapid-fire messages from the same sender.
-  // Direct mentions always bypass debounce.
-  if (!isMentioned && !tryAccept(roomId, personId)) {
+  // Direct addresses always bypass debounce.
+  if (!isDirectlyAddressed && !tryAccept(roomId, personId)) {
     log?.info?.(`[webex:debounce] suppressed burst from ${senderName} in ${roomId}`);
     return;
   }
@@ -359,7 +379,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
   let interventionType = 'CLARIFICATION';
   let effectiveThreshold = 0;
 
-  if (!isMentioned) {
+  if (!isDirectlyAddressed) {
     const recentMessages = getRecentMessages(roomId);
     const result = await scoreMessage(
       {
@@ -408,19 +428,21 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
       accepted: passesThreshold || system1Override,
       system1Override,
       isMentioned: false,
+      isDirectAddressed: false,
     });
 
     if (!passesThreshold && !system1Override) return;
   } else {
-    // Mentioned — log to audit but always accepted
+    // Directly addressed — log to audit but always accepted
     logDecision({
       roomId,
       senderId: personId,
-      type: 'MENTION',
+      type: isMentioned ? 'MENTION' : 'DIRECT_ADDRESS',
       score: 1.0,
       threshold: 0,
       accepted: true,
-      isMentioned: true,
+      isMentioned,
+      isDirectAddressed: true,
     });
   }
 
@@ -445,6 +467,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
     OriginatingTo: `webex:${roomId}`,
     MessageThreadId: msg.parentId,
     IsMentioned: isMentioned,
+    IsDirectlyAddressed: isDirectlyAddressed,
     RoomId: roomId,
   };
 
@@ -455,7 +478,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
     return;
   }
 
-  const capturedIsMentioned = isMentioned;
+  const capturedIsDirectlyAddressed = isDirectlyAddressed;
 
   const dispatchArgs = {
     ctx: ctxPayload,
@@ -467,7 +490,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
         if (!reply) return;
 
         // ── Stage 3: Lull wait ────────────────────────────────────────────────
-        if (!capturedIsMentioned) {
+        if (!capturedIsDirectlyAddressed) {
           await waitForLull(roomId, {
             windowMs: proactivity.lullWindowMs,
             maxWaitMs: proactivity.lullMaxWaitMs,
@@ -482,7 +505,7 @@ async function handleInbound(payload, { botId, cfg, account, log }) {
           body: buildMsgBody(roomId, { markdown: reply }, msg.parentId),
         });
 
-        if (sent?.id && !capturedIsMentioned) {
+        if (sent?.id && !capturedIsDirectlyAddressed) {
           prefs.recordProactiveSend(roomId);
         }
       },

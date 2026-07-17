@@ -334,7 +334,8 @@ const webexPlugin = {
       // Resolve bot identity so we can filter self-messages and detect mentions
       const botInfo = await webexFetch(cfg.token, '/people/me');
       const botId = botInfo.id;
-      log?.info?.(`[webex:${account.accountId}] bot id=${botId}`);
+      const botName = botInfo.displayName ?? botInfo.nickName ?? botInfo.firstName ?? '';
+      log?.info?.(`[webex:${account.accountId}] bot id=${botId} name=${botName || '[unknown]'}`);
 
       // Refresh access token every 12 days (tokens last ~14 days); Webex auto-renews the refresh token.
       let refreshInterval = null;
@@ -362,7 +363,7 @@ const webexPlugin = {
       targets.set(webhookPath, {
         account,
         handle: (payload) =>
-          handleInbound(payload, { botId, cfg, account, log }),
+          handleInbound(payload, { botId, botName, cfg, account, log }),
       });
       targets.set(meetingWebhookPath, {
         account,

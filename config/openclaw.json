@@ -40,6 +40,9 @@
     "defaults": {
       "model": {
         "primary": "cisco/bedrock/global.anthropic.claude-sonnet-4-6"
+      },
+      "sandbox": {
+        "mode": "off"
       }
     },
     "list": [
@@ -47,7 +50,7 @@
         "id": "main",
         "default": true,
         "tools": {
-          "alsoAllow": ["browser", "join_webex_meeting", "leave_webex_meeting", "inspect_webex_meeting_runner", "act_webex_meeting_runner"]
+          "alsoAllow": ["browser"]
         }
       },
       {
@@ -55,26 +58,6 @@
         "model": {
           "primary": "cisco/bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0"
         }
-      },
-      {
-        "id": "deployer",
-        "model": {
-          "primary": "cisco/bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0"
-        }
-      },
-      {
-        "id": "deploy-debugger",
-        "model": {
-          "primary": "cisco/bedrock/global.anthropic.claude-sonnet-4-6"
-        }
-      },
-      { 
-        "id": "meeting-notes", 
-        "model": { 
-          "primary": "cisco/bedrock/global.anthropic.claude-sonnet-4-6"
-           
-        },
-        "workspace": "/home/node/.openclaw/workspace-meeting-notes" 
       }
     ]
   },
@@ -86,39 +69,12 @@
     {
       "agentId": "observer",
       "match": { "channel": "source-observer" }
-    },
-    {
-      "agentId": "deployer",
-      "match": { "channel": "deploy" }
-    },
-    {
-      "agentId": "deploy-debugger",
-      "match": { "channel": "deploy-debug" }
-    },
-
-
+    }
   ],
   "channels": {
-    "meetingfinder": {
-      "enabled": true,
-      "accessToken": "${WEBEX_ACCESS_TOKEN}",
-      "refreshToken": "${WEBEX_REFRESH_TOKEN}",
-      "clientId": "${WEBEX_CLIENT_ID}",
-      "clientSecret": "${WEBEX_CLIENT_SECRET}",
-      "webhookUrl": "${MEETINGFINDER_WEBHOOK_URL}",
-      "webhookSecret": "${MEETINGFINDER_WEBHOOK_SECRET}",
-      "roomIds": []
-    },
     "source-observer": {
       "enabled": true
     },
-    "deploy": {
-      "enabled": true
-    },
-    "deploy-debug": {
-      "enabled": true
-    },
-
     "webex": {
       "enabled": true,
       "token": "${WEBEX_BOT_TOKEN}",
@@ -138,6 +94,7 @@
       ],
       "proactivity": {
         "_comment": "Tune without redeploying — only a container restart is needed. All fields have in-code defaults.",
+        "directAddressNames": [],
         "gateThreshold": 0.6,
         "system1Prob": 0.05,
         "lullWindowMs": 8000,
@@ -177,58 +134,42 @@
   },
   "browser": {
     "enabled": true,
-    "evaluateEnabled": false,
+    "evaluateEnabled": true,
+    "defaultProfile": "openclaw",
     "headless": true,
     "noSandbox": true,
-    "defaultProfile": "meeting-join",
+    "executablePath": "/usr/bin/brave-browser",
     "tabCleanup": {
       "enabled": false
     },
     "ssrfPolicy": {
       "allowedHostnames": ["localhost", "127.0.0.1"]
-    },
-    "profiles": {
-      "meeting-join": {
-        "cdpPort": 18801,
-        "color": "#6D28D9"
-      }
     }
   },
   "plugins": {
     "load": {
       "paths": [
-        "plugins/meeting-join",
-        "plugins/meetingfinder",
         "plugins/webex",
+        "plugins/webex-meeting-login",
+        "plugins/webex-meeting-joiner",
         "plugins/openclaw",
-        "plugins/source-observer",
-        "plugins/deploy-agent"
+        "plugins/source-observer"
       ]
     },
     "entries": {
-      "meeting-join": {
-        "enabled": true,
-        "config": {
-          "maxConcurrentMeetings": 4,
-          "browserProfile": "meeting-join",
-          "requireBrowserReview": false,
-          "recoveryMaxAttempts": 5,
-          "recoveryBaseDelayMs": 1000
-        }
-      },
-      "meetingfinder": {
-        "enabled": true
-      },
       "source-observer": {
         "enabled": true
       },
       "webex": {
         "enabled": true
       },
-      "collab-writer": {
+      "webex-meeting-login": {
         "enabled": true
       },
-      "deploy-agent": {
+      "webex-meeting-joiner": {
+        "enabled": true
+      },
+      "collab-writer": {
         "enabled": true
       }
     }
