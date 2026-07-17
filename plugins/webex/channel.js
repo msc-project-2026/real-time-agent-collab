@@ -71,7 +71,8 @@ function resolveAccount(cfg, accountId = DEFAULT_ACCOUNT) {
   const resolved = named
     ? {
         token: named.token ?? section.token ?? '',
-        webhookUrl: named.webhookUrl ?? section.webhookUrl ?? '',
+        botWebhookUrl: named.botWebhookUrl ?? section.botWebhookUrl ?? '',
+        oauthWebhookUrl: named.oauthWebhookUrl ?? section.oauthWebhookUrl ?? '',
         webhookSecret: named.webhookSecret ?? section.webhookSecret,
         dmPolicy: named.dmPolicy ?? section.dmPolicy ?? 'deny',
         allowFrom: named.allowFrom ?? section.allowFrom ?? [],
@@ -83,7 +84,8 @@ function resolveAccount(cfg, accountId = DEFAULT_ACCOUNT) {
     : accountId === DEFAULT_ACCOUNT
       ? {
           token: section.token ?? '',
-          webhookUrl: section.webhookUrl ?? '',
+          botWebhookUrl: section.botWebhookUrl ?? '',
+          oauthWebhookUrl: section.oauthWebhookUrl ?? '',
           webhookSecret: section.webhookSecret,
           dmPolicy: section.dmPolicy ?? 'deny',
           allowFrom: section.allowFrom ?? [],

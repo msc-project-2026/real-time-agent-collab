@@ -23,9 +23,13 @@
         "type": "string",
         "description": "Webex bot access token"
       },
-      "webhookUrl": {
+      "botWebhookUrl": {
         "type": "string",
-        "description": "Public URL for receiving Webex webhook POSTs"
+        "description": "Public URL for receiving Webex webhook POSTs under bot token"
+      },
+      "oauthWebhookUrl": {
+        "type": "string",
+        "description": "Public URL for receiving Webex webhook POSTs under oAuth access token"
       },
       "webhookSecret": {
         "type": "string",
