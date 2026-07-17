@@ -65,7 +65,8 @@ are never revived.
 
 - Only group spaces and meetings carrying a managed `roomId` are automatic.
 - A meeting ID is preferred; SIP address and Web link are fallbacks.
-- The runner joins without sending or receiving media in v1.
+- The runner receives meeting audio but never publishes any: no microphone, camera,
+  or share is negotiated. Set `audioTap: false` to join without media entirely.
 - One session is allowed per meeting and per room, with four concurrent sessions
   by default. Capacity-blocked meetings remain pending.
 - Webex admission, locking, moderation, licensing, and organization policies are
@@ -79,6 +80,21 @@ Failed joins report a sanitized diagnostic containing the runner stage, Webex
 SDK error name/code/message when available, and a session ID for log
 correlation. The same detail is returned by `webex_auto_join_status`; meeting
 URLs, credentials, tokens, passwords, and secrets are redacted.
+
+## Meeting audio
+
+The Webex SDK only exposes remote audio as a `MediaStream` inside the browser, so
+the runner taps it there and streams 16 kHz mono linear16 PCM to an ephemeral
+loopback WebSocket owned by the plugin. Each runner load is handed a fresh
+per-session token through `bootstrap`; the bridge binds to `127.0.0.1` only.
+
+A tap that fails to start is reported as an advisory `audio_tap` runner event and
+never as an `error`, because the meeting itself does not depend on it — the
+session stays joined and the runner keeps reporting normally.
+
+`AudioBridge` currently only measures the signal level of what it receives, which
+is what distinguishes a working tap from one wired up but carrying digital
+silence. Transcription consumes the same PCM stream.
 
 ## Development
 

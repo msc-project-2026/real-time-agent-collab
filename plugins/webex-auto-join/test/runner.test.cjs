@@ -6,12 +6,64 @@ const { readFile } = require('node:fs/promises');
 const path = require('node:path');
 const vm = require('node:vm');
 
-async function loadRunner({ enterLobby = false, autoStart = false, passwordRequired = false, includePassword = true, joinError } = {}) {
+// Minimal Web Audio / WebSocket surface for the meeting audio tap. Only the calls the
+// tap actually makes are modelled; anything else should fail loudly rather than pass.
+function audioTapMocks() {
+  const state = { sent: [], sink: null, tapKind: null, socketUrl: null };
+
+  class FakeWebSocket {
+    static OPEN = 1;
+    constructor(url) {
+      state.socketUrl = url;
+      this.readyState = FakeWebSocket.OPEN;
+      this.bufferedAmount = 0;
+      setImmediate(() => this.onOpen?.());
+    }
+    addEventListener(type, handler) { if (type === 'open') this.onOpen = handler; }
+    send(data) { state.sent.push(data); }
+    close() { this.readyState = 3; }
+  }
+
+  class FakeAudioWorkletNode {
+    constructor() { this.port = { onmessage: null }; state.tapKind = 'worklet'; }
+    connect() {}
+  }
+
+  class FakeAudioContext {
+    constructor(options) {
+      this.sampleRate = options?.sampleRate ?? 48_000;
+      this.state = 'running';
+      this.destination = {};
+      this.audioWorklet = { addModule: async () => {} };
+    }
+    async resume() { this.state = 'running'; }
+    async close() {}
+    createMediaStreamSource() { return { connect() {} }; }
+    createGain() { return { gain: {}, connect() {} }; }
+    createScriptProcessor() { state.tapKind = 'script-processor'; return { connect() {} }; }
+  }
+
+  return {
+    state,
+    globals: {
+      WebSocket: FakeWebSocket,
+      AudioContext: FakeAudioContext,
+      AudioWorkletNode: FakeAudioWorkletNode,
+      Blob: class Blob {},
+      URL: { createObjectURL: () => 'blob:worklet', revokeObjectURL() {} },
+    },
+    createElement: () => (state.sink = { setAttribute() {}, play: async () => {} }),
+  };
+}
+
+async function loadRunner({ enterLobby = false, autoStart = false, passwordRequired = false, includePassword = true, joinError, audioTap, addMediaError, addMediaErrorOnce = false } = {}) {
   const source = await readFile(path.join(__dirname, '../dist/runner.js'), 'utf8');
   const events = [];
   const listeners = new Map();
+  const audio = audioTapMocks();
   let click;
   let initOptions;
+  let addMediaOptions;
 
   const button = {
     disabled: false,
@@ -23,10 +75,22 @@ async function loadRunner({ enterLobby = false, autoStart = false, passwordRequi
   const meeting = {
     passwordStatus: passwordRequired ? 'REQUIRED' : 'NOT_REQUIRED',
     on(name, handler) { listeners.set(name, handler); },
+    once(name, handler) { listeners.set(name, handler); },
     async verifyPassword() { return { isPasswordValid: true }; },
     async join() {
       if (joinError) throw joinError;
       if (enterLobby) listeners.get('meeting:self:lobbyWaiting')?.();
+    },
+    async addMedia(options) {
+      // Copy out of the VM realm: deepEqual compares prototypes, and objects built
+      // inside the context do not share the host's.
+      addMediaOptions = JSON.parse(JSON.stringify(options));
+      if (addMediaError) {
+        const error = addMediaError;
+        if (addMediaErrorOnce) addMediaError = undefined;
+        throw error;
+      }
+      listeners.get('media:ready')?.({ type: 'remoteAudio', stream: { id: 'remote-audio' } });
     },
   };
   const webex = {
@@ -45,7 +109,8 @@ async function loadRunner({ enterLobby = false, autoStart = false, passwordRequi
       Webex: { init(options) { initOptions = options; return webex; } },
     },
     document: {
-      body: { dataset: { autostart: String(autoStart) } },
+      body: { dataset: { autostart: String(autoStart) }, appendChild() {} },
+      createElement: audio.createElement,
       querySelector(selector) {
         if (selector === '#join-meeting') return button;
         if (selector === '#meeting-status') return status;
@@ -58,7 +123,9 @@ async function loadRunner({ enterLobby = false, autoStart = false, passwordRequi
           accessToken: 'human-oauth-token',
           destination: 'meeting-id',
           joinLink: 'https://example.webex.com/meet/test',
+          sessionId: 'session-1',
           ...(includePassword ? { password: 'pw' } : {}),
+          ...(audioTap ? { audioTap } : {}),
         }) };
       }
       if (String(url).endsWith('/events')) events.push(JSON.parse(init.body));
@@ -67,8 +134,12 @@ async function loadRunner({ enterLobby = false, autoStart = false, passwordRequi
     Request: class Request {},
     setInterval() { return 1; },
     clearInterval() {},
+    setTimeout,
+    clearTimeout,
+    setImmediate,
     queueMicrotask,
     console,
+    ...audio.globals,
   };
   context.window.window = context.window;
   vm.runInNewContext(source, context);
@@ -79,9 +150,12 @@ async function loadRunner({ enterLobby = false, autoStart = false, passwordRequi
 
   return {
     get initOptions() { return initOptions; },
+    get addMediaOptions() { return addMediaOptions; },
+    audio: audio.state,
     events,
     button,
     status,
+    admit: async () => { listeners.get('meeting:self:guestAdmitted')?.(); await settle(); },
     click: async () => { click(); await settle(); },
   };
 }
@@ -135,6 +209,78 @@ test('reports a sanitized stage, SDK code, and message for join failures', async
   assert.match(failure.detail, /sdk_code=30105/);
   assert.match(failure.detail, /\[redacted-url\]/);
   assert.doesNotMatch(failure.detail, /top-secret-value|example\.webex\.com/);
+});
+
+const AUDIO_TAP = { port: 41234, token: 'tap-token', sampleRate: 16000 };
+
+test('the audio tap receives remote audio without publishing any local media', async () => {
+  const runner = await loadRunner({ audioTap: AUDIO_TAP });
+  await runner.click();
+
+  // The SDK defaults every one of these to true when omitted, so a receive-only bot
+  // has to name them or it starts publishing video and share.
+  assert.deepEqual(runner.addMediaOptions, {
+    localStreams: {},
+    audioEnabled: true,
+    videoEnabled: false,
+    shareAudioEnabled: false,
+    shareVideoEnabled: false,
+  });
+  const notice = runner.events.find((event) => event.type === 'audio_tap');
+  assert.equal(notice.code, 'started');
+  assert.match(notice.detail, /rate=16000 state=running tap=worklet/);
+  assert.equal(runner.status.textContent, 'Joined the Webex meeting.');
+});
+
+test('the tap announces its format to the bridge behind the session token', async () => {
+  const runner = await loadRunner({ audioTap: AUDIO_TAP });
+  await runner.click();
+
+  assert.equal(runner.audio.socketUrl, 'ws://127.0.0.1:41234/?session=session-1&token=tap-token');
+  assert.deepEqual(JSON.parse(runner.audio.sent[0]), {
+    type: 'hello',
+    sessionId: 'session-1',
+    sampleRate: 16000,
+    channels: 1,
+    encoding: 'linear16',
+  });
+});
+
+test('a failing audio tap leaves the meeting join healthy', async () => {
+  const runner = await loadRunner({ audioTap: AUDIO_TAP, addMediaError: new Error('media negotiation failed') });
+  await runner.click();
+
+  // Advisory, never 'error': an error event trips the service into a recovery relaunch
+  // or a hard failure, over a tap the meeting itself does not depend on.
+  assert.deepEqual(runner.events.map((event) => event.type), ['joining', 'audio_tap', 'joined']);
+  const notice = runner.events.find((event) => event.type === 'audio_tap');
+  assert.equal(notice.code, 'failed');
+  assert.match(notice.detail, /media negotiation failed/);
+  assert.equal(runner.status.textContent, 'Joined the Webex meeting.');
+});
+
+test('a lobby admission retries the tap that addMedia refused while waiting', async () => {
+  const runner = await loadRunner({
+    audioTap: AUDIO_TAP,
+    enterLobby: true,
+    addMediaError: new Error('not admitted yet'),
+    addMediaErrorOnce: true,
+  });
+  await runner.click();
+  assert.equal(runner.events.find((event) => event.type === 'audio_tap').code, 'failed');
+
+  await runner.admit();
+
+  assert.deepEqual(runner.events.filter((event) => event.type === 'audio_tap').map((event) => event.code), ['failed', 'started']);
+});
+
+test('a runner given no audio bridge joins without adding media', async () => {
+  const runner = await loadRunner();
+  await runner.click();
+
+  assert.equal(runner.addMediaOptions, undefined);
+  assert.equal(runner.audio.socketUrl, null);
+  assert.deepEqual(runner.events.map((event) => event.type), ['joining', 'joined']);
 });
 
 test('unwraps the nested SDK cause so the real join reason surfaces', async () => {

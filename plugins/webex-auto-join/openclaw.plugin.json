@@ -18,6 +18,7 @@
       "encryptionKey": { "type": "string", "description": "Base64-encoded 32-byte AES state-encryption key." },
       "maxConcurrentMeetings": { "type": "integer", "minimum": 1, "default": 4 },
       "browserProfile": { "type": "string", "default": "webex-auto-join" },
+      "audioTap": { "type": "boolean", "default": true, "description": "Receive meeting audio and stream it to the local audio bridge. Disable to join without media." },
       "requireBrowserReview": { "type": "boolean", "default": false },
       "meetingReconcileIntervalSeconds": { "type": "integer", "minimum": 15, "default": 60 },
       "membershipReconcileIntervalSeconds": { "type": "integer", "minimum": 60, "default": 300 },

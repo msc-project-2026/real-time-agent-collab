@@ -5,6 +5,129 @@
       await meeting2.join();
     }
   };
+  var WORKLET_SOURCE = `
+class PcmTapProcessor extends AudioWorkletProcessor {
+  process(inputs) {
+    const channel = inputs[0] && inputs[0][0];
+    if (channel && channel.length) {
+      const copy = new Float32Array(channel);
+      this.port.postMessage(copy, [copy.buffer]);
+    }
+    return true;
+  }
+}
+registerProcessor('pcm-tap', PcmTapProcessor);
+`;
+  var SCRIPT_PROCESSOR_BUFFER_SIZE = 4096;
+  var MAX_BUFFERED_BYTES = 1 << 20;
+  function floatToPcm16(input) {
+    const output = new Int16Array(input.length);
+    for (let i = 0; i < input.length; i++) {
+      const clamped = Math.max(-1, Math.min(1, input[i]));
+      output[i] = clamped < 0 ? clamped * 32768 : clamped * 32767;
+    }
+    return output;
+  }
+  function openSocket(config, sessionId) {
+    const url = `ws://127.0.0.1:${config.port}/?session=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(config.token)}`;
+    const socket = new WebSocket(url);
+    socket.binaryType = "arraybuffer";
+    return new Promise((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(socket), { once: true });
+      socket.addEventListener("error", () => reject(new Error("audio bridge connection failed")), { once: true });
+    });
+  }
+  function attachSink(stream) {
+    const element = document.createElement("audio");
+    element.srcObject = stream;
+    element.muted = true;
+    element.autoplay = true;
+    element.setAttribute("aria-hidden", "true");
+    document.body.appendChild(element);
+    element.play().catch(() => void 0);
+    return element;
+  }
+  async function createTapNode(context, onSamples) {
+    try {
+      const url = URL.createObjectURL(new Blob([WORKLET_SOURCE], { type: "application/javascript" }));
+      try {
+        await context.audioWorklet.addModule(url);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+      const node = new AudioWorkletNode(context, "pcm-tap", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+      node.port.onmessage = (event2) => onSamples(event2.data);
+      return { node, kind: "worklet" };
+    } catch {
+      const node = context.createScriptProcessor(SCRIPT_PROCESSOR_BUFFER_SIZE, 1, 1);
+      node.onaudioprocess = (event2) => onSamples(new Float32Array(event2.inputBuffer.getChannelData(0)));
+      return { node, kind: "script-processor" };
+    }
+  }
+  async function attachTap(meeting2, config, hooks) {
+    const stream = await new Promise((resolve, reject) => {
+      const existing = meeting2.mediaProperties?.remoteAudioStream?.outputStream;
+      if (existing) return resolve(existing);
+      const timer = setTimeout(() => reject(new Error("remote audio stream never arrived")), 3e4);
+      meeting2.on("media:ready", (media) => {
+        if (media?.type !== "remoteAudio" || !media.stream) return;
+        clearTimeout(timer);
+        resolve(media.stream);
+      });
+      meeting2.addMedia({ localStreams: {}, audioEnabled: true, videoEnabled: false, shareAudioEnabled: false, shareVideoEnabled: false }).catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+    });
+    attachSink(stream);
+    const context = new AudioContext({ sampleRate: config.sampleRate });
+    if (context.state === "suspended") await context.resume().catch(() => void 0);
+    const socket = await openSocket(config, hooks.sessionId);
+    socket.send(JSON.stringify({
+      type: "hello",
+      sessionId: hooks.sessionId,
+      sampleRate: context.sampleRate,
+      channels: 1,
+      encoding: "linear16"
+    }));
+    const send = (samples) => {
+      if (socket.readyState !== WebSocket.OPEN || socket.bufferedAmount > MAX_BUFFERED_BYTES) return;
+      socket.send(floatToPcm16(samples).buffer);
+    };
+    const source = context.createMediaStreamSource(stream);
+    const { node, kind } = await createTapNode(context, send);
+    const silence = context.createGain();
+    silence.gain.value = 0;
+    source.connect(node);
+    node.connect(silence);
+    silence.connect(context.destination);
+    const stop = () => {
+      socket.close(1e3, "meeting_ended");
+      context.close().catch(() => void 0);
+    };
+    meeting2.once?.("meeting:self:left", stop);
+    hooks.onNotice("started", `rate=${context.sampleRate} state=${context.state} tap=${kind}`);
+  }
+  function createAudioTapAdapter(config, hooks) {
+    let attached = false;
+    const ensureMedia = async (meeting2) => {
+      if (attached) return;
+      attached = true;
+      try {
+        await attachTap(meeting2, config, hooks);
+      } catch (error) {
+        attached = false;
+        hooks.onNotice("failed", String(error?.message ?? error));
+      }
+    };
+    return {
+      async join(meeting2) {
+        await meeting2.join();
+        await ensureMedia(meeting2);
+      },
+      ensureMedia
+    };
+  }
 
   // src/runner.ts
   var base = window.location.pathname.replace(/\/$/, "");
@@ -92,6 +215,12 @@
     try {
       stage = "bootstrap";
       const boot = await request("bootstrap");
+      const media = boot.audioTap ? createAudioTapAdapter(boot.audioTap, {
+        sessionId: boot.sessionId,
+        onNotice: (code, detail) => {
+          event("audio_tap", code, detail).catch(() => void 0);
+        }
+      }) : noMediaAdapter;
       await event("joining");
       setStatus("Authenticating the configured Webex user\u2026");
       stage = "sdk_initialization";
@@ -117,6 +246,7 @@
         waitingForAdmission = false;
         setStatus("Joined the Webex meeting.");
         event("joined").catch(() => void 0);
+        media.ensureMedia?.(meeting).catch(() => void 0);
       });
       meeting.on?.("meeting:self:lobbyWaiting", () => {
         waitingForAdmission = true;
@@ -132,9 +262,9 @@
         if (result?.requiredCaptcha) throw new Error("captcha required");
         if (!result?.isPasswordValid) throw new Error("meeting password rejected");
       }
-      setStatus("Joining the Webex meeting without media\u2026");
+      setStatus(boot.audioTap ? "Joining the Webex meeting\u2026" : "Joining the Webex meeting without media\u2026");
       stage = "meeting_join";
-      await noMediaAdapter.join(meeting);
+      await media.join(meeting);
       webex.meetings.on?.("meeting:removed", (removed) => {
         if (!leaving && (!removed?.id || removed.id === meeting?.id)) event("ended").catch(() => void 0);
       });

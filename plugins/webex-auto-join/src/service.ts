@@ -2,6 +2,7 @@ import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:
 import { access, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { AudioBridge } from './audio-bridge';
 import { createDiscoveredInvitation, isJoinableMeeting, isTerminalMeeting, type DestinationKind } from './discovery';
 import { WebexMessageDelivery } from './notifications';
 import {
@@ -403,6 +404,7 @@ export class MeetingJoinService {
   private cfg: any;
   private browser: BrowserControl;
   private messages: WebexMessageDelivery;
+  private audio: AudioBridge;
 
   constructor(private readonly runtime: any, config: any, private readonly log: any = console, private readonly assets: AssetPaths = {}) {
     this.cfg = {
@@ -424,9 +426,11 @@ export class MeetingJoinService {
       schedulingHorizonDays: config?.schedulingHorizonDays ?? 30,
       scheduledStartGraceMinutes: config?.scheduledStartGraceMinutes ?? 30,
       notificationMode: config?.notificationMode ?? 'join-and-failure',
+      audioTap: config?.audioTap ?? true,
     };
     this.browser = new BrowserControl(this.cfg.browserProfile);
     this.messages = new WebexMessageDelivery(this.cfg.botToken);
+    this.audio = new AudioBridge(this.log);
   }
 
   async start() {
@@ -461,6 +465,9 @@ export class MeetingJoinService {
       if (!this.botId || !this.attendeeId || this.botId === this.attendeeId) throw new Error('Webex bot and attendee identities must be distinct');
       if (!attendeeEmails.includes(this.cfg.expectedAttendeeEmail)) throw new Error('configured attendee identity does not match OAuth token');
       await this.ensureWebhooks(attendeeToken);
+      // A bridge that fails to bind must not disable meeting joins: register() then
+      // returns nothing and the runner falls back to joining without media.
+      if (this.cfg.audioTap) await this.audio.start().catch((error) => this.logFailure('audio bridge startup', error));
       this.enabled = true;
       await this.reconcileMemberships();
       await this.reconcileMeetings();
@@ -517,6 +524,7 @@ export class MeetingJoinService {
     }
     this.runnerNonces.clear();
     this.runnerCookies.clear();
+    await this.audio.stop().catch(() => undefined);
     await this.persist().catch(() => undefined);
   }
 
@@ -1146,7 +1154,7 @@ export class MeetingJoinService {
     }
     if (!authenticated) return sendJson(res, 403, { error: 'unauthorized' }), true;
     if (action === 'bootstrap' && req.method === 'GET') {
-      try { return sendJson(res, 200, { accessToken: await this.getAccessToken(), destination: session.invitation.destination, joinLink: session.invitation.joinLink, password: session.invitation.password, meetingId: session.invitation.meetingId, sessionId }), true; }
+      try { return sendJson(res, 200, { accessToken: await this.getAccessToken(), destination: session.invitation.destination, joinLink: session.invitation.joinLink, password: session.invitation.password, meetingId: session.invitation.meetingId, sessionId, audioTap: this.audio.register(sessionId) }), true; }
       catch (error) { return sendJson(res, 503, { error: safeErrorCode(error) }), true; }
     }
     if (action === 'control' && req.method === 'GET') return sendJson(res, 200, { leave: Boolean(session.leaveRequested) }), true;
@@ -1187,6 +1195,12 @@ export class MeetingJoinService {
         await this.transition(session, 'interrupted');
         this.recover(session).catch(() => this.fail(session, code, detail));
       } else await this.fail(session, code, detail);
+    } else if (type === 'audio_tap') {
+      // Advisory only: a tap that never starts still leaves the meeting itself healthy,
+      // so this must not reach fail() or trigger a recovery relaunch.
+      const code = configured(event?.code) || 'unknown';
+      const detail = safePublicFailureDetail(event?.detail);
+      this.log?.info?.(`[webex-auto-join] audio tap ${code} session=${session.id}${detail ? ` ${detail}` : ''}`);
     } else if (type === 'heartbeat') { session.updatedAt = nowIso(); await this.persist(); }
   }
 
@@ -1333,6 +1347,7 @@ export class MeetingJoinService {
   private invalidateRunnerAuth(sessionId: string) {
     for (const [nonce, value] of this.runnerNonces) if (value.sessionId === sessionId) this.runnerNonces.delete(nonce);
     for (const [cookie, value] of this.runnerCookies) if (value.sessionId === sessionId) this.runnerCookies.delete(cookie);
+    this.audio.unregister(sessionId);
   }
 
   private async getAccessToken() {

@@ -2,7 +2,7 @@ declare global {
   interface Window { meetingJoinStarted?: boolean; Webex?: any }
 }
 
-import { noMediaAdapter } from './runner-media';
+import { createAudioTapAdapter, noMediaAdapter, type RunnerMediaAdapter } from './runner-media';
 
 const base = window.location.pathname.replace(/\/$/, '');
 let meeting: any;
@@ -109,6 +109,14 @@ async function start() {
   try {
     stage = 'bootstrap';
     const boot = await request('bootstrap');
+    // Tap notices are advisory: the service must not treat a dead microphone tap as a
+    // failed join, so they never travel as 'error'.
+    const media: RunnerMediaAdapter = boot.audioTap
+      ? createAudioTapAdapter(boot.audioTap, {
+          sessionId: boot.sessionId,
+          onNotice: (code, detail) => { event('audio_tap', code, detail).catch(() => undefined); },
+        })
+      : noMediaAdapter;
     await event('joining');
     setStatus('Authenticating the configured Webex user…');
     stage = 'sdk_initialization';
@@ -134,6 +142,7 @@ async function start() {
       waitingForAdmission = false;
       setStatus('Joined the Webex meeting.');
       event('joined').catch(() => undefined);
+      media.ensureMedia?.(meeting).catch(() => undefined);
     });
     meeting.on?.('meeting:self:lobbyWaiting', () => {
       waitingForAdmission = true;
@@ -149,9 +158,9 @@ async function start() {
       if (result?.requiredCaptcha) throw new Error('captcha required');
       if (!result?.isPasswordValid) throw new Error('meeting password rejected');
     }
-    setStatus('Joining the Webex meeting without media…');
+    setStatus(boot.audioTap ? 'Joining the Webex meeting…' : 'Joining the Webex meeting without media…');
     stage = 'meeting_join';
-    await noMediaAdapter.join(meeting);
+    await media.join(meeting);
     webex.meetings.on?.('meeting:removed', (removed: any) => {
       if (!leaving && (!removed?.id || removed.id === meeting?.id)) event('ended').catch(() => undefined);
     });
