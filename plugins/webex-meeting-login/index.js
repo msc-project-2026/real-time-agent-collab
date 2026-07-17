@@ -8,7 +8,7 @@ const SESSION_KEY = 'agent:main:webex-meeting-login:startup';
 function buildLoginPrompt(email, password) {
   return `You are performing the dedicated meeting agent's one permitted startup task: sign in to Webex.
 
-Use only the browser tool, with every browser call explicitly targeting the sandboxed Brave browser (target="sandbox"). Do not use exec, web search, web fetch, messaging, or any other tool. Do not visit any URL other than ${WEBEX_SIGN_IN_URL}.
+Use only the browser tool, with every browser call explicitly targeting the gateway-managed Brave browser (target="host", profile="openclaw"). Do not use exec, web search, web fetch, messaging, or any other tool. Do not visit any URL other than ${WEBEX_SIGN_IN_URL}.
 
 1. Navigate to ${WEBEX_SIGN_IN_URL}.
 2. Inspect the page and enter this email in the email field: ${email}

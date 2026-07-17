@@ -2,8 +2,8 @@
 # Base: node:24-bookworm-slim, with tini as PID 1 and `node` (uid 1000) as
 # the normal runtime user.
 #
-# Pin the browser-enabled OpenClaw image so general browser access remains
-# available in the gateway.
+# Pin the browser-enabled OpenClaw image; this image also installs Brave below
+# for OpenClaw's gateway-managed Webex browser session.
 ARG OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:latest-browser@sha256:d4f53c02f77c9e8d67c2ecd009cf1b32e165596829405a3d723dae039c46cb90
 
 FROM ${OPENCLAW_IMAGE}
@@ -13,12 +13,17 @@ FROM ${OPENCLAW_IMAGE}
 # starts, keeping plugin ownership checks and the gateway runtime non-root.
 USER root
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends docker.io gosu \
+	&& apt-get install -y --no-install-recommends ca-certificates curl gosu \
+	&& curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg \
+		https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg \
+	&& echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg arch=$(dpkg --print-architecture)] https://brave-browser-apt-release.s3.brave.com/ stable main" \
+		> /etc/apt/sources.list.d/brave-browser-release.list \
+	&& apt-get update \
+	&& apt-get install -y --no-install-recommends brave-browser \
 	&& rm -rf /var/lib/apt/lists/*
 
-# The gateway uses the host Docker socket (mounted by Compose) to create
-# isolated agent and Brave browser sandboxes. docker.io supplies the client;
-# no Docker daemon runs inside this image.
+# Brave runs inside this gateway container under OpenClaw's managed `openclaw`
+# profile. It does not require the Docker daemon or an OpenClaw sandbox.
 
 # Versioned config is the source of truth. It is synced into the mounted state
 # volume by the entrypoint because volumes mask image-layer files.

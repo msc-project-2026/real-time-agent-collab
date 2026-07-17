@@ -13,7 +13,7 @@ const {
 test('buildLoginPrompt is limited to the Webex sign-in workflow', () => {
   const prompt = buildLoginPrompt('agent@example.test', 'password-value');
   assert.ok(prompt.includes(WEBEX_SIGN_IN_URL));
-  assert.match(prompt, /target="sandbox"/);
+  assert.match(prompt, /target="host", profile="openclaw"/);
   assert.match(prompt, /Do not join, schedule, or interact with meetings/);
   assert.match(prompt, /WEBEX_SIGN_IN_CONFIRMED/);
   assert.match(prompt, /password-value/);
