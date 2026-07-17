@@ -8,7 +8,7 @@
     "services/setup-ui"
   ],
   "scripts": {
-    "test": "node --test plugins/source-observer/*.test.js plugins/webex/*.test.cjs plugins/webex-meeting-login/*.test.cjs plugins/webex-meeting-joiner/*.test.cjs services/setup-ui/*.test.js"
+    "test": "node --test plugins/source-observer/*.test.js plugins/webex/*.test.cjs services/setup-ui/*.test.js"
   },
   "overrides": {
     "chalk": "^5.3.0"

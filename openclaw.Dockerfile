@@ -3,7 +3,7 @@
 # the normal runtime user.
 #
 # Pin the browser-enabled OpenClaw image; this image also installs Brave below
-# for OpenClaw's gateway-managed Webex browser session.
+# for OpenClaw's gateway-managed browser session.
 ARG OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:latest-browser@sha256:d4f53c02f77c9e8d67c2ecd009cf1b32e165596829405a3d723dae039c46cb90
 
 FROM ${OPENCLAW_IMAGE}

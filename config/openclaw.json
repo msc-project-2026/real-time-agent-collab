@@ -163,8 +163,6 @@
     "load": {
       "paths": [
         "plugins/webex",
-        "plugins/webex-meeting-login",
-        "plugins/webex-meeting-joiner",
         "plugins/openclaw",
         "plugins/source-observer"
       ]
@@ -174,12 +172,6 @@
         "enabled": true
       },
       "webex": {
-        "enabled": true
-      },
-      "webex-meeting-login": {
-        "enabled": true
-      },
-      "webex-meeting-joiner": {
         "enabled": true
       },
       "collab-writer": {

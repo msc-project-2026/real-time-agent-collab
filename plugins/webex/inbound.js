@@ -14,7 +14,6 @@ const prefs = require('./prefs');
 const { dispatchWithRetry } = require('../../lib/dispatch-retry.js');
 const { buildWelcomeCard, buildPresetCard } = require('./card');
 const { enqueueSessionDispatch } = require('./session-dispatch');
-const { handleMeetingCommand } = require('./meeting-joiner-bridge');
 
 const { buildRoutingInstruction } = require('./prompts/routing');
 
@@ -339,21 +338,6 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
       aliases: proactivity.directAddressNames,
       botName,
     });
-
-  // The meeting joiner owns its explicit /meeting commands. Do this after the
-  // normal membership check above, so only people in the Webex space can ask
-  // it to leave or rejoin a meeting.
-  const wasMeetingCommand = await handleMeetingCommand({
-    text: agentText,
-    roomId,
-    personId,
-    personEmail: msg.personEmail,
-    botToken: cfg.token,
-  }).catch((err) => {
-    log?.error?.(`[webex:meeting] command error: ${err?.message ?? err}`);
-    return false;
-  });
-  if (wasMeetingCommand) return;
 
   // ── /collab commands ─────────────────────────────────────────────────────────
   const wasCommand = await handleCommand(agentText, {

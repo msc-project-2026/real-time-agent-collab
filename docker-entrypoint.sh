@@ -13,9 +13,9 @@ mkdir -p "$state_dir"
 cp /app/config/openclaw.json "$config_path"
 chmod 600 "$config_path"
 
-# This profile is intentionally ephemeral: the meeting-login plugin signs in
-# on every gateway start, so preserving it only risks stale Chromium locks.
-# Keep the destructive target fixed rather than deriving it from an env var.
+# This profile is intentionally ephemeral: preserving it across restarts only
+# risks stale Chromium locks. Keep the destructive target fixed rather than
+# deriving it from an env var.
 if [ "$state_dir" = "/home/node/.openclaw" ]; then
 	rm -rf /home/node/.openclaw/browser/openclaw/user-data
 fi
