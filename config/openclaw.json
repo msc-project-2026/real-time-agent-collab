@@ -42,11 +42,7 @@
         "primary": "cisco/bedrock/global.anthropic.claude-sonnet-4-6"
       },
       "sandbox": {
-        "mode": "all",
-        "backend": "docker",
-        "scope": "agent",
-        "workspaceAccess": "none",
-        "workspaceRoot": "${OPENCLAW_SANDBOX_WORKSPACE_ROOT}",
+        "mode": "off",
         "browser": {
           "enabled": true,
           "image": "real-time-agent-collab-brave-sandbox-browser:latest",

@@ -31,21 +31,16 @@ services:
       context: .
       dockerfile: openclaw.Dockerfile
     env_file: .env
-    environment:
-      # Compose expands PWD to the deployment checkout. OpenClaw passes this
-      # host-absolute path to the Docker daemon for sibling sandboxes, while
-      # the volume below exposes the same path inside the gateway container.
-      OPENCLAW_SANDBOX_WORKSPACE_ROOT: ${PWD}/.openclaw-sandboxes
     # Start as root only for the entrypoint's state-volume ownership migration.
     # The entrypoint drops to the image's `node` user before launching OpenClaw.
     user: "0:0"
+    depends_on:
+      brave-sandbox-browser:
+        condition: service_completed_successfully
     volumes:
       - openclaw_state:/home/node/.openclaw
-      # Docker creates this project-local bind directory when absent. The
-      # entrypoint assigns it to the runtime user before OpenClaw starts.
-      - ./.openclaw-sandboxes:${PWD}/.openclaw-sandboxes
-      # Docker-out-of-Docker: OpenClaw uses the host daemon to launch isolated
-      # browser sandboxes. Do not mount this socket into agent sandboxes.
+      # Docker-out-of-Docker: OpenClaw uses the host daemon to launch the
+      # isolated Brave browser sandbox. Do not mount this socket into Brave.
       - /var/run/docker.sock:/var/run/docker.sock
       # GitHub App private key mounted read-only; referenced via
       # GITHUB_APP_PRIVATE_KEY_FILE in .env. The secrets/ dir is gitignored.

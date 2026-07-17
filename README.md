@@ -116,23 +116,22 @@ The container starts with `user: "0:0"` so the entrypoint can repair state creat
 
 ### Sandboxed Brave browser
 
-All agent sessions run in OpenClaw Docker sandboxes. Browser calls therefore
-start an isolated `real-time-agent-collab-brave-sandbox-browser` container,
-which runs Brave rather than a gateway-managed browser profile. The sandbox
-browser uses an ephemeral container filesystem and its own user-data directory,
-so a `Singleton*` profile lock cannot persist after a browser or container
-crash. Host-browser control is disabled.
+Agent tools run in the gateway container. Browser calls from the Webex login
+plugin explicitly target an isolated
+`real-time-agent-collab-brave-sandbox-browser` container, which runs Brave
+rather than a gateway-managed browser profile. The browser sandbox uses an
+ephemeral container filesystem and its own user-data directory, so a
+`Singleton*` profile lock cannot persist after a browser or container crash.
+Host-browser control is disabled.
 
 The custom browser image installs the official Brave APT package for the image
 architecture (including ARM64) and supplies the OpenClaw sandbox-browser
 contract: an ephemeral Brave user-data directory, loopback-only browser CDP,
 and an authenticated relay to the sandbox network.
 
-OpenClaw orchestrates sibling sandbox containers through the host Docker daemon.
-No VPS preparation is required: Compose creates a project-local
-`.openclaw-sandboxes/` bind directory automatically, and the entrypoint derives
-the Docker socket group at startup. The gateway image includes the Docker client
-and uses the mounted host Docker socket; it does not run a Docker daemon itself.
+OpenClaw orchestrates the sibling browser sandbox through the host Docker
+daemon. The gateway image includes the Docker client and uses the mounted host
+Docker socket; it does not run a Docker daemon itself.
 
 The normal deployment build is sufficient (the `brave-sandbox-browser` Compose
 service builds/tags the browser image and then exits):

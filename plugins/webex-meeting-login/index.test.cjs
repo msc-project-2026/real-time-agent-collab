@@ -2,13 +2,20 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { WEBEX_SIGN_IN_URL, buildLoginPrompt, dispatchLogin, getCredentials } = require('./index');
+const {
+  WEBEX_SIGN_IN_URL,
+  assertSignInConfirmed,
+  buildLoginPrompt,
+  dispatchLogin,
+  getCredentials
+} = require('./index');
 
 test('buildLoginPrompt is limited to the Webex sign-in workflow', () => {
   const prompt = buildLoginPrompt('agent@example.test', 'password-value');
   assert.ok(prompt.includes(WEBEX_SIGN_IN_URL));
-  assert.match(prompt, /Use only the browser tool/);
+  assert.match(prompt, /target="sandbox"/);
   assert.match(prompt, /Do not join, schedule, or interact with meetings/);
+  assert.match(prompt, /WEBEX_SIGN_IN_CONFIRMED/);
   assert.match(prompt, /password-value/);
 });
 
@@ -23,12 +30,39 @@ test('dispatchLogin routes the prompt to the main agent startup session', async 
   let dispatched;
   const runtime = {
     config: { current: () => ({ configured: true }) },
-    channel: { reply: { dispatchReplyWithBufferedBlockDispatcher: async (request) => { dispatched = request; } } }
+    channel: {
+      reply: {
+        dispatchReplyWithBufferedBlockDispatcher: async (request) => {
+          dispatched = request;
+          await request.dispatcherOptions.deliver({ text: 'WEBEX_SIGN_IN_CONFIRMED' });
+        }
+      }
+    }
   };
 
-  await dispatchLogin(runtime, 'sign in');
+  const reply = await dispatchLogin(runtime, 'sign in');
   assert.equal(dispatched.ctx.SessionKey, 'agent:main:webex-meeting-login:startup');
   assert.equal(dispatched.ctx.Body, 'sign in');
   assert.deepEqual(dispatched.cfg, { configured: true });
-  await dispatched.dispatcherOptions.deliver({ text: 'intentionally discarded' });
+  assert.equal(reply, 'WEBEX_SIGN_IN_CONFIRMED');
+});
+
+test('dispatchLogin propagates dispatcher failures', async () => {
+  const runtime = {
+    channel: {
+      reply: {
+        dispatchReplyWithBufferedBlockDispatcher: async (request) => {
+          request.dispatcherOptions.onError(new Error('Sandbox image not found'));
+        }
+      }
+    }
+  };
+
+  await assert.rejects(() => dispatchLogin(runtime, 'sign in'), /Sandbox image not found/);
+});
+
+test('assertSignInConfirmed accepts only the explicit confirmation', () => {
+  assert.doesNotThrow(() => assertSignInConfirmed('WEBEX_SIGN_IN_CONFIRMED'));
+  assert.throws(() => assertSignInConfirmed('WEBEX_SIGN_IN_BLOCKED'), /blocked/);
+  assert.throws(() => assertSignInConfirmed('looks signed in'), /did not confirm/);
 });
