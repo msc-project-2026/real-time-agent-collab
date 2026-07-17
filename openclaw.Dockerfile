@@ -36,6 +36,23 @@ RUN apt-get update \
 	&& apt-get install -y --no-install-recommends gosu \
 	&& rm -rf /var/lib/apt/lists/*
 
+# The meeting runner needs a browser carrying the proprietary H264 codec. The Webex
+# SDK hardcodes requireH264 when negotiating a transcoded media connection and then
+# validates its own local SDP, so it rejects addMedia outright on the image's bundled
+# Chromium — before any audio can flow, and even for an audio-only receiver. Brave is
+# Chromium-based, ships the codec, and unlike Google Chrome publishes arm64 Linux
+# builds. Only the webex-auto-join browser profile points at it (see
+# browser.profiles in config/openclaw.json); everything else keeps the default.
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends curl ca-certificates \
+	&& curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg \
+		https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg \
+	&& echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg arch=$(dpkg --print-architecture)] https://brave-browser-apt-release.s3.brave.com/ stable main" \
+		> /etc/apt/sources.list.d/brave-browser-release.list \
+	&& apt-get update \
+	&& apt-get install -y --no-install-recommends brave-browser \
+	&& rm -rf /var/lib/apt/lists/*
+
 # Versioned config is the source of truth. It is synced into the mounted state
 # volume by the entrypoint because volumes mask image-layer files.
 COPY --chown=node:node config/openclaw.json /app/config/openclaw.json
