@@ -119,6 +119,8 @@ type BrowserControlErrorDetails = {
 
 type AssetPaths = { runner?: string; sdk?: string };
 
+const PROACTIVITY_INGRESS = Symbol.for('openclaw.webex.proactivity.ingest');
+
 function emptyState(): PersistedState {
   return { version: 2, sessions: {}, rooms: {}, schedules: {}, pending: {}, dismissed: {}, notifications: {} };
 }
@@ -427,10 +429,18 @@ export class MeetingJoinService {
       scheduledStartGraceMinutes: config?.scheduledStartGraceMinutes ?? 30,
       notificationMode: config?.notificationMode ?? 'join-and-failure',
       audioTap: config?.audioTap ?? true,
+      deepgramApiKey: configured(config?.deepgramApiKey) || configured(process.env.DEEPGRAM_API_KEY),
+      deepgramBaseUrl: configured(config?.deepgramBaseUrl) || configured(process.env.DEEPGRAM_BASE_URL) || 'wss://api.deepgram.com/v1/listen',
     };
     this.browser = new BrowserControl(this.cfg.browserProfile);
     this.messages = new WebexMessageDelivery(this.cfg.botToken);
-    this.audio = new AudioBridge(this.log);
+    this.audio = new AudioBridge(this.log, this.cfg.deepgramApiKey ? {
+      deepgram: {
+        apiKey: this.cfg.deepgramApiKey,
+        baseUrl: this.cfg.deepgramBaseUrl,
+        onTurn: (turn) => this.deliverTranscript(turn.sessionId, turn.text, turn.startedAt, turn.duration),
+      },
+    } : {});
   }
 
   async start() {
@@ -468,6 +478,7 @@ export class MeetingJoinService {
       // A bridge that fails to bind must not disable meeting joins: register() then
       // returns nothing and the runner falls back to joining without media.
       if (this.cfg.audioTap) await this.audio.start().catch((error) => this.logFailure('audio bridge startup', error));
+      if (this.cfg.audioTap && !this.cfg.deepgramApiKey) this.log?.warn?.('[webex-auto-join] audio tap is enabled but DEEPGRAM_API_KEY is not configured; transcription is disabled');
       this.enabled = true;
       await this.reconcileMemberships();
       await this.reconcileMeetings();
@@ -603,6 +614,14 @@ export class MeetingJoinService {
     const meetingId = configured(payload?.data?.id);
     if (payload?.event === 'deleted') {
       await this.removeMeeting(meetingId, configured(payload?.data?.roomId));
+      return;
+    }
+    if (payload?.event === 'ended') {
+      // An ended instance is frequently unlisted immediately, so a follow-up
+      // GET /meetings/{instanceId} returns 403 even for the meeting attendee.
+      // The webhook itself is authoritative: close our runner now and do not
+      // let a lost heartbeat recover it into a meeting that no longer exists.
+      await this.endMeeting(meetingId, configured(payload?.data?.roomId));
       return;
     }
     if (payload?.data?.meetingType || payload?.data?.state) await this.processMeeting(payload.data);
@@ -1178,6 +1197,26 @@ export class MeetingJoinService {
     return true;
   }
 
+  private async deliverTranscript(sessionId: string, text: string, startedAt?: number, duration?: number) {
+    const session = this.state.sessions[sessionId];
+    if (!session || !ACTIVE_STATES.has(session.state) || !text.trim()) return;
+    const ingest = (globalThis as any)[PROACTIVITY_INGRESS];
+    if (typeof ingest !== 'function') {
+      this.log?.warn?.(`[webex-auto-join] proactivity ingress unavailable; dropped transcript session=${sessionId}`);
+      return;
+    }
+    // Serialize turns with other meeting lifecycle work. The proactivity plugin
+    // has its own per-room dispatch queue, so this never races the main agent.
+    await Promise.resolve(ingest({
+      roomId: session.roomId,
+      parentId: session.parentId,
+      sessionId,
+      text: text.trim(),
+      startedAt,
+      duration,
+    }));
+  }
+
   private async handleRunnerEvent(session: Session, event: any) {
     const type = configured(event?.type);
     if (type === 'joining') await this.transition(session, 'joining');
@@ -1261,6 +1300,9 @@ export class MeetingJoinService {
 
   private async endMeeting(meetingId: string, roomId: string) {
     delete this.state.pending[meetingId];
+    for (const pendingId of Object.keys(this.state.pending)) {
+      if (sameMeetingId(pendingId, meetingId)) delete this.state.pending[pendingId];
+    }
     // The meeting is over, so its leave suppression has done its job. Purge by
     // id root and by room so a later, new meeting in the space — which may
     // reuse the same persistent space link — auto-joins normally.
@@ -1268,7 +1310,9 @@ export class MeetingJoinService {
       if (sameMeetingId(dismissal.meetingId, meetingId) || (roomId && dismissal.roomId === roomId)) delete this.dismissals()[dismissal.meetingId];
     }
     this.deleteSchedule(configured(Object.values(this.state.schedules).find((schedule) => schedule.roomId === roomId && (schedule.id === meetingId || schedule.seriesId === meetingId))?.id));
-    const session = Object.values(this.state.sessions).find((item) => item.invitation.meetingId === meetingId || item.roomId === roomId);
+    const session = Object.values(this.state.sessions).find((item) =>
+      sameMeetingId(item.invitation.meetingId, meetingId) || (roomId && item.roomId === roomId)
+    );
     if (session && ACTIVE_STATES.has(session.state)) await this.completeEnd(session);
     await this.persist();
   }

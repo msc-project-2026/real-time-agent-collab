@@ -82,6 +82,46 @@ test('distinguishes a silent tap from one carrying audio', async () => {
   });
 });
 
+test('forwards PCM to Deepgram and delivers only a completed speech turn', async () => {
+  let authorization;
+  let receivedAudio = false;
+  const turns = [];
+  const deepgram = new WebSocket.Server({ host: '127.0.0.1', port: 0 });
+  await new Promise((resolve, reject) => { deepgram.once('listening', resolve); deepgram.once('error', reject); });
+  deepgram.on('connection', (socket, req) => {
+    authorization = req.headers.authorization;
+    socket.on('message', (data, isBinary) => {
+      if (!isBinary || receivedAudio) return;
+      receivedAudio = true;
+      socket.send(JSON.stringify({ type: 'Results', is_final: true, speech_final: false, start: 1.25, duration: 0.5, channel: { alternatives: [{ transcript: 'Could you' }] } }));
+      socket.send(JSON.stringify({ type: 'Results', is_final: true, speech_final: true, start: 1.25, duration: 0.75, channel: { alternatives: [{ transcript: 'help us?' }] } }));
+    });
+  });
+
+  const logger = collectLogger();
+  const bridge = new AudioBridge(logger, {
+    deepgram: {
+      apiKey: 'test-key',
+      baseUrl: `ws://127.0.0.1:${deepgram.address().port}/v1/listen`,
+      onTurn: (turn) => turns.push(turn),
+    },
+  });
+  const port = await bridge.start();
+  try {
+    const credentials = bridge.register('session-1');
+    const socket = await openTap(port, 'session-1', credentials.token);
+    socket.send(JSON.stringify({ type: 'hello', sampleRate: AUDIO_SAMPLE_RATE, channels: 1, encoding: 'linear16' }));
+    socket.send(pcmAtAmplitude(0.25, 800));
+    await waitFor(() => turns.length === 1);
+    assert.equal(authorization, 'Token test-key');
+    assert.deepEqual(turns, [{ sessionId: 'session-1', text: 'Could you help us?', startedAt: 1.25, duration: 0.75 }]);
+    socket.close();
+  } finally {
+    await bridge.stop();
+    await new Promise((resolve) => deepgram.close(resolve));
+  }
+});
+
 test('rejects a tap presenting the wrong token or an unknown session', async () => {
   await withBridge(async ({ bridge, port }) => {
     const credentials = bridge.register('session-1');

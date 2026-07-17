@@ -57,7 +57,8 @@ RUN apt-get update \
 # volume by the entrypoint because volumes mask image-layer files.
 COPY --chown=node:node config/openclaw.json /app/config/openclaw.json
 COPY --chown=node:node docker-entrypoint.sh /app/docker-entrypoint.sh
-RUN chmod 755 /app/docker-entrypoint.sh
+COPY --chown=node:node openclaw-supervisor.sh /app/openclaw-supervisor.sh
+RUN chmod 755 /app/docker-entrypoint.sh /app/openclaw-supervisor.sh
 
 # Copy the custom plugins without touching OpenClaw's own package manifest or
 # dependency tree. webex-auto-join is replaced with the asset built above.

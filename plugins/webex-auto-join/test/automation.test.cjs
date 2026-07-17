@@ -226,6 +226,30 @@ test('meeting completion frees capacity and starts the oldest pending join', asy
   assert.equal(Object.values(service.state.sessions).some((session) => session.invitation.meetingId === 'meeting-2' && session.state === 'joining'), true);
 });
 
+test('an ended webhook closes the matching instance without fetching an unlisted meeting', async () => {
+  const service = membershipService();
+  service.browser = { close: async () => {} };
+  service.state = state({
+    rooms: { room: { roomId: 'room', covered: true, updatedAt: 'now' } },
+    sessions: {
+      active: {
+        id: 'active', roomId: 'room', source: 'automatic', state: 'joined',
+        invitation: { destination: 'meeting', meetingId: 'meeting-42', discoveredAt: 'now' },
+        recoveryAttempts: 0, createdAt: 'now', updatedAt: 'now',
+      },
+    },
+  });
+  let fetched = false;
+  service.fetchMeetingWithRetry = async () => { fetched = true; throw new Error('must not fetch ended meeting'); };
+
+  await service.dispatchWebhook({
+    resource: 'meetings', event: 'ended', data: { id: 'meeting-42_I_7', roomId: 'room' },
+  });
+
+  assert.equal(fetched, false);
+  assert.equal(service.state.sessions.active.state, 'ended');
+});
+
 test('joined notifications are deduplicated per meeting', async () => {
   const service = membershipService();
   let sends = 0;

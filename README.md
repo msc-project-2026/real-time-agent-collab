@@ -571,6 +571,9 @@ The gateway re-registers the Webex webhook on every start (`plugins/webex/token.
 - The domain resolves and port 443 is reachable from the internet.
 - `docker compose logs openclaw` should show `[webex:default] Webex webhook registered` and `[webex] webhookRouter called` on incoming messages.
 
+**Brave reports that the Webex browser profile is locked**
+The OpenClaw supervisor detects a `Singleton*` profile lock when Brave's CDP endpoint is unavailable for 20 seconds, restarts the gateway, and the entrypoint removes the stale lock before retrying. Look for `Stale browser profile lock with unavailable CDP` in `docker compose logs openclaw`. If it repeats after a deployment, investigate Brave startup errors rather than deleting the OpenClaw state volume.
+
 **DMs not reaching the agent**
 The channel is set to `dmPolicy: allowlisted`. The sender's email or Webex `personId` must be in `channels.webex.allowFrom` in `config/openclaw.json`.
 

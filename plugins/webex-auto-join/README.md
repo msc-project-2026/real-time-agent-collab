@@ -47,7 +47,10 @@ values:
           "attendeeClientSecret": "${MEETING_JOIN_CLIENT_SECRET}",
           "attendeeRefreshToken": "${MEETING_JOIN_REFRESH_TOKEN}",
           "expectedAttendeeEmail": "${MEETING_JOIN_EXPECTED_EMAIL}",
-          "encryptionKey": "${MEETING_JOIN_ENCRYPTION_KEY}"
+          "encryptionKey": "${MEETING_JOIN_ENCRYPTION_KEY}",
+          "audioTap": true,
+          "deepgramApiKey": "${DEEPGRAM_API_KEY}",
+          "deepgramBaseUrl": "${DEEPGRAM_BASE_URL}"
         }
       }
     }
@@ -92,9 +95,18 @@ A tap that fails to start is reported as an advisory `audio_tap` runner event an
 never as an `error`, because the meeting itself does not depend on it — the
 session stays joined and the runner keeps reporting normally.
 
-`AudioBridge` currently only measures the signal level of what it receives, which
-is what distinguishes a working tap from one wired up but carrying digital
-silence. Transcription consumes the same PCM stream.
+When `DEEPGRAM_API_KEY` is configured, the bridge opens one Deepgram live
+WebSocket per meeting, forwards that session's PCM, and waits for Deepgram's
+`speech_final` endpoint marker before treating text as a completed turn. Each
+turn is passed into the Webex plugin's existing proactivity gate; only turns the
+gate accepts invoke the main agent, whose reply is posted back into the joined
+space. `DEEPGRAM_BASE_URL` defaults to `wss://api.deepgram.com/v1/listen` and
+can include provider query parameters; the bridge supplies Flux/linear16/16 kHz
+defaults when they are absent.
+
+The bridge still logs signal level, which distinguishes a working tap from one
+wired up but carrying digital silence. A missing Deepgram key leaves joining and
+the audio tap healthy but disables transcription with a warning.
 
 ## Development
 

@@ -18,7 +18,7 @@ if [ "$(id -u)" -eq 0 ]; then
 	find "$state_dir" \
 		-path "$state_dir/workspace/skills" -prune -o \
 		-exec chown -h node:node {} +
-	exec gosu node node openclaw.mjs gateway
+	exec gosu node /app/openclaw-supervisor.sh
 fi
 
-exec node openclaw.mjs gateway
+exec /app/openclaw-supervisor.sh

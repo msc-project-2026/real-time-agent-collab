@@ -19,6 +19,8 @@
       "maxConcurrentMeetings": { "type": "integer", "minimum": 1, "default": 4 },
       "browserProfile": { "type": "string", "default": "webex-auto-join" },
       "audioTap": { "type": "boolean", "default": true, "description": "Receive meeting audio and stream it to the local audio bridge. Disable to join without media." },
+      "deepgramApiKey": { "type": "string", "description": "Deepgram API key for live meeting transcription. Defaults to DEEPGRAM_API_KEY." },
+      "deepgramBaseUrl": { "type": "string", "default": "wss://api.deepgram.com/v1/listen", "description": "Deepgram live-transcription WebSocket base URL. Defaults to DEEPGRAM_BASE_URL." },
       "requireBrowserReview": { "type": "boolean", "default": false },
       "meetingReconcileIntervalSeconds": { "type": "integer", "minimum": 15, "default": 60 },
       "membershipReconcileIntervalSeconds": { "type": "integer", "minimum": 60, "default": 300 },
@@ -34,7 +36,8 @@
     "webhookSecret": { "sensitive": true },
     "attendeeClientSecret": { "sensitive": true },
     "attendeeRefreshToken": { "sensitive": true },
-    "encryptionKey": { "sensitive": true }
+    "encryptionKey": { "sensitive": true },
+    "deepgramApiKey": { "sensitive": true }
   },
   "version": "1.0.0",
   "contracts": {

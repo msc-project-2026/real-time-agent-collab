@@ -1,5 +1,5 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { WebSocketServer } from 'ws';
+import WebSocket, { WebSocketServer } from 'ws';
 
 // The runner tap and Deepgram Flux both speak linear16 mono. Chrome resamples the
 // remote WebRTC track to whatever the AudioContext requests, so the tap asks for
@@ -20,7 +20,71 @@ type Tap = {
   windowSamples: number;
   peak: number;
   reportedAt: number;
+  transcription?: DeepgramStream;
 };
+
+export type TranscriptTurn = { sessionId: string; text: string; startedAt?: number; duration?: number };
+export type DeepgramConfig = { apiKey: string; baseUrl: string; onTurn: (turn: TranscriptTurn) => Promise<void> | void };
+
+// Each meeting gets its own live connection, so separate rooms can never have
+// their PCM or completed turns mixed together.
+class DeepgramStream {
+  private socket: WebSocket;
+  private pending: Buffer[] = [];
+  private pendingBytes = 0;
+  private finalParts: string[] = [];
+  private closed = false;
+
+  constructor(private readonly tap: Tap, private readonly cfg: DeepgramConfig, private readonly log: any) {
+    const url = new URL(cfg.baseUrl);
+    if (!url.searchParams.has('model')) url.searchParams.set('model', 'flux-general-en');
+    if (!url.searchParams.has('encoding')) url.searchParams.set('encoding', 'linear16');
+    if (!url.searchParams.has('sample_rate')) url.searchParams.set('sample_rate', String(tap.sampleRate ?? AUDIO_SAMPLE_RATE));
+    if (!url.searchParams.has('channels')) url.searchParams.set('channels', '1');
+    if (!url.searchParams.has('interim_results')) url.searchParams.set('interim_results', 'true');
+    this.socket = new WebSocket(url, { headers: { Authorization: `Token ${cfg.apiKey}` } });
+    this.socket.on('open', () => this.flush());
+    this.socket.on('message', (data) => this.consume(String(data)));
+    this.socket.on('error', (error) => this.log?.warn?.(`[webex-auto-join] Deepgram socket error session=${tap.sessionId}: ${error.message}`));
+    this.socket.on('close', () => { this.closed = true; });
+  }
+
+  write(buffer: Buffer) {
+    if (this.closed) return;
+    if (this.socket.readyState === WebSocket.OPEN) return this.socket.send(buffer);
+    // The tap can start before the TLS websocket opens. Retain only one second.
+    if (this.pendingBytes + buffer.length <= AUDIO_SAMPLE_RATE * 2) { this.pending.push(buffer); this.pendingBytes += buffer.length; }
+  }
+
+  close() {
+    if (this.closed) return;
+    this.closed = true;
+    if (this.socket.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify({ type: 'CloseStream' }));
+    this.socket.close();
+  }
+
+  private flush() {
+    for (const buffer of this.pending) this.socket.send(buffer);
+    this.pending = [];
+    this.pendingBytes = 0;
+    this.log?.info?.(`[webex-auto-join] Deepgram stream open session=${this.tap.sessionId}`);
+  }
+
+  private consume(raw: string) {
+    let result: any;
+    try { result = JSON.parse(raw); } catch { return; }
+    if (result?.type !== 'Results') return;
+    const text = String(result?.channel?.alternatives?.[0]?.transcript ?? '').trim();
+    if (result?.is_final && text) this.finalParts.push(text);
+    // Deepgram's endpoint marker ensures the agent is invoked only per turn.
+    if (!result?.speech_final) return;
+    const turn = this.finalParts.join(' ').trim();
+    this.finalParts = [];
+    if (!turn) return;
+    Promise.resolve(this.cfg.onTurn({ sessionId: this.tap.sessionId, text: turn, startedAt: Number(result?.start) || undefined, duration: Number(result?.duration) || undefined }))
+      .catch((error) => this.log?.warn?.(`[webex-auto-join] transcript delivery failed session=${this.tap.sessionId}: ${error?.message ?? error}`));
+  }
+}
 
 function dbfs(amplitude: number) {
   return amplitude > 0 ? 20 * Math.log10(amplitude) : -Infinity;
@@ -57,9 +121,11 @@ export class AudioBridge {
   private taps = new Map<string, Tap>();
   private port = 0;
   private readonly reportIntervalMs: number;
+  private readonly deepgram?: DeepgramConfig;
 
-  constructor(private readonly log: any = console, options: { reportIntervalMs?: number } = {}) {
+  constructor(private readonly log: any = console, options: { reportIntervalMs?: number; deepgram?: DeepgramConfig } = {}) {
     this.reportIntervalMs = options.reportIntervalMs ?? REPORT_INTERVAL_MS;
+    this.deepgram = options.deepgram;
   }
 
   async start() {
@@ -101,6 +167,7 @@ export class AudioBridge {
       this.log?.info?.(`[webex-auto-join] audio tap closed session=${sessionId} captured=${seconds}s`);
     }
     tap.socket?.close?.(1000, 'session_closed');
+    tap.transcription?.close();
     this.taps.delete(sessionId);
   }
 
@@ -131,6 +198,7 @@ export class AudioBridge {
   private consume(tap: Tap, data: any, isBinary: boolean) {
     if (!isBinary) return this.handshake(tap, data);
     const buffer: Buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    tap.transcription?.write(buffer);
     // A trailing odd byte would desync every following sample.
     const samples = Math.floor(buffer.length / 2);
     for (let i = 0; i < samples; i++) {
@@ -152,6 +220,11 @@ export class AudioBridge {
     this.log?.info?.(
       `[webex-auto-join] audio tap open session=${tap.sessionId} rate=${tap.sampleRate}${rateNote} encoding=${hello.encoding} channels=${hello.channels}`
     );
+    if (this.deepgram && hello.encoding === 'linear16' && Number(hello.channels) === 1) {
+      tap.transcription?.close();
+      try { tap.transcription = new DeepgramStream(tap, this.deepgram, this.log); }
+      catch (error) { this.log?.warn?.(`[webex-auto-join] Deepgram stream setup failed session=${tap.sessionId}: ${(error as any)?.message ?? error}`); }
+    }
   }
 
   private report(tap: Tap) {
