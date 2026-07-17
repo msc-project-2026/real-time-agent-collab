@@ -4,12 +4,11 @@
   "type": "module",
   "workspaces": [
     "lib",
-    "plugins/webex-auto-join",
     "plugins/source-observer",
     "services/setup-ui"
   ],
   "scripts": {
-    "test": "node --test plugins/source-observer/*.test.js plugins/webex/*.test.cjs services/setup-ui/*.test.js && npm test --workspace=@openclaw/webex-auto-join"
+    "test": "node --test plugins/source-observer/*.test.js plugins/webex/*.test.cjs services/setup-ui/*.test.js"
   },
   "overrides": {
     "chalk": "^5.3.0"

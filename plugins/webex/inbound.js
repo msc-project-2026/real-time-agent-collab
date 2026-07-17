@@ -15,12 +15,8 @@ const { buildWelcomeCard, buildPresetCard } = require('./card');
 const { enqueueSessionDispatch } = require('./session-dispatch');
 
 let pluginRuntime = null;
-const PROACTIVITY_INGRESS = Symbol.for('openclaw.webex.proactivity.ingest');
 function setRuntime(r) {
   pluginRuntime = r;
-  // webex-auto-join is loaded independently, so use a process-local capability
-  // instead of coupling the two plugin bundles through a relative import.
-  globalThis[PROACTIVITY_INGRESS] = ingestMeetingTranscript;
 }
 
 function sleep(ms) {
@@ -86,87 +82,6 @@ function getProactivityCfg(loadedCfg) {
       apiKey: process.env.CISCO_LLM_API_KEY ?? '',
     },
   };
-}
-
-// Called by webex-auto-join after Deepgram has emitted a completed speech turn.
-// It intentionally uses the same Stage 1 gate and Stage 2 main-agent dispatcher
-// as ordinary Webex messages, but never treats meeting audio as a direct address.
-async function ingestMeetingTranscript({ roomId, sessionId, text, startedAt, duration }) {
-  const transcript = String(text ?? '').trim();
-  const loadedCfg = pluginRuntime?.config?.current?.() ?? {};
-  const cfg = loadedCfg?.channels?.webex ?? {};
-  const log = pluginRuntime?.logger ?? console;
-  if (!roomId || !transcript || !cfg.token) return;
-
-  const proactivity = getProactivityCfg(loadedCfg);
-  const senderId = `meeting:${sessionId ?? 'unknown'}`;
-  const senderName = 'Meeting participant';
-  const lastActivity = getLastSeen(roomId);
-  lullRecord(roomId);
-  ctxRecord(roomId, { text: transcript, senderName });
-  prefs.recordHumanMessage(roomId);
-
-  const result = await scoreMessage({
-    text: transcript,
-    senderName,
-    chatType: 'group',
-    recentMessages: getRecentMessages(roomId),
-  }, proactivity.gate);
-  const typeThreshold = proactivity.thresholdByType[result.type] ?? proactivity.gateThreshold;
-  const silentForMs = lastActivity > 0 ? Date.now() - lastActivity : 0;
-  const silenceBonus = lastActivity > 0 && silentForMs > proactivity.silenceGapMs ? proactivity.silenceThresholdBonus : 0;
-  const threshold = Math.max(0.1, prefs.getEffectiveThreshold(roomId, typeThreshold, senderId) - silenceBonus);
-  const passesThreshold = result.score >= threshold;
-  const system1Override = !passesThreshold && Math.random() < proactivity.system1Prob;
-  const accepted = passesThreshold || system1Override;
-
-  log?.info?.(`[webex:meeting-gate] roomId=${roomId} session=${sessionId} type=${result.type} score=${result.score.toFixed(2)} threshold=${threshold.toFixed(2)} accepted=${accepted}`);
-  logDecision({ roomId, senderId, type: result.type, score: result.score, threshold, accepted, system1Override, isMentioned: false, isDirectlyAddressed: false });
-  if (!accepted) return;
-
-  const dispatch = pluginRuntime?.channel?.reply?.dispatchReplyWithBufferedBlockDispatcher;
-  if (!dispatch) return log?.warn?.('[webex:meeting] agent pipeline dispatch unavailable');
-  const sessionKey = `agent:main:webex:${roomId}`;
-  const ctx = {
-    Body: `[Live meeting transcript]\n${transcript}`,
-    RawBody: transcript,
-    CommandBody: transcript,
-    From: `webex:${senderId}`,
-    To: `webex:${roomId}`,
-    SessionKey: sessionKey,
-    WebexRoomId: roomId,
-    AccountId: 'meeting',
-    ChatType: 'group',
-    SenderName: senderName,
-    SenderId: senderId,
-    Provider: 'webex',
-    Surface: 'webex',
-    MessageSid: `meeting:${sessionId ?? 'unknown'}:${Date.now()}`,
-    Timestamp: new Date().toISOString(),
-    OriginatingChannel: 'webex',
-    OriginatingTo: `webex:${roomId}`,
-    IsMentioned: false,
-    IsDirectlyAddressed: false,
-    RoomId: roomId,
-    MeetingSessionId: sessionId,
-    TranscriptStartedAt: startedAt,
-    TranscriptDuration: duration,
-  };
-  await enqueueSessionDispatch(sessionKey, () => dispatchWithRetry(dispatch, {
-    ctx,
-    cfg: loadedCfg,
-    dispatcherOptions: {
-      deliver: async (out) => {
-        const reply = String(out?.text ?? '').trim();
-        if (!reply) return;
-        await waitForLull(roomId, { windowMs: proactivity.lullWindowMs, maxWaitMs: proactivity.lullMaxWaitMs });
-        const sent = await webexFetch(cfg.token, '/messages', { method: 'POST', body: buildMsgBody(roomId, { markdown: reply }) });
-        if (sent?.id) prefs.recordProactiveSend(roomId);
-      },
-      onError: (err) => log?.error?.(`[webex:meeting] reply dispatch error: ${err?.message ?? err}`),
-    },
-    replyOptions: {},
-  }));
 }
 
 // ── /collab command handler ────────────────────────────────────────────────────
@@ -421,9 +336,6 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
   const senderName = msg.personEmail ?? msg.personId;
   const personId = msg.personId;
 
-  // Meeting credentials are intentionally passed to the agent with the request.
-  // The agent supplies them directly to the meeting-join tool; invitations are
-  // not cached or resolved from room history.
   const agentText = msg.text ?? '';
 
   // Capture lastSeen BEFORE recording so we can detect how long the room was silent.

@@ -31,15 +31,6 @@ services:
       context: .
       dockerfile: openclaw.Dockerfile
     env_file: .env
-    environment:
-      # Required for the webex-auto-join plugin's loopback HTTP integration.
-      # Keep this in versioned Compose config because production .env files
-      # are intentionally not updated by git pulls.
-      OPENCLAW_EAGER_BROWSER_CONTROL_SERVER: "1"
-      # The public plugin webhook is deterministic from the deployment domain.
-      # Keeping it here also upgrades production .env files without requiring
-      # a new variable to be added manually on the server.
-      WEBEX_AUTO_JOIN_WEBHOOK_URL: "https://${DOMAIN}/webhooks/webex-auto-join"
     # Start as root only for the entrypoint's state-volume ownership migration.
     # The entrypoint drops to the image's `node` user before launching OpenClaw.
     user: "0:0"

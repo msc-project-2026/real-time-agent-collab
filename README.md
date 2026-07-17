@@ -198,28 +198,6 @@ Configured in `config/openclaw.json` under `channels.webex.allowFrom`. Edit that
 
 ---
 
-### Webex Auto Join plugin
-
-`plugins/webex-auto-join` is a standalone native OpenClaw plugin. Add the
-messaging bot to a Webex group space and the Gateway service mirrors the
-licensed attendee, discovers space-associated instant and scheduled meetings,
-and joins them without a mention, invitation message, agent turn, or cron job.
-Webhook events are the primary trigger and periodic REST reconciliation repairs
-missed events and reconstructs schedules after restart.
-
-- Phase 1 joins without microphone, camera, screen-share, or media processing.
-- Manual link/password join and leave tools remain available for unrelated meetings.
-- OAuth rotation, room coverage, schedules, deduplication, and sessions are encrypted in the persistent OpenClaw volume.
-- A maximum of four sessions is configured by default, with one active meeting per space and meeting ID.
-- Host admission, moderated-space permissions, locking, and organization policy remain authoritative.
-
-Supply the `MEETING_JOIN_*`, `WEBEX_BOT_TOKEN`, `WEBEX_WEBHOOK_SECRET`, and
-`OPENCLAW_GATEWAY_TOKEN` variables before enabling it. Compose derives
-`WEBEX_AUTO_JOIN_WEBHOOK_URL` from `DOMAIN`. Authorize the attendee integration with
-`spark:all spark:kms meeting:schedules_read`. See
-`plugins/webex-auto-join/README.md` for transfer, configuration, and validation
-details.
-
 ### Setup UI
 
 Located at `services/setup-ui/`. A single-page React form served by an Express backend. Reached at `https://<DOMAIN>/setup?spaceId=<webex-room-id>`.
@@ -428,7 +406,6 @@ All variables live in `.env` (gitignored). Copy `.env.example` to `.env` and fil
 | `WEBEX_CLIENT_SECRET` | openclaw | Webex Integration client secret (for token refresh) |
 | `WEBEX_WEBHOOK_SECRET` | openclaw | HMAC-SHA1 secret Webex signs webhook POSTs with — `openssl rand -hex 32` |
 | `WEBEX_WEBHOOK_URL` | openclaw | Must be `https://claw.asabizanjo.dev/webhooks/webex/default` |
-| `WEBEX_AUTO_JOIN_WEBHOOK_URL` | openclaw | Derived by Compose as `https://${DOMAIN}/webhooks/webex-auto-join` |
 | `GITHUB_APP_ID` | setup-ui | Numeric GitHub App ID |
 | `GITHUB_APP_NAME` | setup-ui | GitHub App slug (shown in the install URL) |
 | `GITHUB_APP_PRIVATE_KEY_FILE` | setup-ui | Path to the mounted PEM — `/run/secrets/github-app-private-key.pem` |

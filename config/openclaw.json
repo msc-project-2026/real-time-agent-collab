@@ -47,7 +47,7 @@
         "id": "main",
         "default": true,
         "tools": {
-          "alsoAllow": ["browser", "join_webex_meeting", "leave_webex_meeting", "inspect_webex_meeting_runner", "act_webex_meeting_runner", "webex_auto_join_status"]
+          "alsoAllow": ["browser"]
         }
       },
       {
@@ -124,57 +124,22 @@
     "evaluateEnabled": false,
     "headless": true,
     "noSandbox": true,
-    "defaultProfile": "webex-auto-join",
     "tabCleanup": {
       "enabled": false
     },
     "ssrfPolicy": {
       "allowedHostnames": ["localhost", "127.0.0.1"]
-    },
-    "profiles": {
-      "webex-auto-join": {
-        "cdpPort": 18801,
-        "color": "#6D28D9",
-        "executablePath": "/usr/bin/brave-browser"
-      }
     }
   },
   "plugins": {
     "load": {
       "paths": [
-        "plugins/webex-auto-join",
         "plugins/webex",
         "plugins/openclaw",
         "plugins/source-observer"
       ]
     },
     "entries": {
-      "webex-auto-join": {
-        "enabled": true,
-        "config": {
-          "botToken": "${WEBEX_BOT_TOKEN}",
-          "webhookUrl": "${WEBEX_AUTO_JOIN_WEBHOOK_URL}",
-          "webhookSecret": "${WEBEX_WEBHOOK_SECRET}",
-          "attendeeClientId": "${MEETING_JOIN_CLIENT_ID}",
-          "attendeeClientSecret": "${MEETING_JOIN_CLIENT_SECRET}",
-          "attendeeRefreshToken": "${MEETING_JOIN_REFRESH_TOKEN}",
-          "expectedAttendeeEmail": "${MEETING_JOIN_EXPECTED_EMAIL}",
-          "encryptionKey": "${MEETING_JOIN_ENCRYPTION_KEY}",
-          "maxConcurrentMeetings": 4,
-          "browserProfile": "webex-auto-join",
-          "audioTap": true,
-          "deepgramApiKey": "${DEEPGRAM_API_KEY}",
-          "deepgramBaseUrl": "${DEEPGRAM_BASE_URL}",
-          "requireBrowserReview": false,
-          "meetingReconcileIntervalSeconds": 60,
-          "membershipReconcileIntervalSeconds": 300,
-          "schedulingHorizonDays": 30,
-          "scheduledStartGraceMinutes": 30,
-          "notificationMode": "join-and-failure",
-          "recoveryMaxAttempts": 5,
-          "recoveryBaseDelayMs": 1000
-        }
-      },
       "source-observer": {
         "enabled": true
       },
