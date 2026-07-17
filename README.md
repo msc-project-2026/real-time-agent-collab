@@ -88,6 +88,7 @@ real-time-agent-collab/
 ├── docker-compose.yml         # VPS stack: caddy + openclaw + setup-ui
 ├── Caddyfile                  # Reverse proxy rules + automatic HTTPS
 ├── openclaw.Dockerfile        # Extends official OpenClaw image; installs plugins
+├── sandbox-brave-browser.Dockerfile # Sandboxed ARM64 Brave browser image
 ├── docker-entrypoint.sh       # Syncs config/openclaw.json into the state volume, then starts gateway
 └── package.json               # Root npm workspace (lib + services/setup-ui)
 ```
@@ -112,6 +113,34 @@ Docker volumes mask image-layer files at the mounted path, so the versioned `con
 4. `exec gosu node node openclaw.mjs gateway`
 
 The container starts with `user: "0:0"` so the entrypoint can repair state created by older root-running releases. It drops permanently to the image's non-root `node` user before OpenClaw starts.
+
+### Sandboxed Brave browser
+
+All agent sessions run in OpenClaw Docker sandboxes. Browser calls therefore
+start an isolated `real-time-agent-collab-brave-sandbox-browser` container,
+which runs Brave rather than a gateway-managed browser profile. The sandbox
+browser uses an ephemeral container filesystem and its own user-data directory,
+so a `Singleton*` profile lock cannot persist after a browser or container
+crash. Host-browser control is disabled.
+
+The custom browser image installs the official Brave APT package for the image
+architecture (including ARM64) and supplies the OpenClaw sandbox-browser
+contract: an ephemeral Brave user-data directory, loopback-only browser CDP,
+and an authenticated relay to the sandbox network.
+
+OpenClaw orchestrates sibling sandbox containers through the host Docker daemon.
+No VPS preparation is required: Compose creates a project-local
+`.openclaw-sandboxes/` bind directory automatically, and the entrypoint derives
+the Docker socket group at startup. The gateway image includes the Docker client
+and uses the mounted host Docker socket; it does not run a Docker daemon itself.
+
+The normal deployment build is sufficient (the `brave-sandbox-browser` Compose
+service builds/tags the browser image and then exits):
+
+```sh
+docker compose build brave-sandbox-browser
+docker compose up -d --build
+```
 
 **Installed plugins:**
 
@@ -549,7 +578,10 @@ The gateway re-registers the Webex webhook on every start (`plugins/webex/token.
 - `docker compose logs openclaw` should show `[webex:default] Webex webhook registered` and `[webex] webhookRouter called` on incoming messages.
 
 **Brave reports that the Webex browser profile is locked**
-The OpenClaw supervisor detects a `Singleton*` profile lock when Brave's CDP endpoint is unavailable for 20 seconds, restarts the gateway, and the entrypoint removes the stale lock before retrying. Look for `Stale browser profile lock with unavailable CDP` in `docker compose logs openclaw`. If it repeats after a deployment, investigate Brave startup errors rather than deleting the OpenClaw state volume.
+Brave runs in a disposable OpenClaw browser sandbox, not a persistent gateway
+profile. A sandbox is recreated after failure, so `Singleton*` files do not
+survive and must not be removed manually. Check `docker compose logs openclaw`
+and `docker ps --filter 'name=openclaw-sbx'` for sandbox startup errors.
 
 **DMs not reaching the agent**
 The channel is set to `dmPolicy: allowlisted`. The sender's email or Webex `personId` must be in `channels.webex.allowFrom` in `config/openclaw.json`.

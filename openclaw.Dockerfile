@@ -13,8 +13,12 @@ FROM ${OPENCLAW_IMAGE}
 # starts, keeping plugin ownership checks and the gateway runtime non-root.
 USER root
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends gosu \
+	&& apt-get install -y --no-install-recommends docker.io gosu \
 	&& rm -rf /var/lib/apt/lists/*
+
+# The gateway uses the host Docker socket (mounted by Compose) to create
+# isolated agent and Brave browser sandboxes. docker.io supplies the client;
+# no Docker daemon runs inside this image.
 
 # Versioned config is the source of truth. It is synced into the mounted state
 # volume by the entrypoint because volumes mask image-layer files.

@@ -31,11 +31,22 @@ services:
       context: .
       dockerfile: openclaw.Dockerfile
     env_file: .env
+    environment:
+      # Compose expands PWD to the deployment checkout. OpenClaw passes this
+      # host-absolute path to the Docker daemon for sibling sandboxes, while
+      # the volume below exposes the same path inside the gateway container.
+      OPENCLAW_SANDBOX_WORKSPACE_ROOT: ${PWD}/.openclaw-sandboxes
     # Start as root only for the entrypoint's state-volume ownership migration.
     # The entrypoint drops to the image's `node` user before launching OpenClaw.
     user: "0:0"
     volumes:
       - openclaw_state:/home/node/.openclaw
+      # Docker creates this project-local bind directory when absent. The
+      # entrypoint assigns it to the runtime user before OpenClaw starts.
+      - ./.openclaw-sandboxes:${PWD}/.openclaw-sandboxes
+      # Docker-out-of-Docker: OpenClaw uses the host daemon to launch isolated
+      # browser sandboxes. Do not mount this socket into agent sandboxes.
+      - /var/run/docker.sock:/var/run/docker.sock
       # GitHub App private key mounted read-only; referenced via
       # GITHUB_APP_PRIVATE_KEY_FILE in .env. The secrets/ dir is gitignored.
       - ./secrets/github-app-private-key.pem:/run/secrets/github-app-private-key.pem:ro
@@ -53,6 +64,17 @@ services:
       timeout: 10s
       retries: 5
       start_period: 40s
+
+  # Builds and tags the image that OpenClaw launches for sandboxed browser
+  # sessions. Its service command exits immediately; the image is consumed by
+  # OpenClaw-created sandbox containers, not this Compose service.
+  brave-sandbox-browser:
+    image: real-time-agent-collab-brave-sandbox-browser:latest
+    build:
+      context: .
+      dockerfile: sandbox-brave-browser.Dockerfile
+    entrypoint: ["/bin/true"]
+    restart: "no"
 
   setup-ui:
     build:
