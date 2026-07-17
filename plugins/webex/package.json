@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Webex channel plugin for OpenClaw",
   "main": "index.js",
+  "type": "commonjs",
   "openclaw": {
     "extensions": [
       "./index.js"

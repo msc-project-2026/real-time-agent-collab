@@ -48,9 +48,6 @@ function backoffDelay(attempt) {
   return Math.min(base + Math.random() * base * 0.5, 5000);
 }
 
-// Retain bounded backoff as a final safeguard for transient gateway conflicts.
-// Collab-sync calls use unique hook sessions below, so normal concurrent
-// deliveries do not enter this path.
 async function notifyOpenClaw(openclawUrl, body, { maxAttempts = 5 } = {}) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const res = await fetch(`${openclawUrl}/hooks/agent`, {
@@ -202,10 +199,29 @@ app.post('/webhooks/github', express.raw({ type: '*/*' }), async (req, res) => {
   const { spaceIds } = repoConfig;
 
   for (const spaceId of spaceIds) {
+    let spaceConfig = null;
+    try {
+      const raw = await fsReadFile(join(BY_SPACE_DIR, `${spaceId}.json`), 'utf8');
+      spaceConfig = JSON.parse(raw);
+    } catch {
+      /* config not found, pass null */
+    }
+
     notifyOpenClaw(openclawUrl, {
-      message: `[SYSTEM] .collab/ update detected in ${owner}/${repo}. Send a brief acknowledgment message to Webex room ${spaceId}.`,
+      message: JSON.stringify({
+        spaceId,
+        repo: { owner, repo },
+        config: spaceConfig,
+        instructions: [
+          `Write config to /home/node/.openclaw/workspace/spaces/${spaceId}/config.json, creating directories as needed.`,
+          `Send a brief acknowledgment to Webex room ${spaceId} confirming the project config update was processed.`,
+        ],
+      }),
       sessionKey: buildCollabSyncSessionKey(),
       name: 'collab-sync',
+      deliver: true,
+      channel: 'webex',
+      to: spaceId,
     }).catch((err) => console.error('OpenClaw forward error:', err));
   }
 

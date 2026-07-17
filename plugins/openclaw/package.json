@@ -5,7 +5,8 @@
   "main": "collab-tool.js",
   "openclaw": {
     "extensions": [
-      "./collab-tool.js"
+      "./collab-tool.js",
+      "./browser-tools.js"
     ]
   },
   "engines": {

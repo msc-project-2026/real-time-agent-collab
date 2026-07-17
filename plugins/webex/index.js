@@ -1,5 +1,8 @@
-// Entry point: registers the Webex channel plugin and HTTP route with the OpenClaw plugin API.
+// Entry point: registers the Webex channel plugin, HTTP route, and plugin tools with the OpenClaw plugin API.
 'use strict';
+
+const { appendPendingMessageTool } = require('./tools/append-pending-message');
+const { claimPendingBatchTool } = require('./tools/claim-pending-batch');
 
 const { webexPlugin } = require('./channel');
 const { webhookRouter } = require('./webhook');
@@ -11,12 +14,18 @@ function register(api) {
 
 
   api.registerChannel({ plugin: webexPlugin });
+
+  // Routes
   api.registerHttpRoute({
     path: '/webhooks/webex/',
     auth: 'plugin',
     match: 'prefix',
     handler: webhookRouter,
   });
+
+  // Tools
+  api.registerTool(appendPendingMessageTool());
+  api.registerTool(claimPendingBatchTool());
 }
 
 module.exports = register;

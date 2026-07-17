@@ -7,8 +7,13 @@ const { WEBEX_API, webexFetch } = require('./api');
 // Falls back to cfg.token (bot token) when null.
 let currentAccessToken = null;
 
-function getAccessToken() { return currentAccessToken; }
-function setAccessToken(t) { currentAccessToken = t; }
+function getAccessToken() {
+  return currentAccessToken;
+}
+
+function setAccessToken(t) {
+  currentAccessToken = t;
+}
 
 async function refreshAccessToken(cfg) {
   const params = new URLSearchParams({
@@ -77,4 +82,10 @@ async function deregisterWebhooks(cfg) {
   );
 }
 
-module.exports = { getAccessToken, setAccessToken, refreshAccessToken, ensureWebhook, deregisterWebhooks };
+module.exports = {
+  getAccessToken,
+  setAccessToken,
+  refreshAccessToken,
+  ensureWebhook,
+  deregisterWebhooks,
+};

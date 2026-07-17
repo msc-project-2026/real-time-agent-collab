@@ -43,6 +43,9 @@
       },
       "sandbox": {
         "mode": "off"
+      },
+      "memorySearch": {
+        "provider": "none"
       }
     },
     "list": [
@@ -60,6 +63,10 @@
         }
       }
     ]
+  },
+  "cron": {
+    "enabled": true,
+    "maxConcurrentRuns": 8
   },
   "bindings": [
     {
@@ -170,6 +177,9 @@
         "enabled": true
       },
       "collab-writer": {
+        "enabled": true
+      },
+      "browser-inspector": {
         "enabled": true
       }
     }

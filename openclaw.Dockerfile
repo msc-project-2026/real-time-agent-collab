@@ -28,6 +28,8 @@ RUN apt-get update \
 # Versioned config is the source of truth. It is synced into the mounted state
 # volume by the entrypoint because volumes mask image-layer files.
 COPY --chown=node:node config/openclaw.json /app/config/openclaw.json
+COPY --chown=node:node config/workspace/ /app/config/workspace/
+
 COPY --chown=node:node docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod 755 /app/docker-entrypoint.sh
 
@@ -36,10 +38,14 @@ RUN chmod 755 /app/docker-entrypoint.sh
 COPY --chown=node:node plugins/ /app/plugins/
 COPY --chown=node:node lib/ /app/lib/
 
-# source-observer imports @collab/github as a package. Install that small local
-# package under the plugin tree so Node can resolve it without modifying
-# /app/node_modules (which is owned by the upstream OpenClaw image).
-COPY --chown=node:node lib/ /app/plugins/source-observer/node_modules/@collab/github/
+# Install workspace packages so plugins can resolve @collab/* imports at runtime.
+COPY --chown=node:node package.json /app/package.json
+RUN npm install --workspaces --ignore-scripts
+
+# Install Playwright's Chromium binary and its required system libraries.
+# The base image (node:24-bookworm-slim) lacks these dependencies.
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
+RUN npx playwright install --with-deps chromium
 
 # Overrides the base CMD only; ENTRYPOINT (tini) is inherited.
 CMD ["/app/docker-entrypoint.sh"]

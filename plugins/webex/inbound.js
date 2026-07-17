@@ -16,6 +16,8 @@ const { buildWelcomeCard, buildPresetCard } = require('./card');
 const { enqueueSessionDispatch } = require('./session-dispatch');
 const { handleMeetingCommand } = require('./meeting-joiner-bridge');
 
+const { buildRoutingInstruction } = require('./prompts/routing');
+
 let pluginRuntime = null;
 function setRuntime(r) {
   pluginRuntime = r;
@@ -367,8 +369,6 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
   if (wasCommand) return;
 
   // ── Debounce ─────────────────────────────────────────────────────────────────
-  // Skip gate + dispatch for rapid-fire messages from the same sender.
-  // Direct addresses always bypass debounce.
   if (!isDirectlyAddressed && !tryAccept(roomId, personId)) {
     log?.info?.(`[webex:debounce] suppressed burst from ${senderName} in ${roomId}`);
     return;
@@ -393,11 +393,9 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
     gateScore = result.score;
     interventionType = result.type;
 
-    // Per-type base threshold → apply per-room/per-user override on top
     const typeThreshold =
       proactivity.thresholdByType[interventionType] ?? proactivity.gateThreshold;
 
-    // Long-silence re-activation: subtract bonus if the room has been quiet for a while.
     const silentForMs = lastActivity > 0 ? Date.now() - lastActivity : 0;
     const silenceBonus =
       lastActivity > 0 && silentForMs > proactivity.silenceGapMs
@@ -418,7 +416,6 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
         `silenceBonus=${silenceBonus.toFixed(2)} accepted=${passesThreshold || system1Override}`
     );
 
-    // Write audit entry (fire-and-forget — never block message handling)
     logDecision({
       roomId,
       senderId: personId,
@@ -433,7 +430,6 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
 
     if (!passesThreshold && !system1Override) return;
   } else {
-    // Directly addressed — log to audit but always accepted
     logDecision({
       roomId,
       senderId: personId,
@@ -447,10 +443,32 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
   }
 
   // ── Stage 2: Main agent dispatch ──────────────────────────────────────────
+  const contextHeader = {
+    spaceId: roomId,
+    messageId: msg.id,
+    senderId: personId,
+    senderName,
+    createdAt: msg.created,
+    roomType: msg.roomType,
+    isMentioned,
+  };
+
+  const routingInstruction = buildRoutingInstruction();
+
   const ctxPayload = {
     Body: agentText,
     RawBody: agentText,
-    CommandBody: agentText,
+    CommandBody: [
+      routingInstruction,
+      '',
+      'Webex message context:',
+      '```json',
+      JSON.stringify(contextHeader, null, 2),
+      '```',
+      '',
+      'Inbound message:',
+      agentText,
+    ].join('\n'),
     From: `webex:${personId}`,
     To: `webex:${roomId}`,
     SessionKey: `agent:main:webex:${roomId}`,
@@ -497,9 +515,6 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
           });
         }
 
-        // Send as `markdown` so the agent's Markdown reply renders with
-        // formatting (bold, lists, code, links) instead of raw asterisks.
-        // Webex derives a plain-text fallback for non-rich clients.
         const sent = await webexFetch(cfg.token, '/messages', {
           method: 'POST',
           body: buildMsgBody(roomId, { markdown: reply }, msg.parentId),
