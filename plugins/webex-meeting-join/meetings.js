@@ -66,10 +66,14 @@ function isActiveMeeting(meeting) {
 // in a recent window, used as a fallback when a `meetings/started` webhook
 // was missed (delivery failure, webhook subscription lapsed, gateway was
 // down when the meeting started).
-async function listActiveMeetings(meetingFetch, now = Date.now()) {
+async function listActiveMeetings(
+  meetingFetch,
+  now = Date.now(),
+  { lookbackMs = 10 * 60 * 1000, lookaheadMs = 60 * 60 * 1000 } = {}
+) {
   const query = new URLSearchParams({
-    from: new Date(now - 10 * 60 * 1000).toISOString(),
-    to: new Date(now + 60 * 60 * 1000).toISOString(),
+    from: new Date(now - lookbackMs).toISOString(),
+    to: new Date(now + lookaheadMs).toISOString(),
     max: '100',
   });
   const result = await meetingFetch(`/meetings?${query}`);

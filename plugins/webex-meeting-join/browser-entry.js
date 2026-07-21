@@ -27,6 +27,11 @@ require('@webex/plugin-people');
 require('@webex/plugin-rooms');
 require('@webex/plugin-meetings');
 const WebexCore = require('@webex/webex-core').default;
+const {
+  activeOnThisDevice,
+  findMeeting: findSdkMeeting,
+  meetingReferences,
+} = require('./sdk-meeting-state');
 
 const Webex = WebexCore.extend({ webex: true });
 
@@ -140,53 +145,24 @@ function formatSdkError(err) {
   ].filter(Boolean).join(' — ');
 }
 
-function joinedOnThisDevice(meeting) {
-  // Meeting#isJoined() is the SDK's own device-specific state check. Retain
-  // the parsed-Locus fallback for a response path which has updated Locus but
-  // has not yet run the Meeting object's state transition.
-  try {
-    if (typeof meeting?.isJoined === 'function' && meeting.isJoined()) return true;
-  } catch {
-    // A malformed/stale meeting object must not hide the original join error.
-  }
-  const self = meeting?.locusInfo?.parsedLocus?.self;
-  return self?.joinedWith?.state === 'JOINED';
-}
-
-function matchingMeetings(meeting) {
-  const allMeetings = Object.values(webex.meetings.getAllMeetings?.() ?? {});
-  const references = new Set([
-    meeting?.id,
-    meeting?.destination,
-    meeting?.meetingInfo?.meetingId,
-    meeting?.meetingInfo?.sipUri,
-    meeting?.meetingInfo?.sipUrl,
-  ].filter(Boolean));
-  return [meeting, ...allMeetings.filter((candidate) => candidate !== meeting && [
-    candidate?.id,
-    candidate?.destination,
-    candidate?.meetingInfo?.meetingId,
-    candidate?.meetingInfo?.sipUri,
-    candidate?.meetingInfo?.sipUrl,
-  ].some((value) => references.has(value)))];
-}
-
 async function confirmJoinedAfterError(meeting) {
   // A Locus join can be committed server-side while the HTTP response path
-  // rejects (for example, response/interceptor failures). Let Mercury settle
-  // and sync twice because sync can replace the meeting object in the SDK
-  // collection. Every candidate is checked against this browser device.
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (matchingMeetings(meeting).some(joinedOnThisDevice)) return true;
-    if (attempt === 2) break;
-    await new Promise((resolve) => setTimeout(resolve, 750));
+  // rejects. Let Mercury settle and repeatedly sync because sync may rebuild
+  // the Meeting instance under a different SDK id. Return that actual active
+  // instance so leave() later targets the right object.
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const meetings = [meeting, ...Object.values(webex.meetings.getAllMeetings?.() ?? {})];
+    const active = findSdkMeeting(meeting, meetings, { activeOnly: true });
+    if (active) return active;
+    if (attempt === 5) break;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     try {
       await webex.meetings.syncMeetings({ keepOnlyLocusMeetings: false });
     } catch {
       // Preserve the original join error if confirmation itself is unavailable.
     }
   }
-  return false;
+  return null;
 }
 
 // destination/type: see meetings.js#resolveDestination — preferably the same
@@ -203,8 +179,9 @@ async function join(destination, type) {
     return meeting.id;
   } catch (err) {
     const diagnostic = formatSdkError(err);
-    if (meeting && await confirmJoinedAfterError(meeting)) {
-      return { meetingId: meeting.id, recovered: true, diagnostic };
+    const recovered = meeting && await confirmJoinedAfterError(meeting);
+    if (recovered) {
+      return { meetingId: recovered.id ?? meeting.id, recovered: true, diagnostic };
     }
     // Playwright normally serializes only Error.message/stack and hides the
     // HTTP response nested inside JoinMeetingError.error. Re-throw a concise,
@@ -213,41 +190,47 @@ async function join(destination, type) {
   }
 }
 
-function findMeeting(reference) {
-  const meetings = webex.meetings.getAllMeetings();
-  const ref = typeof reference === 'string' ? { sdkMeetingId: reference, meetingId: reference } : reference ?? {};
-  const ids = [ref.sdkMeetingId, ref.meetingId].filter(Boolean);
-  for (const id of ids) {
-    if (meetings[id]) return meetings[id];
-  }
-
-  const destinations = new Set([ref.destination, ...ids].filter(Boolean));
-  return Object.values(meetings).find((meeting) => [
-    meeting.id,
-    meeting.destination,
-    meeting.meetingLink,
-    meeting.sipUri,
-    meeting.meetingInfo?.meetingId,
-    meeting.meetingInfo?.sipUri,
-    meeting.meetingInfo?.sipUrl,
-  ].some((value) => value && destinations.has(value)));
+function findMeeting(reference, { activeOnly = false } = {}) {
+  return findSdkMeeting(
+    reference,
+    Object.values(webex.meetings.getAllMeetings?.() ?? {}),
+    { activeOnly }
+  );
 }
 
 async function leave(reference) {
   if (!webex) throw new Error('webex-meeting-join: browser SDK not initialised');
-  let meeting = findMeeting(reference);
-  if (!meeting) {
-    // A page restart loses the SDK's in-memory collection. Rehydrate it from
-    // Locus and match conservatively; never guess when multiple meetings are
-    // visible to the account.
+  // Always refresh first. The join response can reject after Locus accepts
+  // the call, and a page restart also loses the original Meeting object.
+  try {
     await webex.meetings.syncMeetings({ keepOnlyLocusMeetings: false });
-    meeting = findMeeting(reference);
+  } catch {
+    // The existing local object can still be sufficient to leave.
   }
+  let meeting = findMeeting(reference, { activeOnly: true }) ?? findMeeting(reference);
   if (!meeting) {
     const id = typeof reference === 'string' ? reference : reference?.meetingId ?? reference?.sdkMeetingId;
     throw new Error(`no local or active Webex meeting object matched ${id ?? 'the requested meeting'}`);
   }
-  await meeting.leave();
+
+  try {
+    await meeting.leave();
+  } catch (firstError) {
+    // A stale failed-join object may have won the initial identifier match.
+    // Re-sync once and retry only on a different active local object.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    let syncSucceeded = true;
+    await webex.meetings.syncMeetings({ keepOnlyLocusMeetings: false }).catch(() => {
+      syncSucceeded = false;
+    });
+    const refreshed = findMeeting(reference, { activeOnly: true });
+    // Like join(), Locus can commit the leave while the response path rejects.
+    // A successful sync with no matching active browser device confirms leave.
+    if (syncSucceeded && !refreshed) return;
+    if (!refreshed || !activeOnThisDevice(refreshed)) throw firstError;
+    meeting = refreshed;
+    await meeting.leave();
+  }
 }
 
 // Rebuilds the SDK's local meeting-object cache from Webex's own state.
@@ -257,7 +240,12 @@ async function leave(reference) {
 async function syncActive() {
   if (!webex) throw new Error('webex-meeting-join: browser SDK not initialised');
   await webex.meetings.syncMeetings({ keepOnlyLocusMeetings: false });
-  return Object.keys(webex.meetings.getAllMeetings());
+  return Object.values(webex.meetings.getAllMeetings())
+    .filter(activeOnThisDevice)
+    .map((meeting) => ({
+      sdkMeetingId: meeting.id,
+      references: Array.from(meetingReferences(meeting)),
+    }));
 }
 
 async function dispose() {

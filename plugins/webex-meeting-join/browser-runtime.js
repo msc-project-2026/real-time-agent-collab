@@ -20,10 +20,14 @@ const RUNTIME_ORIGIN = 'http://openclaw.local';
 // --ignore-scripts`).
 async function ensureBundle(log) {
   const entryPath = path.join(__dirname, 'browser-entry.js');
-  const entryMtime = fs.statSync(entryPath).mtimeMs;
+  const bundledSourcePaths = [
+    entryPath,
+    path.join(__dirname, 'sdk-meeting-state.js'),
+  ];
+  const sourceMtime = Math.max(...bundledSourcePaths.map((sourcePath) => fs.statSync(sourcePath).mtimeMs));
   if (fs.existsSync(BUNDLE_CACHE_PATH)) {
     const cached = fs.statSync(BUNDLE_CACHE_PATH);
-    if (cached.mtimeMs >= entryMtime) return fs.readFileSync(BUNDLE_CACHE_PATH, 'utf-8');
+    if (cached.mtimeMs >= sourceMtime) return fs.readFileSync(BUNDLE_CACHE_PATH, 'utf-8');
   }
   const esbuild = require('esbuild');
   const { polyfillNode } = require('esbuild-plugin-polyfill-node');

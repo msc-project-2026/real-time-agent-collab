@@ -29,7 +29,7 @@ function fakeTokenStore(routes) {
 }
 
 function fakeBrowserRuntime() {
-  const calls = { init: [], join: [], leave: [] };
+  const calls = { init: [], join: [], leave: [], syncActive: 0 };
   return {
     calls,
     init: async (token) => { calls.init.push(token); },
@@ -38,7 +38,10 @@ function fakeBrowserRuntime() {
       return 'sdk-meeting-1';
     },
     leave: async (reference) => { calls.leave.push(reference); },
-    syncActive: async () => [],
+    syncActive: async () => {
+      calls.syncActive += 1;
+      return [];
+    },
     dispose: async () => {},
   };
 }
@@ -186,6 +189,55 @@ test('a join failure announces a manual-fallback message and does not mark the m
   }
 });
 
+test('a rejected join response is accepted when active Locus state confirms the browser device', async () => {
+  const originalFetch = global.fetch;
+  const posted = [];
+  global.fetch = async (url, opts = {}) => {
+    if (String(url).endsWith('/people/me')) return response({ id: 'bot-id' });
+    if (String(url).endsWith('/messages')) {
+      posted.push(JSON.parse(opts.body));
+      return response({ id: 'msg-1' });
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  try {
+    const browserRuntime = fakeBrowserRuntime();
+    browserRuntime.join = async (destination, type) => {
+      browserRuntime.calls.join.push({ destination, type });
+      throw new Error('JoinMeetingError code 2');
+    };
+    browserRuntime.syncActive = async () => {
+      browserRuntime.calls.syncActive += 1;
+      return [{ sdkMeetingId: 'sdk-recovered', references: ['sip:x@webex.com'] }];
+    };
+    const orchestrator = createOrchestrator({
+      cfg: baseCfg(),
+      tokenStore: fakeTokenStore([
+        ['/people/me', { id: 'meeting-person-id' }],
+        ['/memberships?', { items: [{ id: 'm1' }] }],
+        ['/meetings/meeting-1', {
+          id: 'meeting-1',
+          roomId: 'room-1',
+          state: 'inprogress',
+          sipUrl: 'sip:x@webex.com',
+        }],
+      ]),
+      browserRuntime,
+    });
+    await orchestrator.start();
+
+    await orchestrator.handleMeetingStarted({ data: { id: 'meeting-1' } });
+
+    assert.equal(orchestrator.state.isJoined('meeting-1'), true);
+    assert.equal(orchestrator.state.joined.get('meeting-1').sdkMeetingId, 'sdk-recovered');
+    assert.equal(browserRuntime.calls.syncActive, 1);
+    assert.match(posted.at(-1).markdown, /Joined/);
+    assert.doesNotMatch(posted.at(-1).markdown, /couldn't join/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('handleMeetingEnded clears local state even if we never actually joined', async () => {
   const browserRuntime = fakeBrowserRuntime();
   const orchestrator = createOrchestrator({
@@ -266,6 +318,96 @@ test('handleMessageCreated accepts a plain bot-name prefix for an exact leave co
     assert.equal(browserRuntime.calls.leave.length, 1);
     assert.equal(orchestrator.state.isJoined('meeting-1'), false);
     assert.match(posted.at(-1).markdown, /Left the meeting/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('leave command recovers a server-committed join that was missing from local state', async () => {
+  const originalFetch = global.fetch;
+  const posted = [];
+  global.fetch = async (url, opts = {}) => {
+    if (String(url).endsWith('/people/me')) return response({ id: 'bot-id' });
+    if (String(url).endsWith('/messages/msg-1')) {
+      return response({ id: 'msg-1', personId: 'human-1', roomId: 'room-1', roomType: 'group', mentionedPeople: ['bot-id'], text: '@Bot leave meeting' });
+    }
+    if (String(url).endsWith('/messages')) {
+      posted.push(JSON.parse(opts.body));
+      return response({ id: 'ack' });
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  try {
+    const browserRuntime = fakeBrowserRuntime();
+    browserRuntime.syncActive = async () => {
+      browserRuntime.calls.syncActive += 1;
+      return [{ sdkMeetingId: 'sdk-recovered', references: ['sip:x@webex.com'] }];
+    };
+    const orchestrator = createOrchestrator({
+      cfg: baseCfg(),
+      tokenStore: fakeTokenStore([
+        ['/people/me', { id: 'meeting-person-id' }],
+        ['/meetings?', { items: [{
+          id: 'meeting-1',
+          roomId: 'room-1',
+          state: 'inprogress',
+          sipUrl: 'sip:x@webex.com',
+        }] }],
+      ]),
+      browserRuntime,
+    });
+    await orchestrator.start();
+
+    await orchestrator.handleMessageCreated({ data: { id: 'msg-1' } });
+
+    assert.equal(browserRuntime.calls.syncActive, 1);
+    assert.deepEqual(browserRuntime.calls.leave, [{
+      meetingId: 'meeting-1',
+      sdkMeetingId: 'sdk-recovered',
+      destination: 'sip:x@webex.com',
+    }]);
+    assert.equal(orchestrator.state.isSuppressed('meeting-1'), true);
+    assert.match(posted.at(-1).markdown, /Left the meeting/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('leave failure is reported to the room instead of failing silently', async () => {
+  const originalFetch = global.fetch;
+  const posted = [];
+  global.fetch = async (url, opts = {}) => {
+    if (String(url).endsWith('/people/me')) return response({ id: 'bot-id' });
+    if (String(url).endsWith('/messages/msg-1')) {
+      return response({ id: 'msg-1', personId: 'human-1', roomId: 'room-1', roomType: 'group', mentionedPeople: ['bot-id'], text: '@Bot leave meeting' });
+    }
+    if (String(url).endsWith('/messages')) {
+      posted.push(JSON.parse(opts.body));
+      return response({ id: 'ack' });
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  try {
+    const browserRuntime = fakeBrowserRuntime();
+    browserRuntime.leave = async (reference) => {
+      browserRuntime.calls.leave.push(reference);
+      throw new Error('Locus leave rejected');
+    };
+    const orchestrator = createOrchestrator({
+      cfg: baseCfg(),
+      tokenStore: fakeTokenStore([['/people/me', { id: 'meeting-person-id' }]]),
+      browserRuntime,
+    });
+    await orchestrator.start();
+    orchestrator.state.markJoined('meeting-1', { roomId: 'room-1' });
+
+    await assert.rejects(
+      orchestrator.handleMessageCreated({ data: { id: 'msg-1' } }),
+      /Locus leave rejected/
+    );
+
+    assert.match(posted.at(-1).markdown, /couldn't leave/);
+    assert.equal(orchestrator.state.isSuppressed('meeting-1'), true);
   } finally {
     global.fetch = originalFetch;
   }

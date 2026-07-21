@@ -81,13 +81,19 @@ test('isActiveMeeting recognizes started/in-progress states', () => {
 });
 
 test('listActiveMeetings filters the raw REST response down to active ones', async () => {
-  const fakeFetch = async () => ({
-    items: [
-      { id: 'm1', state: 'inprogress' },
-      { id: 'm2', state: 'scheduled' },
-      { id: 'm3', actualStart: '2026-01-01T00:00:00Z' },
-    ],
-  });
-  const active = await listActiveMeetings(fakeFetch);
+  let requestedPath;
+  const fakeFetch = async (path) => {
+    requestedPath = path;
+    return {
+      items: [
+        { id: 'm1', state: 'inprogress' },
+        { id: 'm2', state: 'scheduled' },
+        { id: 'm3', actualStart: '2026-01-01T00:00:00Z' },
+      ],
+    };
+  };
+  const now = Date.parse('2026-01-02T12:00:00Z');
+  const active = await listActiveMeetings(fakeFetch, now, { lookbackMs: 24 * 60 * 60 * 1000 });
   assert.deepEqual(active.map((m) => m.id), ['m1', 'm3']);
+  assert.match(requestedPath, /from=2026-01-01T12%3A00%3A00.000Z/);
 });

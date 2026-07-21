@@ -23,6 +23,22 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
   let pollTimer = null;
   let identityPromise = null;
 
+  function findSdkMeetingFor(meeting, destination, sdkMeetings, { allowSole = false } = {}) {
+    if (!Array.isArray(sdkMeetings) || !sdkMeetings.length) return null;
+    const references = new Set([
+      meeting?.id,
+      meeting?.sipUrl,
+      meeting?.sipAddress,
+      meeting?.webLink,
+      destination,
+    ].filter(Boolean).map((value) => String(value).trim().toLowerCase()));
+    const exact = sdkMeetings.find((sdkMeeting) =>
+      Array.isArray(sdkMeeting.references) &&
+      sdkMeeting.references.some((value) => references.has(String(value).trim().toLowerCase()))
+    );
+    return exact ?? (allowSole && sdkMeetings.length === 1 ? sdkMeetings[0] : null);
+  }
+
   async function announce(roomId, markdown) {
     try {
       await webexFetch(cfg.botToken, '/messages', { method: 'POST', body: { roomId, markdown } });
@@ -93,11 +109,28 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
         const sdkMeetingId = await browserRuntime.join(destination, type);
         state.markJoined(meetingId, { roomId, kind, destination, sdkMeetingId });
       } catch (err) {
-        log?.error?.(`[webex-meeting-join] join failed for meeting=${meetingId}: ${err?.message ?? err}`);
-        if (announceFailure) {
-          await announce(roomId, `I couldn't join the meeting that just started (${err?.message ?? 'unknown error'}). Please join manually if needed.`);
+        // The Locus POST can commit the join and then reject while the SDK is
+        // processing its response. Independently sync once at this boundary;
+        // only an exact active-device match is accepted as recovered.
+        const sdkMeetings = await browserRuntime.syncActive().catch(() => []);
+        const recovered = findSdkMeetingFor(meeting, destination, sdkMeetings);
+        if (recovered) {
+          state.markJoined(meetingId, {
+            roomId,
+            kind,
+            destination,
+            sdkMeetingId: recovered.sdkMeetingId,
+          });
+          log?.warn?.(
+            `[webex-meeting-join] join response failed but active Locus state confirmed meeting=${meetingId}`
+          );
+        } else {
+          log?.error?.(`[webex-meeting-join] join failed for meeting=${meetingId}: ${err?.message ?? err}`);
+          if (announceFailure) {
+            await announce(roomId, `I couldn't join the meeting that just started (${err?.message ?? 'unknown error'}). Please join manually if needed.`);
+          }
+          throw err;
         }
-        throw err;
       }
 
       const label = kind === 'instant' ? 'the meeting that just started' : 'the scheduled meeting';
@@ -118,6 +151,10 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
           sdkMeetingId: info.sdkMeetingId,
           destination: info.destination,
         });
+      } catch (err) {
+        log?.error?.(`[webex-meeting-join] leave failed for meeting=${meetingId}: ${err?.message ?? err}`);
+        await announce(roomId, `I couldn't leave the meeting (${err?.message ?? 'unknown error'}). Please remove the meeting account manually.`);
+        throw err;
       } finally {
         // Even if the SDK leave() call fails, drop our own "joined" bookkeeping
         // rather than leaving the bot permanently stuck thinking it's present —
@@ -130,6 +167,41 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
       log?.info?.(`[webex-meeting-join] left meeting=${meetingId} room=${roomId}`);
       return { left: true };
     });
+  }
+
+  // Rebuilds process-local state when the join response failed after Locus
+  // accepted the browser device, or when the gateway restarted mid-meeting.
+  // Both Webex REST and the Browser SDK must agree before a room command is
+  // allowed to target a recovered meeting.
+  async function recoverJoinedForRoom(roomId) {
+    try {
+      await browserRuntime.init(tokenStore.getToken());
+      const sdkMeetings = await browserRuntime.syncActive();
+      if (!Array.isArray(sdkMeetings) || !sdkMeetings.length) return null;
+
+      const activeMeetings = await listActiveMeetings(tokenStore.meetingFetch, Date.now(), {
+        lookbackMs: 24 * 60 * 60 * 1000,
+      });
+      const roomMeetings = activeMeetings.filter((meeting) => meeting.roomId === roomId);
+      if (roomMeetings.length !== 1) return null;
+
+      const meeting = roomMeetings[0];
+      const { destination } = resolveDestination(meeting);
+      const matchingSdk = findSdkMeetingFor(meeting, destination, sdkMeetings, { allowSole: true });
+      if (!matchingSdk) return null;
+
+      state.markJoined(meeting.id, {
+        roomId,
+        kind: classifyMeetingKind(meeting),
+        destination,
+        sdkMeetingId: matchingSdk.sdkMeetingId,
+      });
+      log?.warn?.(`[webex-meeting-join] recovered joined state meeting=${meeting.id} room=${roomId}`);
+      return state.findJoinedByRoom(roomId);
+    } catch (err) {
+      log?.warn?.(`[webex-meeting-join] joined-state recovery failed for room=${roomId}: ${err?.message ?? err}`);
+      return null;
+    }
   }
 
   // resource: meetings, event: started
@@ -180,11 +252,12 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
       return;
     }
     if (command === 'leave') {
-      if (!current) {
+      const joined = current ?? await recoverJoinedForRoom(message.roomId);
+      if (!joined) {
         await announce(message.roomId, 'There’s no meeting I’m currently in for this space.');
         return;
       }
-      await tryLeave(current.meetingId, { roomId: message.roomId, suppress: true });
+      await tryLeave(joined.meetingId, { roomId: message.roomId, suppress: true });
     }
   }
 
