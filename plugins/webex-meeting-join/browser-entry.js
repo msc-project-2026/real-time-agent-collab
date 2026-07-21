@@ -141,29 +141,52 @@ function formatSdkError(err) {
 }
 
 function joinedOnThisDevice(meeting) {
-  // SelfUtils.parse() selects `joinedWith` by matching the registered Webex
-  // device URL. Requiring that field avoids mistaking another browser/mobile
-  // client logged into the same dedicated account for this bot instance.
+  // Meeting#isJoined() is the SDK's own device-specific state check. Retain
+  // the parsed-Locus fallback for a response path which has updated Locus but
+  // has not yet run the Meeting object's state transition.
+  try {
+    if (typeof meeting?.isJoined === 'function' && meeting.isJoined()) return true;
+  } catch {
+    // A malformed/stale meeting object must not hide the original join error.
+  }
   const self = meeting?.locusInfo?.parsedLocus?.self;
-  return self?.state === 'JOINED' && self?.joinedWith?.state === 'JOINED';
+  return self?.joinedWith?.state === 'JOINED';
+}
+
+function matchingMeetings(meeting) {
+  const allMeetings = Object.values(webex.meetings.getAllMeetings?.() ?? {});
+  const references = new Set([
+    meeting?.id,
+    meeting?.destination,
+    meeting?.meetingInfo?.meetingId,
+    meeting?.meetingInfo?.sipUri,
+    meeting?.meetingInfo?.sipUrl,
+  ].filter(Boolean));
+  return [meeting, ...allMeetings.filter((candidate) => candidate !== meeting && [
+    candidate?.id,
+    candidate?.destination,
+    candidate?.meetingInfo?.meetingId,
+    candidate?.meetingInfo?.sipUri,
+    candidate?.meetingInfo?.sipUrl,
+  ].some((value) => references.has(value)))];
 }
 
 async function confirmJoinedAfterError(meeting) {
   // A Locus join can be committed server-side while the HTTP response path
-  // rejects (for example, response/interceptor failures). Mercury normally
-  // delivers the authoritative Locus state shortly afterwards; an explicit
-  // sync covers a missed/delayed event.
-  if (joinedOnThisDevice(meeting)) return true;
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  if (joinedOnThisDevice(meeting)) return true;
-  try {
-    await webex.meetings.syncMeetings({ keepOnlyLocusMeetings: false });
-  } catch {
-    // Preserve the original join error if confirmation itself is unavailable.
+  // rejects (for example, response/interceptor failures). Let Mercury settle
+  // and sync twice because sync can replace the meeting object in the SDK
+  // collection. Every candidate is checked against this browser device.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (matchingMeetings(meeting).some(joinedOnThisDevice)) return true;
+    if (attempt === 2) break;
+    await new Promise((resolve) => setTimeout(resolve, 750));
+    try {
+      await webex.meetings.syncMeetings({ keepOnlyLocusMeetings: false });
+    } catch {
+      // Preserve the original join error if confirmation itself is unavailable.
+    }
   }
-  if (joinedOnThisDevice(meeting)) return true;
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  return joinedOnThisDevice(meeting);
+  return false;
 }
 
 // destination/type: see meetings.js#resolveDestination — preferably the same

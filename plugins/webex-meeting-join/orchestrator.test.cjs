@@ -94,7 +94,7 @@ test('handleMeetingStarted joins a member space meeting and announces success', 
 
     assert.equal(orchestrator.state.isJoined('meeting-1'), true);
     assert.equal(orchestrator.state.joined.get('meeting-1').sdkMeetingId, 'sdk-meeting-1');
-    assert.deepEqual(browserRuntime.calls.join, [{ destination: 'https://example.webex.com/meet/human-link', type: 'MEETING_LINK' }]);
+    assert.deepEqual(browserRuntime.calls.join, [{ destination: 'sip:x@webex.com', type: 'SIP_URI' }]);
     assert.equal(posted.at(-1).roomId, 'room-1');
     assert.match(posted.at(-1).markdown, /Joined/);
   } finally {
@@ -288,7 +288,7 @@ test('reconcile() joins active meetings missed by the started webhook', async ()
     await orchestrator.start();
     await orchestrator.reconcile();
     assert.equal(orchestrator.state.isJoined('meeting-1'), true);
-    assert.deepEqual(browserRuntime.calls.join, [{ destination: 'https://example.webex.com/meet/human-link', type: 'MEETING_LINK' }]);
+    assert.deepEqual(browserRuntime.calls.join, [{ destination: 'sip:x@webex.com', type: 'SIP_URI' }]);
   } finally {
     global.fetch = originalFetch;
   }

@@ -4,10 +4,11 @@
 'use strict';
 
 // Webex's Unified Space Meetings migration removed roomId/spaceId as a valid
-// SDK join destination entirely (error 30105). The REST meeting object gives
-// us the human attendee URL as `webLink`; use that exact link with the SDK's
-// MEETING_LINK destination type. The webhook itself only reliably carries the
-// meeting id, so callers fetch the full meeting before resolving this value.
+// SDK join destination entirely (error 30105). Fetch the REST meeting object
+// and join with its SDK-facing `sipUrl`/`sipAddress`, falling back to its
+// `id`. `webLink` is an attendee-browser URL, not the migration target: using
+// it selects the SDK's legacy MEETING_LINK lookup and can produce a Locus join
+// error even though the linked meeting is otherwise valid.
 function classifyMeetingKind(meeting) {
   const type = String(meeting?.meetingType ?? '').toLowerCase();
   if (type === 'meeting') return 'instant';
@@ -16,26 +17,21 @@ function classifyMeetingKind(meeting) {
   return 'unknown';
 }
 
-// Prefer the same HTTPS meeting link a human clicks. `meetingLink` and
-// `joinLink` cover alternate upstream response shapes. A meeting id is the
-// first non-link fallback; SIP is retained only for records that expose
-// neither a human link nor an id. Never fall back to roomId/spaceId.
+// Webex's Unified Space Meetings migration specifies the REST meeting's SIP
+// URL/address or meeting ID as the Browser SDK destination. Do not prefer the
+// attendee-facing HTTPS webLink: the SDK treats that as its legacy
+// MEETING_LINK lookup path. Never fall back to roomId/spaceId.
 function resolveDestination(meeting) {
-  const webLink = [meeting?.webLink, meeting?.meetingLink, meeting?.joinLink]
-    .find((value) => typeof value === 'string' && /^https:\/\//i.test(value.trim()));
-  if (webLink) {
-    return { destination: webLink.trim(), type: 'MEETING_LINK' };
+  if (typeof meeting?.sipUrl === 'string' && meeting.sipUrl.trim()) {
+    return { destination: meeting.sipUrl.trim(), type: 'SIP_URI' };
   }
-  if (typeof meeting?.id === 'string' && meeting.id) {
-    return { destination: meeting.id, type: 'MEETING_ID' };
+  if (typeof meeting?.sipAddress === 'string' && meeting.sipAddress.trim()) {
+    return { destination: meeting.sipAddress.trim(), type: 'SIP_URI' };
   }
-  if (typeof meeting?.sipUrl === 'string' && meeting.sipUrl) {
-    return { destination: meeting.sipUrl, type: 'SIP_URI' };
+  if (typeof meeting?.id === 'string' && meeting.id.trim()) {
+    return { destination: meeting.id.trim(), type: 'MEETING_ID' };
   }
-  if (typeof meeting?.sipAddress === 'string' && meeting.sipAddress) {
-    return { destination: meeting.sipAddress, type: 'SIP_URI' };
-  }
-  throw new Error('meeting has no human webLink, meeting id, or SIP address');
+  throw new Error('meeting has no SDK meeting id or SIP address');
 }
 
 async function fetchMeetingWithRetry(meetingFetch, meetingId, { attempts = 3, delayMs = 1500 } = {}) {

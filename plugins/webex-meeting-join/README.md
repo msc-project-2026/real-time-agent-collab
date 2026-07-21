@@ -16,10 +16,9 @@ media handling (see "Known limitations" below).
    `meetings/ended` (owned by the dedicated meeting account), and
    `messages/created` (owned by the bot account).
 2. When a `meetings/started` webhook fires, it resolves the meeting's
-   normal attendee-facing HTTPS `webLink` via REST (falling back to the
-   meeting ID or SIP address only if Webex omitted that link), confirms the
-   meeting account is a member of the associated space, and drives a headless
-   Chromium instance (via Playwright) that hosts the actual
+   SDK-facing REST `sipUrl`/`sipAddress` (falling back to the meeting ID),
+   confirms the meeting account is a member of the associated space, and
+   drives a headless Chromium instance (via Playwright) that hosts the actual
    `@webex/plugin-meetings` SDK to call `webex.meetings.create()` +
    `meeting.join()`.
 3. A user typing "leave meeting" (or `/meeting leave`) in the space —
@@ -76,8 +75,8 @@ page has a `null` origin, which Webex rejects during CORS preflight for U2C and
 Hydra and eventually surfaces as a preauth-catalog timeout.
 
 If Webex commits the Locus join but its SDK response/interceptor still rejects,
-the plugin waits for Mercury and performs one meeting sync before deciding the
-join failed. It accepts the join only when Locus reports `JOINED` for the
+the plugin waits for Mercury and synchronizes twice before deciding the join
+failed. It accepts the join only when the SDK reports `JOINED` for the
 registered browser device itself; another client using the same meeting account
 cannot produce a false success.
 
