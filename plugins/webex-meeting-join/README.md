@@ -60,26 +60,20 @@ main webex plugin's secret is fine), `WEBEX_MEETING_POLL_INTERVAL_MS`
    installed it (this repo's `lib` does), otherwise run
    `npx playwright install --with-deps chromium` once.
 
-## Known limitations / what's still unverified
+## Known limitations / verification
 
-Everything in `browser-entry.js`/`browser-runtime.js` runs the real Webex SDK
-in a real headless Chromium page — it was bundle-tested and loaded
-successfully with `esbuild` + `esbuild-plugin-polyfill-node`, and smoke-tested
-in an actual headless browser (confirmed `window.__webexMeetingJoin` exposes
-`init`/`join`/`leave`/`syncActive` and the bundle no longer throws at
-load-time). It was **not** exercised against a real Webex meeting/token —
-no live account was available in this environment. Calling `init()` with a
-placeholder token gets past module loading and into the SDK's own
-`meetings.register()` flow, then fails inside an internal metrics call
-(`Metrics2.sendBehavioralMetric` reading `.internal` off something
-undefined) — consistent with device registration silently failing on an
-invalid token before a telemetry call assumes it succeeded. If this exact
-error recurs with a **real** token, it points to an SDK init-sequencing gap
-(e.g. needing to await device/mercury registration before calling
-`meetings.register()`) rather than a bundling problem — that's the concrete
-next debugging step, not a full unknown.
+`browser-entry.js`/`browser-runtime.js` runs the real Webex SDK in headless
+Chromium. The bundle is smoke-tested in Chromium, and SDK readiness plus
+device/Mercury registration have been verified against a live meeting-account
+token. Initialization waits for `meetings:ready` before calling
+`meetings.register()`; calling it earlier races the SDK's metrics and device
+setup and causes the `.internal`/`setDeviceInfo` TypeErrors.
 
-`meeting.join()` is called without `meeting.addMedia()` — no audio/video
-track is ever requested, so the join is presence-only for phase 1. Whether
-Webex's Locus signaling accepts a no-media join the same way a real client
-would is itself unverified against a live meeting.
+The page uses an in-memory `http://openclaw.local` document. A bare Playwright
+page has a `null` origin, which Webex rejects during CORS preflight for U2C and
+Hydra and eventually surfaces as a preauth-catalog timeout.
+
+`meeting.join()` is intentionally called without `meeting.addMedia()` — the
+Webex SDK documents this as joining without media. No audio/video track is
+requested in phase 1; transcription will require adding receive-media handling
+in phase 2.

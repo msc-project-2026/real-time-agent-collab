@@ -15,6 +15,7 @@ const { WEBEX_API, WebexApiError, webexFetch } = require('./api');
 
 function createTokenStore(cfg) {
   let currentAccessToken = cfg.meetingAccessToken ?? null;
+  let currentRefreshToken = cfg.meetingRefreshToken ?? null;
   let refreshing = null;
 
   async function refreshAccessToken() {
@@ -25,7 +26,7 @@ function createTokenStore(cfg) {
       grant_type: 'refresh_token',
       client_id: cfg.meetingClientId,
       client_secret: cfg.meetingClientSecret,
-      refresh_token: cfg.meetingRefreshToken,
+      refresh_token: currentRefreshToken,
     });
     const res = await fetch(`${WEBEX_API}/access_token`, {
       method: 'POST',
@@ -37,6 +38,9 @@ function createTokenStore(cfg) {
       throw new Error(`Webex meeting-account token refresh → ${res.status}: ${text}`);
     }
     const data = await res.json();
+    // Webex may return a renewed refresh token. Use it for later refreshes in
+    // this process instead of repeatedly submitting the original value.
+    if (data.refresh_token) currentRefreshToken = data.refresh_token;
     return data.access_token;
   }
 

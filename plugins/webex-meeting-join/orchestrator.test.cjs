@@ -33,8 +33,11 @@ function fakeBrowserRuntime() {
   return {
     calls,
     init: async (token) => { calls.init.push(token); },
-    join: async (destination, type) => { calls.join.push({ destination, type }); },
-    leave: async (meetingId) => { calls.leave.push(meetingId); },
+    join: async (destination, type) => {
+      calls.join.push({ destination, type });
+      return 'sdk-meeting-1';
+    },
+    leave: async (reference) => { calls.leave.push(reference); },
     syncActive: async () => [],
     dispose: async () => {},
   };
@@ -90,6 +93,7 @@ test('handleMeetingStarted joins a member space meeting and announces success', 
     await orchestrator.handleMeetingStarted({ data: { id: 'meeting-1' } });
 
     assert.equal(orchestrator.state.isJoined('meeting-1'), true);
+    assert.equal(orchestrator.state.joined.get('meeting-1').sdkMeetingId, 'sdk-meeting-1');
     assert.deepEqual(browserRuntime.calls.join, [{ destination: 'sip:x@webex.com', type: 'SIP_URI' }]);
     assert.equal(posted.at(-1).roomId, 'room-1');
     assert.match(posted.at(-1).markdown, /Joined/);
@@ -220,7 +224,11 @@ test('handleMessageCreated leaves the meeting when addressed and asked to leave'
 
     await orchestrator.handleMessageCreated({ data: { id: 'msg-1' } });
 
-    assert.deepEqual(browserRuntime.calls.leave, ['meeting-1']);
+    assert.deepEqual(browserRuntime.calls.leave, [{
+      meetingId: 'meeting-1',
+      sdkMeetingId: undefined,
+      destination: undefined,
+    }]);
     assert.equal(orchestrator.state.isJoined('meeting-1'), false);
     assert.equal(orchestrator.state.isSuppressed('meeting-1'), true);
     assert.match(posted.at(-1).markdown, /Left the meeting/);

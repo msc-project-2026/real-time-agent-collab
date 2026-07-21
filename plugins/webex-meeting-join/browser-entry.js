@@ -31,28 +31,81 @@ const WebexCore = require('@webex/webex-core').default;
 const Webex = WebexCore.extend({ webex: true });
 
 let webex = null;
+let lifecycleStage = 'not-initialized';
+let lastError = null;
+
+function waitForMeetingsReady(instance) {
+  // Webex's metrics and device plugins finish constructing from the parent
+  // `ready` event. Calling meetings.register() before `meetings:ready` races
+  // those handlers and produces misleading errors such as
+  // `Metrics.sendBehavioralMetric ... reading 'internal'` and
+  // `newMetrics.callDiagnosticMetrics ... reading 'setDeviceInfo'`.
+  //
+  // The ready event is asynchronous, but keep the state check so this remains
+  // safe if Webex changes its initialization timing in a later 3.x release.
+  if (instance.ready && instance.internal?.newMetrics?.callDiagnosticMetrics) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    instance.meetings.once('meetings:ready', resolve);
+  });
+}
+
+function assertMeetingDependencies(instance) {
+  const missing = [
+    !instance.meetings && 'meetings',
+    !instance.people && 'people',
+    !instance.internal?.device && 'internal.device',
+    !instance.internal?.mercury && 'internal.mercury',
+    !instance.internal?.metrics && 'internal.metrics',
+    !instance.internal?.newMetrics && 'internal.newMetrics',
+  ].filter(Boolean);
+
+  if (missing.length) {
+    throw new Error(`Webex SDK bundle is missing required plugins: ${missing.join(', ')}`);
+  }
+}
 
 async function init(accessToken) {
-  webex = new Webex({
-    config: {
-      sdkType: 'webex',
-      hydra: 'https://api.ciscospark.com/v1',
-      hydraServiceUrl: 'https://api.ciscospark.com/v1',
-      credentials: { clientType: 'confidential' },
-      device: { validateDomains: true, ephemeral: true },
-      appName: 'openclaw-webex-meeting-join',
-      appPlatform: 'openclaw',
-      meetings: {
-        reconnection: { enabled: true },
-        experimental: {
-          enableUnifiedMeetings: true,
-          enableAdhocMeetings: true,
+  lifecycleStage = 'constructing';
+  lastError = null;
+  try {
+    webex = new Webex({
+      config: {
+        appName: 'openclaw-webex-meeting-join',
+        appPlatform: 'openclaw',
+        device: { ephemeral: true },
+        meetings: {
+          reconnection: { enabled: true },
+          experimental: {
+            enableUnifiedMeetings: true,
+            enableAdhocMeetings: true,
+          },
         },
       },
-    },
-    credentials: { access_token: accessToken },
-  });
-  await webex.meetings.register();
+      credentials: { access_token: accessToken },
+    });
+
+    assertMeetingDependencies(webex);
+    lifecycleStage = 'waiting-for-meetings-ready';
+    await waitForMeetingsReady(webex);
+    lifecycleStage = 'registering';
+    await webex.meetings.register();
+    lifecycleStage = 'registered';
+  } catch (err) {
+    lifecycleStage = 'failed';
+    lastError = err?.message ?? String(err);
+    throw err;
+  }
+}
+
+function updateAccessToken(accessToken) {
+  if (!webex) throw new Error('webex-meeting-join: browser SDK not initialised');
+  if (!webex.credentials?.supertoken) {
+    throw new Error('webex-meeting-join: Webex SDK has no active credential to update');
+  }
+  webex.credentials.supertoken.access_token = accessToken;
 }
 
 // destination/type: see meetings.js#resolveDestination — meetingId or
@@ -60,14 +113,46 @@ async function init(accessToken) {
 async function join(destination, type) {
   if (!webex) throw new Error('webex-meeting-join: browser SDK not initialised');
   const meeting = await webex.meetings.create(destination, type);
-  await meeting.join({ moderator: false, receiveTranscription: false });
+  // Webex explicitly supports a signaling-only join. Media can be attached
+  // later with addMedia(); phase 1 deliberately joins without microphone,
+  // camera, or remote media.
+  await meeting.join({ moderator: false });
   return meeting.id;
 }
 
-async function leave(meetingId) {
+function findMeeting(reference) {
+  const meetings = webex.meetings.getAllMeetings();
+  const ref = typeof reference === 'string' ? { sdkMeetingId: reference, meetingId: reference } : reference ?? {};
+  const ids = [ref.sdkMeetingId, ref.meetingId].filter(Boolean);
+  for (const id of ids) {
+    if (meetings[id]) return meetings[id];
+  }
+
+  const destinations = new Set([ref.destination, ...ids].filter(Boolean));
+  return Object.values(meetings).find((meeting) => [
+    meeting.id,
+    meeting.destination,
+    meeting.sipUri,
+    meeting.meetingInfo?.meetingId,
+    meeting.meetingInfo?.sipUri,
+    meeting.meetingInfo?.sipUrl,
+  ].some((value) => value && destinations.has(value)));
+}
+
+async function leave(reference) {
   if (!webex) throw new Error('webex-meeting-join: browser SDK not initialised');
-  const meeting = webex.meetings.getAllMeetings()[meetingId];
-  if (!meeting) throw new Error(`no local meeting object for ${meetingId} (already left, or never joined in this browser session)`);
+  let meeting = findMeeting(reference);
+  if (!meeting) {
+    // A page restart loses the SDK's in-memory collection. Rehydrate it from
+    // Locus and match conservatively; never guess when multiple meetings are
+    // visible to the account.
+    await webex.meetings.syncMeetings({ keepOnlyLocusMeetings: false });
+    meeting = findMeeting(reference);
+  }
+  if (!meeting) {
+    const id = typeof reference === 'string' ? reference : reference?.meetingId ?? reference?.sdkMeetingId;
+    throw new Error(`no local or active Webex meeting object matched ${id ?? 'the requested meeting'}`);
+  }
   await meeting.leave();
 }
 
@@ -77,8 +162,27 @@ async function leave(meetingId) {
 // know about them again before leave() can find them).
 async function syncActive() {
   if (!webex) throw new Error('webex-meeting-join: browser SDK not initialised');
-  await webex.meetings.syncMeetings();
+  await webex.meetings.syncMeetings({ keepOnlyLocusMeetings: false });
   return Object.keys(webex.meetings.getAllMeetings());
 }
 
-window.__webexMeetingJoin = { init, join, leave, syncActive };
+async function dispose() {
+  if (!webex) return;
+  if (webex.meetings?.registered) await webex.meetings.unregister();
+  webex = null;
+  lifecycleStage = 'disposed';
+}
+
+function status() {
+  return {
+    stage: lifecycleStage,
+    lastError,
+    sdkReady: Boolean(webex?.ready),
+    meetingsReady: Boolean(webex?.meetings?.meetingInfo),
+    meetingsRegistered: Boolean(webex?.meetings?.registered),
+    deviceRegistered: Boolean(webex?.internal?.device?.registered),
+    mercuryConnected: Boolean(webex?.internal?.mercury?.connected),
+  };
+}
+
+window.__webexMeetingJoin = { init, updateAccessToken, join, leave, syncActive, dispose, status };

@@ -72,7 +72,14 @@ function register(api) {
     });
     log?.info?.('[webex-meeting-join] webhooks registered');
 
-    await orchestrator.start();
+    try {
+      await orchestrator.start();
+    } catch (err) {
+      // Keep the webhook route and reconciliation fallback alive. The browser
+      // runtime discards a partially initialized page and retries cleanly on
+      // the next meeting/poll instead of permanently disabling the plugin.
+      log?.warn?.(`[webex-meeting-join] initial setup failed; identities/SDK will retry automatically: ${err?.message ?? err}`);
+    }
 
     // Fallback #1: catch any meeting already in progress when the gateway
     // starts (process restart, or the started-webhook fired while we were

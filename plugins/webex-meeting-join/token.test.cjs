@@ -76,3 +76,29 @@ test('concurrent refresh() calls are coalesced into a single token-refresh reque
     global.fetch = originalFetch;
   }
 });
+
+test('a renewed refresh token is used for the next refresh in this process', async () => {
+  const originalFetch = global.fetch;
+  const refreshTokens = [];
+  global.fetch = async (url, opts) => {
+    if (!String(url).endsWith('/access_token')) throw new Error('unexpected');
+    refreshTokens.push(new URLSearchParams(opts.body).get('refresh_token'));
+    return refreshTokens.length === 1
+      ? response(200, { access_token: 'access-1', refresh_token: 'refresh-2' })
+      : response(200, { access_token: 'access-2', refresh_token: 'refresh-3' });
+  };
+  try {
+    const store = createTokenStore({
+      meetingRefreshToken: 'refresh-1',
+      meetingClientId: 'id',
+      meetingClientSecret: 'secret',
+      canRefreshMeetingToken: true,
+    });
+    await store.refresh();
+    await store.refresh();
+    assert.deepEqual(refreshTokens, ['refresh-1', 'refresh-2']);
+    assert.equal(store.getToken(), 'access-2');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});

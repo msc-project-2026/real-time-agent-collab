@@ -20,6 +20,7 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
   let botId = null;
   let meetingPersonId = null;
   let pollTimer = null;
+  let identityPromise = null;
 
   async function announce(roomId, markdown) {
     try {
@@ -29,11 +30,26 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
     }
   }
 
+  async function ensureIdentities() {
+    if (botId && meetingPersonId) return;
+    if (identityPromise) return identityPromise;
+    identityPromise = (async () => {
+      if (!botId) {
+        const bot = await webexFetch(cfg.botToken, '/people/me');
+        botId = bot.id;
+      }
+      if (!meetingPersonId) {
+        const me = await tokenStore.meetingFetch('/people/me');
+        meetingPersonId = me.id;
+      }
+    })().finally(() => {
+      identityPromise = null;
+    });
+    return identityPromise;
+  }
+
   async function start() {
-    const bot = await webexFetch(cfg.botToken, '/people/me');
-    botId = bot.id;
-    const me = await tokenStore.meetingFetch('/people/me');
-    meetingPersonId = me.id;
+    await ensureIdentities();
     await browserRuntime.init(tokenStore.getToken());
     log?.info?.(`[webex-meeting-join] ready — bot=${botId} meeting-account=${meetingPersonId}`);
   }
@@ -47,7 +63,7 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
   // from their own REST call, and fetching it twice was a real bug found
   // while writing the reconcile() test: an unnecessary extra REST round-trip
   // that's also an extra way for the join to fail.
-  async function tryJoin(meeting) {
+  async function tryJoin(meeting, { announceFailure = true } = {}) {
     const meetingId = meeting?.id;
     const roomId = meeting?.roomId;
     if (!meetingId) return { skipped: 'no-id' };
@@ -58,6 +74,9 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
     return state.withLock(meetingId, async () => {
       if (state.isSuppressed(meetingId) || state.isJoined(meetingId)) return { skipped: 'race' };
 
+      // If startup identity discovery was temporarily unavailable, the
+      // webhook/poll path retries it before making the membership decision.
+      await ensureIdentities();
       const member = await isRoomMember(tokenStore.meetingFetch, roomId, meetingPersonId).catch(() => false);
       if (!member) return { skipped: 'not-a-member' };
 
@@ -65,14 +84,20 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
       const kind = classifyMeetingKind(meeting);
 
       try {
-        await browserRuntime.join(destination, type);
+        // Propagate a token refreshed by the REST client into the long-lived
+        // Browser SDK before every operation. init() is idempotent and only
+        // updates the SDK credential when the token actually changed.
+        await browserRuntime.init(tokenStore.getToken());
+        const sdkMeetingId = await browserRuntime.join(destination, type);
+        state.markJoined(meetingId, { roomId, kind, destination, sdkMeetingId });
       } catch (err) {
         log?.error?.(`[webex-meeting-join] join failed for meeting=${meetingId}: ${err?.message ?? err}`);
-        await announce(roomId, `I couldn't join the meeting that just started (${err?.message ?? 'unknown error'}). Please join manually if needed.`);
+        if (announceFailure) {
+          await announce(roomId, `I couldn't join the meeting that just started (${err?.message ?? 'unknown error'}). Please join manually if needed.`);
+        }
         throw err;
       }
 
-      state.markJoined(meetingId, { roomId, kind });
       const label = kind === 'instant' ? 'the meeting that just started' : 'the scheduled meeting';
       await announce(roomId, `Joined ${label}${meeting.title ? ` (“${meeting.title}”)` : ''}. Say "leave meeting" and I'll step out.`);
       log?.info?.(`[webex-meeting-join] joined meeting=${meetingId} room=${roomId}`);
@@ -82,9 +107,15 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
 
   async function tryLeave(meetingId, { roomId, suppress = true } = {}) {
     return state.withLock(meetingId, async () => {
-      if (!state.isJoined(meetingId)) return { skipped: 'not-joined' };
+      const info = state.joined.get(meetingId);
+      if (!info) return { skipped: 'not-joined' };
       try {
-        await browserRuntime.leave(meetingId);
+        await browserRuntime.init(tokenStore.getToken());
+        await browserRuntime.leave({
+          meetingId,
+          sdkMeetingId: info.sdkMeetingId,
+          destination: info.destination,
+        });
       } finally {
         // Even if the SDK leave() call fails, drop our own "joined" bookkeeping
         // rather than leaving the bot permanently stuck thinking it's present —
@@ -126,6 +157,7 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
   async function handleMessageCreated(payload) {
     const messageId = payload?.data?.id;
     if (!messageId) return;
+    await ensureIdentities();
     const message = await webexFetch(cfg.botToken, `/messages/${encodeURIComponent(messageId)}`).catch(() => null);
     if (!message || message.personId === botId || message.personId === meetingPersonId) return;
     if (!isAddressedToBot(message, botId)) return;
@@ -165,7 +197,7 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
     for (const meeting of active) {
       if (!meeting.id || !meeting.roomId) continue;
       try {
-        await tryJoin(meeting);
+        await tryJoin(meeting, { announceFailure: false });
       } catch (err) {
         log?.warn?.(`[webex-meeting-join] reconciliation join failed for meeting=${meeting.id}: ${err?.message ?? err}`);
       }
