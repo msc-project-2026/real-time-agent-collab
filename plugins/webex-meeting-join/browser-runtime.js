@@ -78,6 +78,7 @@ function createBrowserRuntime({ log, joinTimeoutMs }) {
   let page = null;
   let initialized = false;
   let bundleCode = null;
+  let lastAccessToken = null;
 
   async function ensureBrowserAlive() {
     if (browser?.isConnected?.()) return;
@@ -106,15 +107,28 @@ function createBrowserRuntime({ log, joinTimeoutMs }) {
   }
 
   async function init(accessToken) {
+    lastAccessToken = accessToken;
     await ensureBrowserAlive();
     if (initialized) return;
     await withTimeout(page.evaluate((token) => window.__webexMeetingJoin.init(token), accessToken), 'SDK init');
     initialized = true;
   }
 
-  async function join(destination, type) {
+  // ensureBrowserAlive() resets `initialized` to false whenever it has to
+  // (re)launch Chromium — e.g. the previous browser crashed or was never
+  // started — because a fresh page needs webex.meetings.register() again.
+  // Re-run init() with the last known token in that case instead of just
+  // throwing, so a browser crash between orchestrator.start() and the next
+  // join/leave call self-heals rather than permanently breaking joins.
+  async function ensureInitialized() {
     await ensureBrowserAlive();
-    if (!initialized) throw new Error('webex-meeting-join: browser runtime not initialised — call init() first');
+    if (initialized) return;
+    if (!lastAccessToken) throw new Error('webex-meeting-join: browser runtime not initialised — call init() first');
+    await init(lastAccessToken);
+  }
+
+  async function join(destination, type) {
+    await ensureInitialized();
     return withTimeout(
       page.evaluate(({ d, t }) => window.__webexMeetingJoin.join(d, t), { d: destination, t: type }),
       'meeting join'
@@ -122,8 +136,7 @@ function createBrowserRuntime({ log, joinTimeoutMs }) {
   }
 
   async function leave(meetingId) {
-    await ensureBrowserAlive();
-    if (!initialized) throw new Error('webex-meeting-join: browser runtime not initialised — call init() first');
+    await ensureInitialized();
     return withTimeout(page.evaluate((id) => window.__webexMeetingJoin.leave(id), meetingId), 'meeting leave');
   }
 
