@@ -34,8 +34,16 @@ COPY --chown=node:node docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod 755 /app/docker-entrypoint.sh
 
 # Manifests first (better layer caching): a source-only change to plugins/lib
-# won't invalidate the npm ci layer below.
-COPY --chown=node:node package.json package-lock.json /app/
+# won't invalidate the npm install layer below. Deliberately NOT copying
+# package-lock.json: this repo's root lockfile is stale/contaminated (it
+# still carries a whole unrelated Expo/Jest/React-Native dependency tree
+# nothing here declares, and pins chalk@4.1.2 at the top level despite the
+# ^5.3.0 override below). Installing from that lock hoists chalk@4.1.2 into
+# /app/node_modules, shadowing the chalk 5.x OpenClaw's own bundled CLI
+# needs (`import { Chalk } from 'chalk'`, a named export only chalk >=5
+# provides) and breaking it. Without the lockfile, npm resolves fresh from
+# package.json + the overrides below instead.
+COPY --chown=node:node package.json /app/
 COPY --chown=node:node lib/package.json /app/lib/package.json
 COPY --chown=node:node plugins/source-observer/package.json /app/plugins/source-observer/package.json
 COPY --chown=node:node plugins/webex-meeting-join/package.json /app/plugins/webex-meeting-join/package.json
