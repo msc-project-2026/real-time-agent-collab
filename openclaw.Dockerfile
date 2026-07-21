@@ -40,10 +40,14 @@ COPY --chown=node:node lib/package.json /app/lib/package.json
 COPY --chown=node:node plugins/source-observer/package.json /app/plugins/source-observer/package.json
 COPY --chown=node:node plugins/webex-meeting-join/package.json /app/plugins/webex-meeting-join/package.json
 
-# npm ci installs straight from the lockfile (no dependency resolution, unlike
-# npm install) so plugins can resolve @collab/* imports at runtime, without
-# touching OpenClaw's own package manifest or dependency tree.
-RUN npm ci --workspaces --ignore-scripts --no-audit --no-fund
+# Must be `npm install`, not `npm ci`: this image is layered on top of
+# OpenClaw's own pre-built /app, which already has its own node_modules
+# (e.g. tslog, used by OpenClaw's bundled CLI). `npm ci` deletes
+# node_modules before installing strictly from *our* lockfile, which knows
+# nothing about OpenClaw's own dependencies -- that wiped out tslog and
+# broke the inherited CLI. `npm install` merges our workspace deps in
+# without touching what's already there.
+RUN npm install --workspaces --ignore-scripts --no-audit --no-fund
 
 # Now the actual plugin/lib source.
 COPY --chown=node:node plugins/ /app/plugins/
