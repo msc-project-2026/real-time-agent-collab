@@ -31,3 +31,9 @@ test('stripMention only strips a leading @mention token, not a real first word',
   assert.equal(stripMention('leave the meeting'), 'leave the meeting');
   assert.equal(stripMention(''), '');
 });
+
+test('stripMention accepts the bot display name as a plain-text command address', () => {
+  assert.equal(stripMention('openclaw leave meeting', 'OpenClaw'), 'leave meeting');
+  assert.equal(stripMention('OpenClaw, please leave the meeting.', 'OpenClaw'), 'please leave the meeting.');
+  assert.equal(stripMention('The openclaw meeting is active', 'OpenClaw'), 'The openclaw meeting is active');
+});

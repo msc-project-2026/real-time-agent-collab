@@ -18,6 +18,7 @@ const {
 function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
   const state = new (require('./state').MeetingState)();
   let botId = null;
+  let botName = null;
   let meetingPersonId = null;
   let pollTimer = null;
   let identityPromise = null;
@@ -37,6 +38,7 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
       if (!botId) {
         const bot = await webexFetch(cfg.botToken, '/people/me');
         botId = bot.id;
+        botName = bot.displayName ?? bot.nickName ?? bot.firstName ?? null;
       }
       if (!meetingPersonId) {
         const me = await tokenStore.meetingFetch('/people/me');
@@ -160,9 +162,14 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
     await ensureIdentities();
     const message = await webexFetch(cfg.botToken, `/messages/${encodeURIComponent(messageId)}`).catch(() => null);
     if (!message || message.personId === botId || message.personId === meetingPersonId) return;
-    if (!isAddressedToBot(message, botId)) return;
-
-    const command = parseCommand(stripMention(message.text));
+    const commandText = stripMention(message.text, botName);
+    const command = parseCommand(commandText);
+    // Native @mentions remain the normal group-space control mechanism. A
+    // plain bot-name prefix is accepted only when it leaves an exact meeting
+    // command, so "openclaw leave meeting" works the same way as a native
+    // mention without treating normal discussion as a command.
+    const isPlainTextCommandAddress = command && commandText !== String(message.text ?? '').trim();
+    if (!isAddressedToBot(message, botId) && !isPlainTextCommandAddress) return;
     if (!command) return;
 
     const current = state.findJoinedByRoom(message.roomId);

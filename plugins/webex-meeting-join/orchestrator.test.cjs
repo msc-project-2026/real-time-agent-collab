@@ -237,6 +237,40 @@ test('handleMessageCreated leaves the meeting when addressed and asked to leave'
   }
 });
 
+test('handleMessageCreated accepts a plain bot-name prefix for an exact leave command', async () => {
+  const originalFetch = global.fetch;
+  const posted = [];
+  global.fetch = async (url, opts = {}) => {
+    if (String(url).endsWith('/people/me')) return response({ id: 'bot-id', displayName: 'OpenClaw' });
+    if (String(url).endsWith('/messages/msg-1')) {
+      return response({ id: 'msg-1', personId: 'human-1', roomId: 'room-1', roomType: 'group', mentionedPeople: [], text: 'openclaw leave meeting' });
+    }
+    if (String(url).endsWith('/messages')) {
+      posted.push(JSON.parse(opts.body));
+      return response({ id: 'ack' });
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  try {
+    const browserRuntime = fakeBrowserRuntime();
+    const orchestrator = createOrchestrator({
+      cfg: baseCfg(),
+      tokenStore: fakeTokenStore([['/people/me', { id: 'meeting-person-id' }]]),
+      browserRuntime,
+    });
+    await orchestrator.start();
+    orchestrator.state.markJoined('meeting-1', { roomId: 'room-1' });
+
+    await orchestrator.handleMessageCreated({ data: { id: 'msg-1' } });
+
+    assert.equal(browserRuntime.calls.leave.length, 1);
+    assert.equal(orchestrator.state.isJoined('meeting-1'), false);
+    assert.match(posted.at(-1).markdown, /Left the meeting/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('handleMessageCreated ignores messages not addressed to the bot', async () => {
   const originalFetch = global.fetch;
   global.fetch = async (url) => {
