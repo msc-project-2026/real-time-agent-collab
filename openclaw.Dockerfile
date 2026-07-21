@@ -33,14 +33,21 @@ COPY --chown=node:node config/workspace/ /app/config/workspace/
 COPY --chown=node:node docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod 755 /app/docker-entrypoint.sh
 
-# Copy the custom plugins without touching OpenClaw's own package manifest or
-# dependency tree.
+# Manifests first (better layer caching): a source-only change to plugins/lib
+# won't invalidate the npm ci layer below.
+COPY --chown=node:node package.json package-lock.json /app/
+COPY --chown=node:node lib/package.json /app/lib/package.json
+COPY --chown=node:node plugins/source-observer/package.json /app/plugins/source-observer/package.json
+COPY --chown=node:node plugins/webex-meeting-join/package.json /app/plugins/webex-meeting-join/package.json
+
+# npm ci installs straight from the lockfile (no dependency resolution, unlike
+# npm install) so plugins can resolve @collab/* imports at runtime, without
+# touching OpenClaw's own package manifest or dependency tree.
+RUN npm ci --workspaces --ignore-scripts --no-audit --no-fund
+
+# Now the actual plugin/lib source.
 COPY --chown=node:node plugins/ /app/plugins/
 COPY --chown=node:node lib/ /app/lib/
-
-# Install workspace packages so plugins can resolve @collab/* imports at runtime.
-COPY --chown=node:node package.json /app/package.json
-RUN npm install --workspaces --ignore-scripts
 
 # Install Playwright's Chromium binary and its required system libraries.
 # The base image (node:24-bookworm-slim) lacks these dependencies.
