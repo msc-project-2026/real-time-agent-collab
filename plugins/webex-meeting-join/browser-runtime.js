@@ -220,11 +220,18 @@ function createBrowserRuntime({ log, joinTimeoutMs, launchChromium, loadBundle =
   async function join(destination, type) {
     await ensureInitialized();
     try {
-      return await withTimeout(
+      const result = await withTimeout(
         page.evaluate(({ d, t }) => window.__webexMeetingJoin.join(d, t), { d: destination, t: type }),
         'meeting join',
         { resetOnTimeout: true }
       );
+      if (result?.recovered && result?.meetingId) {
+        log?.warn?.(
+          '[webex-meeting-join] SDK join response was inconclusive, but Locus confirmed this device joined; continuing as joined'
+        );
+        return result.meetingId;
+      }
+      return result;
     } catch (err) {
       if (page?.isClosed?.()) initialized = false;
       throw err;

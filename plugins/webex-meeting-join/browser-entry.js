@@ -108,39 +108,85 @@ function updateAccessToken(accessToken) {
   webex.credentials.supertoken.access_token = accessToken;
 }
 
+function cleanSdkText(value) {
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  const text = String(value)
+    .split('\n')
+    .filter((line) => !['undefined', 'null'].includes(line.trim().toLowerCase()))
+    .join('\n')
+    .trim();
+  return text || null;
+}
+
 function formatSdkError(err) {
   const cause = err?.error ?? err?.cause;
-  const status = cause?.statusCode ?? cause?.status ?? err?.statusCode ?? err?.status;
+  const status = cause?.statusCode
+    ?? cause?.status
+    ?? cause?.response?.statusCode
+    ?? cause?.response?.status
+    ?? err?.statusCode
+    ?? err?.status;
   const code = cause?.body?.errorCode ?? cause?.code ?? err?.code;
-  const detail = cause?.body?.message
-    ?? cause?.body?.errors?.map((item) => item?.description).filter(Boolean).join('; ')
-    ?? cause?.message
-    ?? cause?.reason;
+  const detail = cleanSdkText(cause?.body?.message)
+    ?? cleanSdkText(cause?.body?.errors?.map((item) => item?.description).filter(Boolean).join('; '))
+    ?? cleanSdkText(cause?.message)
+    ?? cleanSdkText(cause?.reason);
   return [
     err?.name && err.name !== 'Error' ? err.name : null,
-    err?.message ?? 'Webex SDK operation failed',
+    cleanSdkText(err?.message) ?? 'Webex SDK operation failed',
     status ? `HTTP ${status}` : null,
     code ? `code ${code}` : null,
     detail && detail !== err?.message ? detail : null,
   ].filter(Boolean).join(' — ');
 }
 
+function joinedOnThisDevice(meeting) {
+  // SelfUtils.parse() selects `joinedWith` by matching the registered Webex
+  // device URL. Requiring that field avoids mistaking another browser/mobile
+  // client logged into the same dedicated account for this bot instance.
+  const self = meeting?.locusInfo?.parsedLocus?.self;
+  return self?.state === 'JOINED' && self?.joinedWith?.state === 'JOINED';
+}
+
+async function confirmJoinedAfterError(meeting) {
+  // A Locus join can be committed server-side while the HTTP response path
+  // rejects (for example, response/interceptor failures). Mercury normally
+  // delivers the authoritative Locus state shortly afterwards; an explicit
+  // sync covers a missed/delayed event.
+  if (joinedOnThisDevice(meeting)) return true;
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  if (joinedOnThisDevice(meeting)) return true;
+  try {
+    await webex.meetings.syncMeetings({ keepOnlyLocusMeetings: false });
+  } catch {
+    // Preserve the original join error if confirmation itself is unavailable.
+  }
+  if (joinedOnThisDevice(meeting)) return true;
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  return joinedOnThisDevice(meeting);
+}
+
 // destination/type: see meetings.js#resolveDestination — preferably the same
 // HTTPS webLink a human uses, never a roomId/spaceId.
 async function join(destination, type) {
   if (!webex) throw new Error('webex-meeting-join: browser SDK not initialised');
+  let meeting;
   try {
-    const meeting = await webex.meetings.create(destination, type);
+    meeting = await webex.meetings.create(destination, type);
     // Webex explicitly supports a signaling-only join. Media can be attached
     // later with addMedia(); phase 1 deliberately joins without microphone,
     // camera, or remote media.
     await meeting.join({ moderator: false });
     return meeting.id;
   } catch (err) {
+    const diagnostic = formatSdkError(err);
+    if (meeting && await confirmJoinedAfterError(meeting)) {
+      return { meetingId: meeting.id, recovered: true, diagnostic };
+    }
     // Playwright normally serializes only Error.message/stack and hides the
     // HTTP response nested inside JoinMeetingError.error. Re-throw a concise,
     // token-free description so production logs show the actual Webex reason.
-    throw new Error(formatSdkError(err));
+    throw new Error(diagnostic);
   }
 }
 

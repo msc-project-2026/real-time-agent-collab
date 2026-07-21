@@ -14,7 +14,7 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function makeHarness(behavior = async () => undefined) {
+function makeHarness(behavior = async () => undefined, { log } = {}) {
   const pages = [];
   let launchCalls = 0;
   const browser = {
@@ -48,6 +48,7 @@ function makeHarness(behavior = async () => undefined) {
     },
   };
   const runtime = createBrowserRuntime({
+    log,
     joinTimeoutMs: 100,
     launchChromium: async () => {
       launchCalls += 1;
@@ -79,6 +80,20 @@ test('init is idempotent and updates a refreshed token in the existing SDK insta
       { method: 'join', arg: { d: 'sip:test@example.com', t: 'SIP_URI' } },
     ]
   );
+});
+
+test('join accepts a device-confirmed Locus success after an SDK response failure', async () => {
+  const warnings = [];
+  const harness = makeHarness(async (method) => method === 'join'
+    ? { meetingId: 'sdk-meeting-id', recovered: true, diagnostic: 'JoinMeetingError — code 2' }
+    : undefined, { log: { warn: (message) => warnings.push(message) } });
+
+  await harness.runtime.init('token-1');
+  const sdkId = await harness.runtime.join('https://example.webex.com/meet/test', 'MEETING_LINK');
+
+  assert.equal(sdkId, 'sdk-meeting-id');
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /Locus confirmed this device joined/);
 });
 
 test('a failed SDK initialization discards the partial page before retrying', async () => {

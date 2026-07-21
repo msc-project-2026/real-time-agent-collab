@@ -75,6 +75,12 @@ The page uses an in-memory `http://openclaw.local` document. A bare Playwright
 page has a `null` origin, which Webex rejects during CORS preflight for U2C and
 Hydra and eventually surfaces as a preauth-catalog timeout.
 
+If Webex commits the Locus join but its SDK response/interceptor still rejects,
+the plugin waits for Mercury and performs one meeting sync before deciding the
+join failed. It accepts the join only when Locus reports `JOINED` for the
+registered browser device itself; another client using the same meeting account
+cannot produce a false success.
+
 `meeting.join()` is intentionally called without `meeting.addMedia()` — the
 Webex SDK documents this as joining without media. No audio/video track is
 requested in phase 1; transcription will require adding receive-media handling
