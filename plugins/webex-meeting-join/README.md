@@ -23,8 +23,9 @@ media handling (see "Known limitations" below).
    `meeting.join()`.
 3. A user typing "leave meeting" (or `/meeting leave`) in the space —
    addressed to the bot via @mention in a group space, or any message in a
-   1:1 — triggers `meeting.leave()` and a suppression flag so the bot won't
-   auto-rejoin that same meeting instance.
+   1:1 — asks the SDK for its authenticated Locus leave request, dispatches
+   that request from the Node host (outside browser CORS), and sets a
+   suppression flag so the bot won't auto-rejoin that same meeting instance.
 4. A startup reconciliation sweep + a periodic poll (default every 5
    minutes) catch any meeting the `started` webhook missed.
 
@@ -73,6 +74,13 @@ setup and causes the `.internal`/`setDeviceInfo` TypeErrors.
 The page uses an in-memory `http://openclaw.local` document. A bare Playwright
 page has a `null` origin, which Webex rejects during CORS preflight for U2C and
 Hydra and eventually surfaces as a preauth-catalog timeout.
+
+The Locus participant-leave `PUT` is dispatched by the Node host using the
+request produced by the SDK's public `meeting.buildLeaveFetchRequestOptions()`
+API. This is the same request used by `meeting.leave()`, but it is not subject
+to the synthetic page origin's CORS policy. The runtime accepts only HTTPS
+`*.wbx2.com` participant-leave endpoints and reports the actual Locus HTTP
+status/body if Webex rejects the operation.
 
 If Webex commits the Locus join but its SDK response/interceptor still rejects,
 the plugin waits for Mercury and synchronizes twice before deciding the join

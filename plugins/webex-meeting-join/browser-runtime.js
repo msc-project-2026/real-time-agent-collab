@@ -11,6 +11,35 @@ const fs = require('node:fs');
 
 const BUNDLE_CACHE_PATH = path.join(__dirname, '.generated', 'browser-entry.bundle.js');
 const RUNTIME_ORIGIN = 'http://openclaw.local';
+const LOCUS_LEAVE_PATH = /^\/locus\/api\/v1\/loci\/[^/]+\/participant\/[^/]+\/leave$/;
+
+function assertLocusLeaveRequest(request) {
+  let url;
+  try {
+    url = new URL(request?.url);
+  } catch {
+    throw new Error('Webex SDK returned an invalid Locus leave URL');
+  }
+  const isWebexLocusHost = url.hostname === 'wbx2.com' || url.hostname.endsWith('.wbx2.com');
+  if (url.protocol !== 'https:' || !isWebexLocusHost || !LOCUS_LEAVE_PATH.test(url.pathname)) {
+    throw new Error(`Webex SDK returned an unexpected Locus leave endpoint: ${url.origin}${url.pathname}`);
+  }
+  if (String(request?.method ?? '').toUpperCase() !== 'PUT') {
+    throw new Error(`Webex SDK returned an unexpected Locus leave method: ${request?.method ?? 'missing'}`);
+  }
+  return url.href;
+}
+
+async function responseErrorDetail(response) {
+  const text = await response.text().catch(() => '');
+  if (!text) return '';
+  try {
+    const body = JSON.parse(text);
+    return body.message ?? body.error ?? body.errorString ?? text;
+  } catch {
+    return text;
+  }
+}
 
 // Bundles browser-entry.js (which requires the Node-oriented `webex` package)
 // into a single browser-runnable script. Built once and cached to disk so a
@@ -76,7 +105,13 @@ async function ensureBundle(log) {
   return code;
 }
 
-function createBrowserRuntime({ log, joinTimeoutMs, launchChromium, loadBundle = ensureBundle }) {
+function createBrowserRuntime({
+  log,
+  joinTimeoutMs,
+  launchChromium,
+  loadBundle = ensureBundle,
+  fetchImpl = globalThis.fetch,
+}) {
   let browser = null;
   let page = null;
   let initialized = false;
@@ -244,11 +279,31 @@ function createBrowserRuntime({ log, joinTimeoutMs, launchChromium, loadBundle =
 
   async function leave(reference) {
     await ensureInitialized();
-    return withTimeout(
+    const request = await withTimeout(
       page.evaluate((ref) => window.__webexMeetingJoin.leave(ref), reference),
-      'meeting leave',
+      'meeting leave preparation',
       { resetOnTimeout: true }
     );
+    const url = assertLocusLeaveRequest(request);
+    const response = await withTimeout(
+      fetchImpl(url, {
+        method: 'PUT',
+        headers: request.headers,
+        body: request.body,
+      }),
+      'meeting leave',
+      { resetOnTimeout: false }
+    );
+    if (!response.ok) {
+      const detail = await responseErrorDetail(response);
+      throw new Error(`Webex Locus leave failed with HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
+    }
+    await withTimeout(
+      page.evaluate((ref) => window.__webexMeetingJoin.confirmLeft(ref), reference),
+      'meeting leave confirmation'
+    ).catch((err) => {
+      log?.warn?.(`[webex-meeting-join] leave succeeded but SDK state confirmation failed: ${err?.message ?? err}`);
+    });
   }
 
   async function syncActive() {
@@ -281,4 +336,10 @@ function createBrowserRuntime({ log, joinTimeoutMs, launchChromium, loadBundle =
   return { init, join, leave, syncActive, status, dispose };
 }
 
-module.exports = { createBrowserRuntime, ensureBundle, BUNDLE_CACHE_PATH, RUNTIME_ORIGIN };
+module.exports = {
+  createBrowserRuntime,
+  ensureBundle,
+  assertLocusLeaveRequest,
+  BUNDLE_CACHE_PATH,
+  RUNTIME_ORIGIN,
+};

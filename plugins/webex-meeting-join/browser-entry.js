@@ -207,30 +207,40 @@ async function leave(reference) {
   } catch {
     // The existing local object can still be sufficient to leave.
   }
-  let meeting = findMeeting(reference, { activeOnly: true }) ?? findMeeting(reference);
+  const meeting = findMeeting(reference, { activeOnly: true }) ?? findMeeting(reference);
   if (!meeting) {
     const id = typeof reference === 'string' ? reference : reference?.meetingId ?? reference?.sdkMeetingId;
     throw new Error(`no local or active Webex meeting object matched ${id ?? 'the requested meeting'}`);
   }
 
-  try {
-    await meeting.leave();
-  } catch (firstError) {
-    // A stale failed-join object may have won the initial identifier match.
-    // Re-sync once and retry only on a different active local object.
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    let syncSucceeded = true;
-    await webex.meetings.syncMeetings({ keepOnlyLocusMeetings: false }).catch(() => {
-      syncSucceeded = false;
-    });
-    const refreshed = findMeeting(reference, { activeOnly: true });
-    // Like join(), Locus can commit the leave while the response path rejects.
-    // A successful sync with no matching active browser device confirms leave.
-    if (syncSucceeded && !refreshed) return;
-    if (!refreshed || !activeOnThisDevice(refreshed)) throw firstError;
-    meeting = refreshed;
-    await meeting.leave();
-  }
+  // meeting.leave() sends this exact Locus request from the browser. Unlike
+  // the join endpoints, some Locus clusters do not return CORS headers for
+  // this PUT when the runtime uses its synthetic openclaw.local origin. The
+  // SDK then hides the response behind NetworkOrCORSError even though the
+  // request itself is valid. Webex exposes this public helper for callers
+  // that need to dispatch the leave fetch themselves (normally pagehide).
+  // Keep construction and authentication in the SDK, but let the Node host
+  // perform the returned request outside browser CORS.
+  const options = await meeting.buildLeaveFetchRequestOptions();
+  const headers = options.headers instanceof Headers
+    ? Object.fromEntries(options.headers.entries())
+    : { ...(options.headers ?? {}) };
+  return {
+    url: options.uri ?? options.url,
+    method: options.method,
+    headers,
+    body: options.body,
+  };
+}
+
+async function confirmLeft(reference) {
+  if (!webex) throw new Error('webex-meeting-join: browser SDK not initialised');
+  // Mercury usually updates the object immediately. A sync also ensures a
+  // long-lived headless page does not retain an active object after the raw
+  // fetch path above. Confirmation is best-effort: a successful Locus HTTP
+  // response is authoritative even if this follow-up sync is unavailable.
+  await webex.meetings.syncMeetings({ keepOnlyLocusMeetings: false });
+  return !findMeeting(reference, { activeOnly: true });
 }
 
 // Rebuilds the SDK's local meeting-object cache from Webex's own state.
@@ -267,4 +277,4 @@ function status() {
   };
 }
 
-window.__webexMeetingJoin = { init, updateAccessToken, join, leave, syncActive, dispose, status };
+window.__webexMeetingJoin = { init, updateAccessToken, join, leave, confirmLeft, syncActive, dispose, status };

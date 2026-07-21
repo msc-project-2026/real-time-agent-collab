@@ -2,7 +2,11 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { createBrowserRuntime, RUNTIME_ORIGIN } = require('./browser-runtime');
+const {
+  createBrowserRuntime,
+  assertLocusLeaveRequest,
+  RUNTIME_ORIGIN,
+} = require('./browser-runtime');
 
 function deferred() {
   let resolve;
@@ -14,7 +18,7 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function makeHarness(behavior = async () => undefined, { log } = {}) {
+function makeHarness(behavior = async () => undefined, { log, fetchImpl } = {}) {
   const pages = [];
   let launchCalls = 0;
   const browser = {
@@ -55,6 +59,7 @@ function makeHarness(behavior = async () => undefined, { log } = {}) {
       return browser;
     },
     loadBundle: async () => '/* fake bundle */',
+    fetchImpl,
   });
   return { runtime, browser, pages, get launchCalls() { return launchCalls; } };
 }
@@ -133,7 +138,19 @@ test('concurrent initialization is coalesced and a racing token refresh is appli
 });
 
 test('leave forwards stable REST, SDK, and destination identifiers to the page', async () => {
-  const harness = makeHarness();
+  const requests = [];
+  const leaveRequest = {
+    url: 'https://locus-k.wbx2.com/locus/api/v1/loci/locus-id/participant/self-id/leave',
+    method: 'PUT',
+    headers: { authorization: 'Bearer token-1', 'content-type': 'application/json' },
+    body: '{"correlationId":"correlation-id"}',
+  };
+  const harness = makeHarness(async (method) => method === 'leave' ? leaveRequest : undefined, {
+    fetchImpl: async (...args) => {
+      requests.push(args);
+      return { ok: true, status: 200 };
+    },
+  });
   const reference = {
     meetingId: 'rest-id',
     sdkMeetingId: 'sdk-id',
@@ -143,5 +160,61 @@ test('leave forwards stable REST, SDK, and destination identifiers to the page',
   await harness.runtime.init('token-1');
   await harness.runtime.leave(reference);
 
-  assert.deepEqual(harness.pages[0].calls.at(-1), { method: 'leave', arg: reference });
+  assert.deepEqual(harness.pages[0].calls.slice(-2), [
+    { method: 'leave', arg: reference },
+    { method: 'confirmLeft', arg: reference },
+  ]);
+  assert.deepEqual(requests, [[leaveRequest.url, {
+    method: 'PUT',
+    headers: leaveRequest.headers,
+    body: leaveRequest.body,
+  }]]);
+});
+
+test('leave reports the actual Locus HTTP error returned outside browser CORS', async () => {
+  const leaveRequest = {
+    url: 'https://locus-k.wbx2.com/locus/api/v1/loci/locus-id/participant/self-id/leave',
+    method: 'PUT',
+    headers: {},
+    body: '{}',
+  };
+  const harness = makeHarness(async (method) => method === 'leave' ? leaveRequest : undefined, {
+    fetchImpl: async () => ({
+      ok: false,
+      status: 403,
+      async text() { return '{"message":"participant cannot leave"}'; },
+    }),
+  });
+
+  await harness.runtime.init('token-1');
+  await assert.rejects(
+    harness.runtime.leave({ meetingId: 'rest-id' }),
+    /Webex Locus leave failed with HTTP 403: participant cannot leave/
+  );
+  assert.equal(harness.pages[0].calls.at(-1).method, 'leave');
+});
+
+test('Locus leave request validation rejects non-leave and non-HTTPS endpoints', () => {
+  assert.equal(
+    assertLocusLeaveRequest({
+      url: 'https://locus-k.wbx2.com/locus/api/v1/loci/locus-id/participant/self-id/leave',
+      method: 'PUT',
+    }),
+    'https://locus-k.wbx2.com/locus/api/v1/loci/locus-id/participant/self-id/leave'
+  );
+  assert.throws(
+    () => assertLocusLeaveRequest({ url: 'http://127.0.0.1/locus/api/v1/loci/a/participant/b/leave', method: 'PUT' }),
+    /unexpected Locus leave endpoint/
+  );
+  assert.throws(
+    () => assertLocusLeaveRequest({ url: 'https://locus-k.wbx2.com/other', method: 'PUT' }),
+    /unexpected Locus leave endpoint/
+  );
+  assert.throws(
+    () => assertLocusLeaveRequest({
+      url: 'https://example.com/locus/api/v1/loci/a/participant/b/leave',
+      method: 'PUT',
+    }),
+    /unexpected Locus leave endpoint/
+  );
 });
