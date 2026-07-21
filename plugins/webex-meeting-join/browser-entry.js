@@ -108,16 +108,40 @@ function updateAccessToken(accessToken) {
   webex.credentials.supertoken.access_token = accessToken;
 }
 
-// destination/type: see meetings.js#resolveDestination — meetingId or
-// sipUrl, never a roomId/spaceId (Webex rejects that with error 30105).
+function formatSdkError(err) {
+  const cause = err?.error ?? err?.cause;
+  const status = cause?.statusCode ?? cause?.status ?? err?.statusCode ?? err?.status;
+  const code = cause?.body?.errorCode ?? cause?.code ?? err?.code;
+  const detail = cause?.body?.message
+    ?? cause?.body?.errors?.map((item) => item?.description).filter(Boolean).join('; ')
+    ?? cause?.message
+    ?? cause?.reason;
+  return [
+    err?.name && err.name !== 'Error' ? err.name : null,
+    err?.message ?? 'Webex SDK operation failed',
+    status ? `HTTP ${status}` : null,
+    code ? `code ${code}` : null,
+    detail && detail !== err?.message ? detail : null,
+  ].filter(Boolean).join(' — ');
+}
+
+// destination/type: see meetings.js#resolveDestination — preferably the same
+// HTTPS webLink a human uses, never a roomId/spaceId.
 async function join(destination, type) {
   if (!webex) throw new Error('webex-meeting-join: browser SDK not initialised');
-  const meeting = await webex.meetings.create(destination, type);
-  // Webex explicitly supports a signaling-only join. Media can be attached
-  // later with addMedia(); phase 1 deliberately joins without microphone,
-  // camera, or remote media.
-  await meeting.join({ moderator: false });
-  return meeting.id;
+  try {
+    const meeting = await webex.meetings.create(destination, type);
+    // Webex explicitly supports a signaling-only join. Media can be attached
+    // later with addMedia(); phase 1 deliberately joins without microphone,
+    // camera, or remote media.
+    await meeting.join({ moderator: false });
+    return meeting.id;
+  } catch (err) {
+    // Playwright normally serializes only Error.message/stack and hides the
+    // HTTP response nested inside JoinMeetingError.error. Re-throw a concise,
+    // token-free description so production logs show the actual Webex reason.
+    throw new Error(formatSdkError(err));
+  }
 }
 
 function findMeeting(reference) {
@@ -132,6 +156,7 @@ function findMeeting(reference) {
   return Object.values(meetings).find((meeting) => [
     meeting.id,
     meeting.destination,
+    meeting.meetingLink,
     meeting.sipUri,
     meeting.meetingInfo?.meetingId,
     meeting.meetingInfo?.sipUri,

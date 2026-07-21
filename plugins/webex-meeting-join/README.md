@@ -16,10 +16,12 @@ media handling (see "Known limitations" below).
    `meetings/ended` (owned by the dedicated meeting account), and
    `messages/created` (owned by the bot account).
 2. When a `meetings/started` webhook fires, it resolves the meeting's
-   `meetingId`/`sipUrl` via REST, confirms the meeting account is a member of
-   the associated space, and drives a headless Chromium instance (via
-   Playwright) that hosts the actual `@webex/plugin-meetings` SDK to call
-   `webex.meetings.create()` + `meeting.join()`.
+   normal attendee-facing HTTPS `webLink` via REST (falling back to the
+   meeting ID or SIP address only if Webex omitted that link), confirms the
+   meeting account is a member of the associated space, and drives a headless
+   Chromium instance (via Playwright) that hosts the actual
+   `@webex/plugin-meetings` SDK to call `webex.meetings.create()` +
+   `meeting.join()`.
 3. A user typing "leave meeting" (or `/meeting leave`) in the space —
    addressed to the bot via @mention in a group space, or any message in a
    1:1 — triggers `meeting.leave()` and a suppression flag so the bot won't

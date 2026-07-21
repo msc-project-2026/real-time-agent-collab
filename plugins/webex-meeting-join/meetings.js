@@ -4,13 +4,10 @@
 'use strict';
 
 // Webex's Unified Space Meetings migration removed roomId/spaceId as a valid
-// SDK join destination entirely (error 30105: "Using the space ID as a
-// destination is no longer supported"). meetingId or sipUrl are required
-// instead — both only obtainable via the REST API, never from the webhook
-// payload alone (Webex webhook payloads for `meetings` only reliably carry
-// `id`; the rest is UNVERIFIED against a real payload until this fires for
-// real — same caveat plugins/webex/meeting-transcript.js already carries for
-// the meetingTranscripts resource).
+// SDK join destination entirely (error 30105). The REST meeting object gives
+// us the human attendee URL as `webLink`; use that exact link with the SDK's
+// MEETING_LINK destination type. The webhook itself only reliably carries the
+// meeting id, so callers fetch the full meeting before resolving this value.
 function classifyMeetingKind(meeting) {
   const type = String(meeting?.meetingType ?? '').toLowerCase();
   if (type === 'meeting') return 'instant';
@@ -19,23 +16,26 @@ function classifyMeetingKind(meeting) {
   return 'unknown';
 }
 
-// Prefers sipUrl (documented as the more reliable USM destination) over
-// meetingId. Throws if neither is present — callers must not fall back to
-// roomId/spaceId (that's exactly the removed, now-rejected destination
-// shape).
+// Prefer the same HTTPS meeting link a human clicks. `meetingLink` and
+// `joinLink` cover alternate upstream response shapes. A meeting id is the
+// first non-link fallback; SIP is retained only for records that expose
+// neither a human link nor an id. Never fall back to roomId/spaceId.
 function resolveDestination(meeting) {
+  const webLink = [meeting?.webLink, meeting?.meetingLink, meeting?.joinLink]
+    .find((value) => typeof value === 'string' && /^https:\/\//i.test(value.trim()));
+  if (webLink) {
+    return { destination: webLink.trim(), type: 'MEETING_LINK' };
+  }
+  if (typeof meeting?.id === 'string' && meeting.id) {
+    return { destination: meeting.id, type: 'MEETING_ID' };
+  }
   if (typeof meeting?.sipUrl === 'string' && meeting.sipUrl) {
     return { destination: meeting.sipUrl, type: 'SIP_URI' };
   }
-  if (typeof meeting?.id === 'string' && meeting.id) {
-    // UNVERIFIED: the exact `type` string the SDK expects for a bare
-    // meetingId destination wasn't confirmed against live docs (samples use
-    // a UI dropdown without enumerating every value). Passing `undefined`
-    // lets webex.meetings.create() infer the type itself, which is the
-    // pattern shown in Webex's own sample app.
-    return { destination: meeting.id, type: undefined };
+  if (typeof meeting?.sipAddress === 'string' && meeting.sipAddress) {
+    return { destination: meeting.sipAddress, type: 'SIP_URI' };
   }
-  throw new Error('meeting has no sipUrl or id — cannot resolve a join destination');
+  throw new Error('meeting has no human webLink, meeting id, or SIP address');
 }
 
 async function fetchMeetingWithRetry(meetingFetch, meetingId, { attempts = 3, delayMs = 1500 } = {}) {

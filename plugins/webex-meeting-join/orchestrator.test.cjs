@@ -85,7 +85,7 @@ test('handleMeetingStarted joins a member space meeting and announces success', 
       tokenStore: fakeTokenStore([
         ['/people/me', { id: 'meeting-person-id' }],
         ['/memberships?', { items: [{ id: 'membership-1' }] }],
-        ['/meetings/meeting-1', { id: 'meeting-1', roomId: 'room-1', sipUrl: 'sip:x@webex.com', meetingType: 'meeting' }],
+        ['/meetings/meeting-1', { id: 'meeting-1', roomId: 'room-1', webLink: 'https://example.webex.com/meet/human-link', sipUrl: 'sip:x@webex.com', meetingType: 'meeting' }],
       ]),
       browserRuntime,
     });
@@ -94,7 +94,7 @@ test('handleMeetingStarted joins a member space meeting and announces success', 
 
     assert.equal(orchestrator.state.isJoined('meeting-1'), true);
     assert.equal(orchestrator.state.joined.get('meeting-1').sdkMeetingId, 'sdk-meeting-1');
-    assert.deepEqual(browserRuntime.calls.join, [{ destination: 'sip:x@webex.com', type: 'SIP_URI' }]);
+    assert.deepEqual(browserRuntime.calls.join, [{ destination: 'https://example.webex.com/meet/human-link', type: 'MEETING_LINK' }]);
     assert.equal(posted.at(-1).roomId, 'room-1');
     assert.match(posted.at(-1).markdown, /Joined/);
   } finally {
@@ -281,14 +281,14 @@ test('reconcile() joins active meetings missed by the started webhook', async ()
       tokenStore: fakeTokenStore([
         ['/people/me', { id: 'meeting-person-id' }],
         ['/memberships?', { items: [{ id: 'm1' }] }],
-        ['/meetings?', { items: [{ id: 'meeting-1', roomId: 'room-1', state: 'inprogress', sipUrl: 'sip:x@webex.com' }] }],
+        ['/meetings?', { items: [{ id: 'meeting-1', roomId: 'room-1', state: 'inprogress', webLink: 'https://example.webex.com/meet/human-link', sipUrl: 'sip:x@webex.com' }] }],
       ]),
       browserRuntime,
     });
     await orchestrator.start();
     await orchestrator.reconcile();
     assert.equal(orchestrator.state.isJoined('meeting-1'), true);
-    assert.deepEqual(browserRuntime.calls.join, [{ destination: 'sip:x@webex.com', type: 'SIP_URI' }]);
+    assert.deepEqual(browserRuntime.calls.join, [{ destination: 'https://example.webex.com/meet/human-link', type: 'MEETING_LINK' }]);
   } finally {
     global.fetch = originalFetch;
   }

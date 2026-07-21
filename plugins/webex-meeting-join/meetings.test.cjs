@@ -19,14 +19,20 @@ test('classifyMeetingKind maps Webex meetingType values', () => {
   assert.equal(classifyMeetingKind({}), 'unknown');
 });
 
-test('resolveDestination prefers sipUrl over id, and never falls back to roomId', () => {
+test('resolveDestination prefers the human webLink and never falls back to roomId', () => {
   assert.deepEqual(
-    resolveDestination({ sipUrl: 'sip:abc@webex.com', id: 'meeting-1', roomId: 'room-1' }),
-    { destination: 'sip:abc@webex.com', type: 'SIP_URI' }
+    resolveDestination({
+      webLink: 'https://example.webex.com/example/j.php?MTID=abc',
+      sipUrl: 'sip:abc@webex.com',
+      id: 'meeting-1',
+      roomId: 'room-1',
+    }),
+    { destination: 'https://example.webex.com/example/j.php?MTID=abc', type: 'MEETING_LINK' }
   );
-  assert.deepEqual(resolveDestination({ id: 'meeting-1', roomId: 'room-1' }), { destination: 'meeting-1', type: undefined });
-  assert.throws(() => resolveDestination({ roomId: 'room-1' }), /no sipUrl or id/);
-  assert.throws(() => resolveDestination({}), /no sipUrl or id/);
+  assert.deepEqual(resolveDestination({ id: 'meeting-1', roomId: 'room-1' }), { destination: 'meeting-1', type: 'MEETING_ID' });
+  assert.deepEqual(resolveDestination({ sipAddress: '123@example.webex.com' }), { destination: '123@example.webex.com', type: 'SIP_URI' });
+  assert.throws(() => resolveDestination({ roomId: 'room-1' }), /no human webLink/);
+  assert.throws(() => resolveDestination({}), /no human webLink/);
 });
 
 test('fetchMeetingWithRetry retries on failure and eventually succeeds', async () => {
