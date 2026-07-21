@@ -12,3 +12,6 @@ services/setup-ui/dist/
 ralph/
 CLAUDE.md
 client-brief.md
+.pi/
+.memory/
+.mcp.json

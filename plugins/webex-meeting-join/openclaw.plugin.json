@@ -1,0 +1,18 @@
+{
+  "id": "webex-meeting-join",
+  "name": "Webex Meeting Auto-Join",
+  "description": "Auto-joins Webex space meetings (instant and scheduled) via the Webex Browser SDK when they start, and leaves on request. Self-contained: no dependency on other OpenClaw plugins.",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "default": true
+      }
+    }
+  }
+}

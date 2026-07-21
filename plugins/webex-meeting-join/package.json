@@ -1,0 +1,34 @@
+{
+  "name": "@openclaw/webex-meeting-join",
+  "version": "1.0.0",
+  "description": "Auto-joins and leaves Webex space meetings using the Webex Browser SDK, triggered by Webex webhooks",
+  "main": "index.js",
+  "private": true,
+  "type": "commonjs",
+  "openclaw": {
+    "extensions": ["./index.js"]
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "test": "node --test *.test.cjs"
+  },
+  "dependencies": {
+    "@webex/webex-core": "3.12.0",
+    "@webex/plugin-meetings": "3.12.0",
+    "@webex/internal-plugin-device": "3.12.0",
+    "@webex/internal-plugin-conversation": "3.12.0",
+    "@webex/internal-plugin-llm": "3.12.0",
+    "@webex/internal-plugin-mercury": "3.12.0",
+    "@webex/internal-plugin-metrics": "3.12.0",
+    "@webex/internal-plugin-support": "3.12.0",
+    "@webex/internal-plugin-user": "3.12.0",
+    "@webex/internal-plugin-voicea": "3.12.0",
+    "@webex/plugin-people": "3.12.0",
+    "@webex/plugin-rooms": "3.12.0",
+    "playwright": "^1.52.0",
+    "esbuild": "^0.28.1",
+    "esbuild-plugin-polyfill-node": "^0.3.0"
+  }
+}

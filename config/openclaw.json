@@ -164,7 +164,8 @@
       "paths": [
         "plugins/webex",
         "plugins/openclaw",
-        "plugins/source-observer"
+        "plugins/source-observer",
+        "plugins/webex-meeting-join"
       ]
     },
     "entries": {
@@ -172,6 +173,9 @@
         "enabled": true
       },
       "webex": {
+        "enabled": true
+      },
+      "webex-meeting-join": {
         "enabled": true
       },
       "collab-writer": {
