@@ -10,6 +10,7 @@ const { ensureWebhooks, deregisterWebhooks } = require('./webhook-subscriptions'
 const { createWebhookRouter, ROUTE_PREFIX } = require('./webhook-router');
 const { createBrowserRuntime } = require('./browser-runtime');
 const { createOrchestrator } = require('./orchestrator');
+const { webexFetch } = require('./api');
 
 const TOKEN_REFRESH_INTERVAL_MS = 12 * 24 * 60 * 60 * 1000; // Webex tokens last ~14 days
 
@@ -24,12 +25,53 @@ function register(api) {
 
   const log = api.logger;
   const tokenStore = createTokenStore(cfg, log);
+
+  // Real-time transcription is opt-in via DEEPGRAM_API_KEY. When enabled, the
+  // browser streams meeting audio as PCM to the Deepgram session manager, whose
+  // per-turn transcripts flow through the (reused) webex proactivity gate and,
+  // when warranted, become a proactive reply in the meeting's Webex space.
+  let transcription = null;
+  let meetingAgent = null;
+  if (cfg.transcription.enabled) {
+    const { createTranscriptionManager } = require('./transcription');
+    const { createMeetingAgent } = require('./meeting-agent');
+    meetingAgent = createMeetingAgent({
+      runtime: api.runtime,
+      postToSpace: (roomId, markdown) =>
+        webexFetch(cfg.botToken, '/messages', { method: 'POST', body: { roomId, markdown } }),
+      gateThreshold: cfg.transcription.gateThreshold,
+      minTurnWords: cfg.transcription.minTurnWords,
+      log,
+    });
+    transcription = createTranscriptionManager({
+      apiKey: cfg.transcription.apiKey,
+      baseUrl: cfg.transcription.baseUrl,
+      model: cfg.transcription.model,
+      sampleRate: cfg.transcription.sampleRate,
+      eotThreshold: cfg.transcription.eotThreshold,
+      eotTimeoutMs: cfg.transcription.eotTimeoutMs,
+      log,
+      onTurn: (turn) => meetingAgent.handleTurn(turn),
+    });
+    log?.info?.(`[webex-meeting-join] transcription enabled (Deepgram model=${cfg.transcription.model})`);
+  } else {
+    log?.info?.('[webex-meeting-join] transcription disabled (set DEEPGRAM_API_KEY to enable)');
+  }
+
   const browserRuntime = createBrowserRuntime({
     log,
     joinTimeoutMs: cfg.joinTimeoutMs,
     executablePath: cfg.browserExecutablePath,
+    onAudioData: transcription ? (meetingId, base64) => transcription.pushPcm(meetingId, base64) : null,
   });
-  const orchestrator = createOrchestrator({ cfg, tokenStore, browserRuntime, log });
+  const orchestrator = createOrchestrator({
+    cfg,
+    tokenStore,
+    browserRuntime,
+    log,
+    transcription,
+    meetingAgent,
+  });
 
   let refreshInterval = null;
 

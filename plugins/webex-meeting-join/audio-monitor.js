@@ -19,12 +19,21 @@ const SILENCE_HOLD_MS = 2000;
 // While audio keeps flowing, re-confirm periodically instead of logging every
 // tick (or staying silent for a long, genuinely-audible stretch).
 const AUDIBLE_HEARTBEAT_MS = 30_000;
+// How often to sample WebRTC inbound-rtp stats. This is the speech-independent
+// proof that audio packets are actually arriving (the RMS meter only sees
+// decoded level, which is legitimately 0 in a silent room).
+const STATS_INTERVAL_MS = 5_000;
 
 // `report(level, message)` crosses the page→Node boundary (browser-entry wires
 // it to the binding browser-runtime exposes). Everything here is best-effort:
 // a listening add-on must never destabilise the join it rides on, so no path
 // in this module is allowed to throw into its caller.
-function createAudioMonitor({ meetingId, report }) {
+// `getInboundAudioStats` (optional) is an async function returning
+// `{ packetsReceived, bytesReceived, audioLevel }` for the received audio, or
+// null when unavailable. It's how we prove RTP is flowing regardless of whether
+// anyone is speaking; the RMS meter alone can't tell a quiet room from a dead
+// stream.
+function createAudioMonitor({ meetingId, report, getInboundAudioStats = null }) {
   let audioContext = null;
   let sourceNode = null;
   let analyser = null;
@@ -35,6 +44,12 @@ function createAudioMonitor({ meetingId, report }) {
   let lastAudibleAt = 0;
   let lastHeartbeatAt = 0;
   let stopped = false;
+  let lastStatsAt = 0;
+  let lastPacketsReceived = null;
+  let statsInFlight = false;
+  // 'unknown' → 'flowing' → 'stalled'; drives one-shot confirmation and a stall
+  // warning rather than a log line every interval.
+  let rtpState = 'unknown';
 
   function log(level, message) {
     try {
@@ -61,8 +76,37 @@ function createAudioMonitor({ meetingId, report }) {
     sink = null;
   }
 
+  // Speech-independent liveness: compare packetsReceived across polls. Async and
+  // self-throttled; never awaited inside tick() so the level meter stays crisp.
+  function checkRtpFlow(now) {
+    if (!getInboundAudioStats || statsInFlight || now - lastStatsAt < STATS_INTERVAL_MS) return;
+    statsInFlight = true;
+    lastStatsAt = now;
+    Promise.resolve()
+      .then(() => getInboundAudioStats())
+      .then((stats) => {
+        if (!stats || typeof stats.packetsReceived !== 'number') return;
+        const previous = lastPacketsReceived;
+        const delta = previous == null ? stats.packetsReceived : stats.packetsReceived - previous;
+        lastPacketsReceived = stats.packetsReceived;
+        const levelText = typeof stats.audioLevel === 'number' ? `, audioLevel=${stats.audioLevel.toFixed(4)}` : '';
+        if (delta > 0) {
+          if (rtpState !== 'flowing') {
+            log('info', `receiving audio RTP from Webex — packets flowing (+${delta}${levelText}, bytes=${stats.bytesReceived ?? '?'})`);
+            rtpState = 'flowing';
+          }
+        } else if (previous != null && rtpState === 'flowing') {
+          log('warn', `audio RTP stalled — no new packets in ~${Math.round(STATS_INTERVAL_MS / 1000)}s (packetsReceived=${stats.packetsReceived})`);
+          rtpState = 'stalled';
+        }
+      })
+      .catch(() => { /* diagnostics only; never disturb the meeting */ })
+      .finally(() => { statsInFlight = false; });
+  }
+
   function tick() {
     if (!analyser || !audioContext) return;
+    checkRtpFlow(Date.now());
     // Autoplay policy can leave the context suspended in headless Chromium;
     // resuming is idempotent and required for samples to flow.
     if (audioContext.state === 'suspended') audioContext.resume().catch(() => {});
@@ -110,6 +154,9 @@ function createAudioMonitor({ meetingId, report }) {
     audible = false;
     lastAudibleAt = 0;
     lastHeartbeatAt = 0;
+    lastStatsAt = 0;
+    lastPacketsReceived = null;
+    rtpState = 'unknown';
 
     // Tear down if the media connection ends (meeting ended, or the SDK swapped
     // in a new stream) so we stop metering a dead track.

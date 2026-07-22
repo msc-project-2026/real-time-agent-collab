@@ -7,6 +7,22 @@ const DEFAULT_POLL_INTERVAL_MS = 5 * 60 * 1000; // fallback reconciliation sweep
 const DEFAULT_JOIN_TIMEOUT_MS = 20_000;
 const MIN_POLL_INTERVAL_MS = 30_000;
 
+// Deepgram Flux (turn-based streaming ASR) defaults. Flux emits StartOfTurn /
+// EagerEndOfTurn / TurnResumed / EndOfTurn; we act on EndOfTurn only.
+const DEFAULT_DEEPGRAM_MODEL = 'flux-general-en';
+const DEFAULT_EOT_THRESHOLD = 0.7;
+const DEFAULT_EOT_TIMEOUT_MS = 5000;
+// Deepgram Flux linear16 input; 16 kHz mono is the model's native rate and what
+// the in-browser WebAudio capture downsamples to.
+const DEEPGRAM_SAMPLE_RATE = 16_000;
+// Skip trivially short turns ("yeah", "right", "mm-hmm") before spending a gate
+// LLM call — a live meeting produces many of these.
+const DEFAULT_MIN_TURN_WORDS = 5;
+// Meeting interventions use a single gate threshold (the webex chat plugin has
+// per-type thresholds; meeting turns are noisier, so we keep one conservative
+// bar). Tunable via env.
+const DEFAULT_MEETING_GATE_THRESHOLD = 0.7;
+
 function trimmed(v) {
   const s = v == null ? '' : String(v).trim();
   return s || undefined;
@@ -51,8 +67,37 @@ function getConfig(env = process.env) {
   // bundles H264) before falling back to Playwright's Chromium.
   const browserExecutablePath = trimmed(env.WEBEX_MEETING_BROWSER_EXECUTABLE);
 
+  // Real-time transcription (Deepgram) is entirely opt-in: with no API key the
+  // plugin behaves exactly as before (join/leave/listen), and no audio is
+  // captured out of the browser or sent off-box. The gate LLM reuses the webex
+  // chat plugin's CISCO_LLM_API_KEY-backed proactivity gate, so no extra key is
+  // needed for the intervention decision itself.
+  const deepgramApiKey = trimmed(env.DEEPGRAM_API_KEY);
+  // Optional: override the Deepgram endpoint (proxy or self-hosted). The SDK
+  // already defaults to https://api.deepgram.com, so leaving this unset is the
+  // same as pointing it there.
+  const deepgramBaseUrl = trimmed(env.DEEPGRAM_BASE_URL);
+
+  const eotThresholdRaw = Number(env.WEBEX_MEETING_EOT_THRESHOLD);
+  const eotTimeoutMsRaw = Number(env.WEBEX_MEETING_EOT_TIMEOUT_MS);
+  const minTurnWordsRaw = Number(env.WEBEX_MEETING_MIN_TURN_WORDS);
+  const gateThresholdRaw = Number(env.WEBEX_MEETING_GATE_THRESHOLD);
+
+  const transcription = {
+    enabled: Boolean(deepgramApiKey),
+    apiKey: deepgramApiKey,
+    baseUrl: deepgramBaseUrl,
+    model: trimmed(env.WEBEX_MEETING_DEEPGRAM_MODEL) ?? DEFAULT_DEEPGRAM_MODEL,
+    sampleRate: DEEPGRAM_SAMPLE_RATE,
+    eotThreshold: eotThresholdRaw > 0 && eotThresholdRaw <= 1 ? eotThresholdRaw : DEFAULT_EOT_THRESHOLD,
+    eotTimeoutMs: Number.isFinite(eotTimeoutMsRaw) && eotTimeoutMsRaw > 0 ? eotTimeoutMsRaw : DEFAULT_EOT_TIMEOUT_MS,
+    minTurnWords: Number.isFinite(minTurnWordsRaw) && minTurnWordsRaw >= 0 ? minTurnWordsRaw : DEFAULT_MIN_TURN_WORDS,
+    gateThreshold: gateThresholdRaw > 0 && gateThresholdRaw <= 1 ? gateThresholdRaw : DEFAULT_MEETING_GATE_THRESHOLD,
+  };
+
   return {
     browserExecutablePath,
+    transcription,
     botToken,
     meetingAccessToken,
     meetingRefreshToken,
@@ -66,4 +111,10 @@ function getConfig(env = process.env) {
   };
 }
 
-module.exports = { getConfig, DEFAULT_POLL_INTERVAL_MS, DEFAULT_JOIN_TIMEOUT_MS };
+module.exports = {
+  getConfig,
+  DEFAULT_POLL_INTERVAL_MS,
+  DEFAULT_JOIN_TIMEOUT_MS,
+  DEFAULT_DEEPGRAM_MODEL,
+  DEEPGRAM_SAMPLE_RATE,
+};

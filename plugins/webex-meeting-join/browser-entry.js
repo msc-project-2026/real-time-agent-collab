@@ -33,6 +33,7 @@ const {
   meetingReferences,
 } = require('./sdk-meeting-state');
 const { createAudioMonitor } = require('./audio-monitor');
+const { createPcmCapture } = require('./audio-capture');
 
 const Webex = WebexCore.extend({ webex: true });
 
@@ -44,6 +45,9 @@ let lastError = null;
 // dispose() can tear them down even though join() (where they're created) has
 // long since returned.
 const audioMonitors = new Map();
+// Live PCM captures keyed by SDK meeting id, torn down alongside their monitor.
+// Only created when Node exposed the transcription binding (see subscribeAudio).
+const audioCaptures = new Map();
 
 // Public Webex SDK media events. In transcoded (non-multistream) mode — the
 // mode our signalling-only join negotiates — the remote audio of every
@@ -74,9 +78,29 @@ function reportAudio(level, message) {
 
 function stopAudioMonitor(meetingId) {
   const monitor = meetingId && audioMonitors.get(meetingId);
-  if (!monitor) return;
-  audioMonitors.delete(meetingId);
-  try { monitor.stop(); } catch { /* best effort */ }
+  if (monitor) {
+    audioMonitors.delete(meetingId);
+    try { monitor.stop(); } catch { /* best effort */ }
+  }
+  const capture = meetingId && audioCaptures.get(meetingId);
+  if (capture) {
+    audioCaptures.delete(meetingId);
+    try { capture.stop(); } catch { /* best effort */ }
+  }
+}
+
+// Start streaming this meeting's remote audio as PCM to Node for transcription,
+// but only when Node opted in by exposing the binding (i.e. a Deepgram key is
+// configured). Idempotent per meeting. See audio-capture.js.
+function startAudioCapture(meetingId, stream) {
+  if (typeof window.__openclawMeetingAudioPcm !== 'function') return;
+  if (audioCaptures.has(meetingId)) return;
+  const capture = createPcmCapture({
+    stream,
+    sendPcm: (base64) => window.__openclawMeetingAudioPcm(meetingId, base64),
+    report: reportAudio,
+  });
+  audioCaptures.set(meetingId, capture);
 }
 
 // Receive-only audio subscription: attach a media connection that receives the
@@ -85,14 +109,47 @@ function stopAudioMonitor(meetingId) {
 // Best-effort by contract: any failure here logs and returns without disturbing
 // the join it was fired from. This is the seam where a future Deepgram
 // real-time transcription pipeline will consume `payload.stream`.
+// Reaches the RTCPeerConnection the SDK negotiated so we can read inbound-rtp
+// stats. The SDK itself walks this same path (mediaProperties.webrtcMedia
+// connection.mediaConnection.pc for transcoded, .multistreamConnection.pc.pc
+// for multistream). It's an internal shape, so every hop is optional and the
+// whole thing is best-effort — a null just disables the RTP-flow check, never
+// the audio subscription.
+function resolvePeerConnection(meeting) {
+  const wmc = meeting?.mediaProperties?.webrtcMediaConnection;
+  const pc = wmc?.mediaConnection?.pc ?? wmc?.multistreamConnection?.pc?.pc;
+  return typeof pc?.getStats === 'function' ? pc : null;
+}
+
+async function inboundAudioStats(meeting) {
+  const pc = resolvePeerConnection(meeting);
+  if (!pc) return null;
+  const report = await pc.getStats();
+  let result = null;
+  report.forEach((entry) => {
+    if (result || entry.type !== 'inbound-rtp' || entry.kind !== 'audio') return;
+    result = {
+      packetsReceived: entry.packetsReceived,
+      bytesReceived: entry.bytesReceived,
+      audioLevel: entry.audioLevel,
+    };
+  });
+  return result;
+}
+
 async function subscribeAudio(meeting) {
   if (!meeting || audioMonitors.has(meeting.id)) return;
-  const monitor = createAudioMonitor({ meetingId: meeting.id, report: reportAudio });
+  const monitor = createAudioMonitor({
+    meetingId: meeting.id,
+    report: reportAudio,
+    getInboundAudioStats: () => inboundAudioStats(meeting),
+  });
   audioMonitors.set(meeting.id, monitor);
 
   meeting.on(MEDIA_READY_EVENT, (payload) => {
     if (payload?.type !== REMOTE_AUDIO_TYPE || !payload.stream) return;
     monitor.attachStream(payload.stream);
+    startAudioCapture(meeting.id, payload.stream);
   });
 
   try {
@@ -379,7 +436,8 @@ async function syncActive() {
 }
 
 async function dispose() {
-  for (const meetingId of Array.from(audioMonitors.keys())) stopAudioMonitor(meetingId);
+  const trackedMeetingIds = new Set([...audioMonitors.keys(), ...audioCaptures.keys()]);
+  for (const meetingId of trackedMeetingIds) stopAudioMonitor(meetingId);
   if (!webex) return;
   if (webex.meetings?.registered) await webex.meetings.unregister();
   webex = null;

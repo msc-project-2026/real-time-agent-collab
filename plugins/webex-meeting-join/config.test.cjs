@@ -50,3 +50,39 @@ test('getConfig ignores an out-of-range poll interval and falls back to the defa
   });
   assert.equal(cfg.pollIntervalMs, 5 * 60 * 1000);
 });
+
+const baseEnv = {
+  WEBEX_BOT_TOKEN: 'bot-token',
+  WEBEX_ACCESS_TOKEN: 'shared-access',
+  WEBEX_MEETING_WEBHOOK_URL: 'https://example.com/hook',
+};
+
+test('transcription is disabled with no DEEPGRAM_API_KEY and enabled with one', () => {
+  const off = getConfig({ ...baseEnv });
+  assert.equal(off.transcription.enabled, false);
+  assert.equal(off.transcription.apiKey, undefined);
+
+  const on = getConfig({ ...baseEnv, DEEPGRAM_API_KEY: 'dg-key' });
+  assert.equal(on.transcription.enabled, true);
+  assert.equal(on.transcription.apiKey, 'dg-key');
+  // Sensible Flux defaults.
+  assert.equal(on.transcription.model, 'flux-general-en');
+  assert.equal(on.transcription.sampleRate, 16000);
+  assert.equal(on.transcription.eotThreshold, 0.7);
+  assert.equal(on.transcription.minTurnWords, 5);
+});
+
+test('transcription tunables come from env and out-of-range values fall back', () => {
+  const cfg = getConfig({
+    ...baseEnv,
+    DEEPGRAM_API_KEY: 'dg-key',
+    WEBEX_MEETING_DEEPGRAM_MODEL: 'flux-general-multi',
+    WEBEX_MEETING_EOT_THRESHOLD: '0.9',
+    WEBEX_MEETING_MIN_TURN_WORDS: '3',
+    WEBEX_MEETING_GATE_THRESHOLD: '5', // out of (0,1] → default
+  });
+  assert.equal(cfg.transcription.model, 'flux-general-multi');
+  assert.equal(cfg.transcription.eotThreshold, 0.9);
+  assert.equal(cfg.transcription.minTurnWords, 3);
+  assert.equal(cfg.transcription.gateThreshold, 0.7); // default kept
+});

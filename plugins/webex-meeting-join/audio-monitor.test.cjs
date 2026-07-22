@@ -5,11 +5,17 @@ const test = require('node:test');
 
 const { createAudioMonitor } = require('./audio-monitor');
 
+// Let the monitor's async stats promise chain settle (a real macrotask flushes
+// all pending microtasks; setTimeout is not among the globals we fake below).
+function flushAsync() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 // audio-monitor.js is browser code (WebAudio + window). Drive it in Node by
 // faking just the surface it touches: window.AudioContext, a MediaStream, the
 // interval timer, and the clock — so the audibility state machine can be
 // exercised deterministically without a real browser.
-function withFakeEnv(run) {
+async function withFakeEnv(run) {
   const realWindow = global.window;
   const realSetInterval = global.setInterval;
   const realClearInterval = global.clearInterval;
@@ -54,7 +60,7 @@ function withFakeEnv(run) {
   };
 
   try {
-    run(env);
+    await run(env);
   } finally {
     global.window = realWindow;
     global.setInterval = realSetInterval;
@@ -63,8 +69,8 @@ function withFakeEnv(run) {
   }
 }
 
-test('logs when it starts listening and when audio becomes audible then quiet', () => {
-  withFakeEnv((env) => {
+test('logs when it starts listening and when audio becomes audible then quiet', async () => {
+  await withFakeEnv((env) => {
     const logs = [];
     const monitor = createAudioMonitor({ meetingId: 'm1', report: (level, message) => logs.push({ level, message }) });
 
@@ -97,8 +103,8 @@ test('logs when it starts listening and when audio becomes audible then quiet', 
   });
 });
 
-test('re-confirms sustained audio with a throttled heartbeat', () => {
-  withFakeEnv((env) => {
+test('re-confirms sustained audio with a throttled heartbeat', async () => {
+  await withFakeEnv((env) => {
     const logs = [];
     const monitor = createAudioMonitor({ meetingId: 'm2', report: (level, message) => logs.push(message) });
 
@@ -117,8 +123,8 @@ test('re-confirms sustained audio with a throttled heartbeat', () => {
   });
 });
 
-test('stop() clears the meter interval and closes the audio context', () => {
-  withFakeEnv((env) => {
+test('stop() clears the meter interval and closes the audio context', async () => {
+  await withFakeEnv((env) => {
     const monitor = createAudioMonitor({ meetingId: 'm3', report: () => {} });
     monitor.attachStream(env.stream);
     assert.equal(env.contexts.length, 1);
@@ -134,8 +140,41 @@ test('stop() clears the meter interval and closes the audio context', () => {
   });
 });
 
-test('a stream with no audio track is reported, not metered', () => {
-  withFakeEnv((env) => {
+test('confirms RTP is flowing once, then warns only if it stalls', async () => {
+  await withFakeEnv(async (env) => {
+    const logs = [];
+    let packets = 0;
+    const monitor = createAudioMonitor({
+      meetingId: 'm5',
+      report: (level, message) => logs.push({ level, message }),
+      getInboundAudioStats: async () => ({ packetsReceived: packets, bytesReceived: packets * 200, audioLevel: 0.03 }),
+    });
+
+    env.setLevel(0); // silence: RMS meter stays quiet, RTP check is what talks
+    monitor.attachStream(env.stream);
+
+    // First poll seeds the baseline (delta from null → no confirmation yet).
+    env.advance(5000); env.tickAll(); await flushAsync();
+    // Second poll sees packets climb → single confirmation.
+    packets = 50;
+    env.advance(5000); env.tickAll(); await flushAsync();
+    const confirms = logs.filter((l) => /receiving audio RTP from Webex/.test(l.message));
+    assert.equal(confirms.length, 1);
+
+    // Still flowing: no repeat confirmation.
+    packets = 120;
+    env.advance(5000); env.tickAll(); await flushAsync();
+    assert.equal(logs.filter((l) => /receiving audio RTP from Webex/.test(l.message)).length, 1);
+
+    // Packets stop climbing → one stall warning.
+    env.advance(5000); env.tickAll(); await flushAsync();
+    const stalls = logs.filter((l) => l.level === 'warn' && /audio RTP stalled/.test(l.message));
+    assert.equal(stalls.length, 1);
+  });
+});
+
+test('a stream with no audio track is reported, not metered', async () => {
+  await withFakeEnv((env) => {
     const logs = [];
     const monitor = createAudioMonitor({ meetingId: 'm4', report: (level, message) => logs.push({ level, message }) });
     monitor.attachStream({ getAudioTracks: () => [] });

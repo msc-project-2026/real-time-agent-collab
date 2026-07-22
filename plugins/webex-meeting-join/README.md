@@ -1,18 +1,20 @@
 # webex-meeting-join
 
 Self-contained OpenClaw plugin: auto-joins Webex space meetings (instant and
-scheduled) via the real Webex Browser SDK when they start, and leaves on a
-chat command ("leave meeting"). No dependency on any other OpenClaw plugin or
-the `lib` workspace — copy this folder to another OpenClaw instance, set the
-env vars below, and it runs.
+scheduled) via the real Webex Browser SDK when they start, leaves on a chat
+command ("leave meeting"), and — when a Deepgram key is configured — transcribes
+the meeting in real time and posts proactive interventions into the meeting's
+Webex space.
 
-Scope: **join, leave, and listen**. On join the bot now subscribes to the
-meeting's audio (receive-only — no microphone, camera, or screen share is
-published) and logs whether that audio is audible. It does **not** yet forward
-audio anywhere: real-time transcription (Deepgram) and a proactive agent reply
-in the originating space are the next step, and the subscribed `MediaStream` in
-`audio-monitor.js` is the seam they'll consume (see "Audio subscription" and
-"Known limitations" below).
+Scope: **join, leave, listen, and (optionally) transcribe + intervene**. On join
+the bot subscribes to the meeting's audio (receive-only — no microphone, camera,
+or screen share is published). It always logs whether that audio is audible; and
+when `DEEPGRAM_API_KEY` is set it additionally streams the audio to Deepgram's
+turn-based (Flux) API, runs each completed speaker turn through the **same
+proactivity gate the webex chat plugin uses**, and posts a short agent reply to
+the space when the gate says it's worth it. See "Audio subscription" and
+"Real-time transcription & proactive interventions" below. With no Deepgram key
+the plugin behaves exactly as before and no audio leaves the browser.
 
 ## How it works (Approach 2 from the research phase)
 
@@ -54,6 +56,22 @@ main webex plugin's secret is fine), `WEBEX_MEETING_POLL_INTERVAL_MS`
 browser — see "Browser choice: the H264 requirement" below; when unset the
 runtime auto-detects Brave and otherwise falls back to Playwright's Chromium).
 
+Optional transcription (all no-ops unless `DEEPGRAM_API_KEY` is set):
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `DEEPGRAM_API_KEY` | Enables real-time transcription + proactive interventions. | (unset → off) |
+| `DEEPGRAM_BASE_URL` | Override the Deepgram endpoint (proxy / self-hosted). | `https://api.deepgram.com` |
+| `WEBEX_MEETING_DEEPGRAM_MODEL` | Deepgram Flux model. | `flux-general-en` |
+| `WEBEX_MEETING_EOT_THRESHOLD` | Flux end-of-turn confidence threshold (0–1). | `0.7` |
+| `WEBEX_MEETING_EOT_TIMEOUT_MS` | Flux end-of-turn silence timeout. | `5000` |
+| `WEBEX_MEETING_MIN_TURN_WORDS` | Skip turns shorter than this before gating. | `5` |
+| `WEBEX_MEETING_GATE_THRESHOLD` | Gate score (0–1) a turn must clear to intervene. | `0.7` |
+
+The gate LLM itself reuses the webex chat plugin's proactivity gate and its
+`CISCO_LLM_API_KEY` / `channels.webex.proactivity.gate` config — no extra key is
+needed for the intervention decision.
+
 ## Porting to another OpenClaw instance
 
 1. Copy this folder.
@@ -61,8 +79,10 @@ runtime auto-detects Brave and otherwise falls back to Playwright's Chromium).
    `plugins.entries` in `config/openclaw.json` (id: `webex-meeting-join`).
 3. Add `"plugins/webex-meeting-join"` to the root `package.json` workspaces
    array (it has its own npm dependencies — `@webex/plugin-meetings` and its
-   direct dependencies, `playwright`, `esbuild` — so it must be a workspace
-   member; a dependency-free plugin wouldn't need this).
+   direct dependencies, `playwright`, `esbuild`, and `@deepgram/sdk` — so it
+   must be a workspace member; a dependency-free plugin wouldn't need this). No
+   `ffmpeg` is required: unlike the Deepgram streaming example, audio is decoded
+   to PCM in-browser via WebAudio, not by shelling out to ffmpeg.
 4. Set the env vars above.
 5. `npm install --workspaces`. Headless Chromium must be available — reuses
    the shared `PLAYWRIGHT_BROWSERS_PATH` cache if another workspace already
@@ -105,22 +125,64 @@ but never publishes a microphone, camera, or screen-share track.
 
 Because the join negotiates transcoded (non-multistream) media, the remote
 audio of every participant arrives as a single mixed `MediaStream` on the SDK's
-`media:ready` event (`type: 'remoteAudio'`). `audio-monitor.js` runs that stream
-through a WebAudio `AnalyserNode` (routed to a muted gain node so samples flow in
-headless Chromium without emitting sound) and logs on the rising edge when the
-audio becomes audible, a throttled heartbeat while it stays audible, and when it
-goes quiet. Those page-side logs reach the Node logger through the
-`__openclawMeetingAudioLog` binding exposed in `browser-runtime.js`.
+`media:ready` event (`type: 'remoteAudio'`). `audio-monitor.js` verifies audio
+two independent ways, both logged through the `__openclawMeetingAudioLog`
+binding exposed in `browser-runtime.js`:
+
+- **Decoded level (RMS).** The stream runs through a WebAudio `AnalyserNode`
+  (routed to a muted gain node so samples flow in headless Chromium without
+  emitting sound). Logs on the rising edge when audio becomes audible, a
+  throttled heartbeat while it stays audible, and when it goes quiet. This
+  proves audio is *decoding* — but a silent room legitimately reads zero.
+- **RTP flow (`getStats`).** Every 5s it reads the `inbound-rtp` audio stats
+  (`packetsReceived`/`bytesReceived`/`audioLevel`) off the negotiated
+  `RTCPeerConnection`, logs a one-shot `receiving audio RTP from Webex` the
+  first time packets climb, and warns `audio RTP stalled` if flow stops. This
+  is the speech-independent proof that audio is actually reaching us, even when
+  nobody is talking. Reaching the peer connection walks an SDK-internal path
+  (`mediaProperties.webrtcMediaConnection.mediaConnection.pc`); every hop is
+  optional and best-effort, so if the SDK shape changes the RTP check simply
+  goes quiet and the subscription is unaffected.
 
 `addMedia()` is fire-and-forget from within `join()`: ICE/TURN negotiation can
 take several seconds and would otherwise count against the join timeout, so a
 media hiccup can never evict an otherwise-successful join. The monitor is torn
 down on leave and on `dispose()`.
 
-**Next step (Deepgram):** the same `MediaStream` handed to the level meter is
-where a real-time transcription client will tap in, so the agent can respond
-proactively in the Webex space the meeting originated from. Nothing forwards
-audio off-box today.
+The same remote-audio `MediaStream` also feeds the transcription capture when
+that's enabled (below).
+
+## Real-time transcription & proactive interventions
+
+Enabled only when `DEEPGRAM_API_KEY` is set. End to end:
+
+1. **Capture (browser, `audio-capture.js`).** The remote-audio `MediaStream`
+   lives only inside the headless page, so we tap it there: WebAudio resamples
+   it to 16 kHz mono and a `ScriptProcessorNode` converts each ~256 ms frame to
+   linear16 PCM, base64-encodes it, and hands it to Node through the
+   `__openclawMeetingAudioPcm` page binding. The binding is exposed **only** when
+   transcription is configured, so with no key nothing is captured and no audio
+   crosses the boundary.
+2. **Transcribe (Node, `transcription.js`).** One Deepgram Flux
+   (`listen.v2`, turn-based) WebSocket per meeting. PCM frames are streamed with
+   `sendMedia`; PCM arriving during the connection handshake is buffered and
+   flushed on open. We act on `EndOfTurn` messages only — the final transcript
+   for a completed speaker turn.
+3. **Gate + intervene (Node, `meeting-agent.js`).** Each turn is recorded as
+   rolling context; trivially short turns (`< WEBEX_MEETING_MIN_TURN_WORDS`) are
+   dropped before any LLM call. Substantive turns go through
+   `../webex/gate.js#scoreMessage` — the **same** proactivity gate the chat
+   plugin uses — and if the score clears `WEBEX_MEETING_GATE_THRESHOLD` (and the
+   type isn't `NONE`), the transcript is dispatched to the main agent pipeline
+   (`runtime.channel.reply…`, the same seam source-observer uses) and the reply
+   is posted into the meeting's Webex space. One intervention at a time per room.
+
+The audio is a single mixed transcoded stream, so turns aren't attributed to
+individual speakers — interventions treat the meeting as one "participant."
+
+Sessions start on join and are torn down on leave / meeting-ended /
+`dispose()`. Everything new lives in this plugin; the only cross-plugin reach is
+*calling* the existing gate, as intended.
 
 ### Browser choice: the H264 requirement
 

@@ -90,6 +90,7 @@ async function ensureBundle(log) {
     entryPath,
     path.join(__dirname, 'sdk-meeting-state.js'),
     path.join(__dirname, 'audio-monitor.js'),
+    path.join(__dirname, 'audio-capture.js'),
   ];
   const sourceMtime = Math.max(...bundledSourcePaths.map((sourcePath) => fs.statSync(sourcePath).mtimeMs));
   if (fs.existsSync(BUNDLE_CACHE_PATH)) {
@@ -150,6 +151,10 @@ function createBrowserRuntime({
   launchChromium,
   loadBundle = ensureBundle,
   fetchImpl = globalThis.fetch,
+  // (sdkMeetingId, base64Pcm) => void. When provided, the page is given a
+  // binding to stream 16 kHz linear16 PCM here for transcription; when omitted
+  // (no Deepgram key configured), no audio leaves the browser at all.
+  onAudioData = null,
 }) {
   let browser = null;
   let page = null;
@@ -213,6 +218,20 @@ function createBrowserRuntime({
       }).catch((err) => {
         log?.warn?.(`[webex-meeting-join] could not expose audio log binding: ${err?.message ?? err}`);
       });
+      // Transcription PCM bridge — exposed only when a consumer is wired up, so
+      // the page's audio-capture only runs (and only spends CDP bandwidth) when
+      // Deepgram is actually configured. Delivered in call order over CDP.
+      if (onAudioData) {
+        await page.exposeFunction('__openclawMeetingAudioPcm', (meetingId, base64) => {
+          try {
+            onAudioData(meetingId, base64);
+          } catch (err) {
+            log?.warn?.(`[webex-meeting-join] audio PCM handler error: ${err?.message ?? err}`);
+          }
+        }).catch((err) => {
+          log?.warn?.(`[webex-meeting-join] could not expose audio PCM binding: ${err?.message ?? err}`);
+        });
+      }
     }
     // A new Playwright page starts at about:blank and therefore sends
     // `Origin: null`. Webex's U2C and Hydra preflight responses reject that

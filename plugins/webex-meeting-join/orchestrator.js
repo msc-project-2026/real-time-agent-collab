@@ -15,7 +15,7 @@ const {
   listActiveMeetings,
 } = require('./meetings');
 
-function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
+function createOrchestrator({ cfg, tokenStore, browserRuntime, log, transcription = null, meetingAgent = null }) {
   const state = new (require('./state').MeetingState)();
   let botId = null;
   let botName = null;
@@ -108,6 +108,7 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
         await browserRuntime.init(tokenStore.getToken());
         const sdkMeetingId = await browserRuntime.join(destination, type);
         state.markJoined(meetingId, { roomId, kind, destination, sdkMeetingId });
+        transcription?.startSession({ sdkMeetingId, roomId, meetingId });
       } catch (err) {
         // The Locus POST can commit the join and then reject while the SDK is
         // processing its response. Independently sync once at this boundary;
@@ -121,6 +122,7 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
             destination,
             sdkMeetingId: recovered.sdkMeetingId,
           });
+          transcription?.startSession({ sdkMeetingId: recovered.sdkMeetingId, roomId, meetingId });
           log?.warn?.(
             `[webex-meeting-join] join response failed but active Locus state confirmed meeting=${meetingId}`
           );
@@ -161,6 +163,8 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
         // a stuck true-positive is worse than a false negative here, since a
         // human asked us to leave and the meeting-ended webhook (or the next
         // poll sweep) will reconcile either way.
+        transcription?.endSession(info.sdkMeetingId);
+        meetingAgent?.clearRoom(info.roomId ?? roomId);
         state.markLeft(meetingId, { suppress });
       }
       await announce(roomId, 'Left the meeting.');
@@ -196,6 +200,7 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
         destination,
         sdkMeetingId: matchingSdk.sdkMeetingId,
       });
+      transcription?.startSession({ sdkMeetingId: matchingSdk.sdkMeetingId, roomId, meetingId: meeting.id });
       log?.warn?.(`[webex-meeting-join] recovered joined state meeting=${meeting.id} room=${roomId}`);
       return state.findJoinedByRoom(roomId);
     } catch (err) {
@@ -224,7 +229,11 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
     const info = state.joined.get(meetingId);
     state.joined.delete(meetingId);
     state.suppressed.delete(meetingId); // a new instance of this meeting id won't recur, so free the slot
-    if (info) log?.info?.(`[webex-meeting-join] meeting=${meetingId} ended, cleared local state`);
+    if (info) {
+      transcription?.endSession(info.sdkMeetingId);
+      meetingAgent?.clearRoom(info.roomId);
+      log?.info?.(`[webex-meeting-join] meeting=${meetingId} ended, cleared local state`);
+    }
   }
 
   // resource: messages, event: created — the "leave the meeting" command path.
@@ -298,6 +307,7 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log }) {
 
   async function dispose() {
     stopPolling();
+    transcription?.dispose();
     await browserRuntime.dispose();
   }
 

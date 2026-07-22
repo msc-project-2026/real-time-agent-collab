@@ -20,7 +20,7 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function makeHarness(behavior = async () => undefined, { log, fetchImpl } = {}) {
+function makeHarness(behavior = async () => undefined, { log, fetchImpl, onAudioData } = {}) {
   const pages = [];
   let launchCalls = 0;
   const browser = {
@@ -31,6 +31,7 @@ function makeHarness(behavior = async () => undefined, { log, fetchImpl } = {}) 
       const page = {
         closed: false,
         calls: [],
+        exposed: {},
         isClosed() { return this.closed; },
         async route(pattern, handler) {
           this.routePattern = pattern;
@@ -38,6 +39,7 @@ function makeHarness(behavior = async () => undefined, { log, fetchImpl } = {}) 
         },
         async goto(url) { this.gotoUrl = url; },
         async addScriptTag() {},
+        async exposeFunction(name, fn) { this.exposed[name] = fn; },
         async evaluate(fn, arg) {
           const method = fn.toString().match(/__webexMeetingJoin\.(\w+)/)?.[1];
           this.calls.push({ method, arg });
@@ -62,6 +64,7 @@ function makeHarness(behavior = async () => undefined, { log, fetchImpl } = {}) 
     },
     loadBundle: async () => '/* fake bundle */',
     fetchImpl,
+    onAudioData,
   });
   return { runtime, browser, pages, get launchCalls() { return launchCalls; } };
 }
@@ -232,6 +235,23 @@ test('with no H264-capable browser, falls back to bundled Chromium with a warnin
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /no H264-capable browser found/);
   assert.match(warnings[0], /audio subscription will fail/);
+});
+
+test('the audio PCM binding is exposed and routes frames to onAudioData only when configured', async () => {
+  const frames = [];
+  const withAudio = makeHarness(async () => undefined, { onAudioData: (id, b64) => frames.push({ id, b64 }) });
+  await withAudio.runtime.init('token-1');
+  const page = withAudio.pages[0];
+  assert.equal(typeof page.exposed.__openclawMeetingAudioLog, 'function', 'log binding always exposed');
+  assert.equal(typeof page.exposed.__openclawMeetingAudioPcm, 'function', 'PCM binding exposed when consumer wired');
+
+  page.exposed.__openclawMeetingAudioPcm('sdk-1', 'AAECAw==');
+  assert.deepEqual(frames, [{ id: 'sdk-1', b64: 'AAECAw==' }]);
+
+  // With no consumer, the PCM binding is not exposed at all (no audio leaves the page).
+  const noAudio = makeHarness(async () => undefined);
+  await noAudio.runtime.init('token-1');
+  assert.equal(noAudio.pages[0].exposed.__openclawMeetingAudioPcm, undefined);
 });
 
 test('an injected executablePath is forwarded to the browser launcher', async () => {
