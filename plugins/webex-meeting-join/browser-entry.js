@@ -48,6 +48,13 @@ const audioMonitors = new Map();
 // Live PCM captures keyed by SDK meeting id, torn down alongside their monitor.
 // Only created when Node exposed the transcription binding (see subscribeAudio).
 const audioCaptures = new Map();
+// Hidden <audio> elements keyed by SDK meeting id. Chromium does not decode a
+// remote WebRTC audio track until a media element consumes it — a
+// MediaStreamAudioSourceNode alone is not such a sink (crbug.com/121673) — so
+// without this the monitor and the Deepgram PCM capture tap an undecoded track
+// and only ever see zeros (RTP packets flow, audioLevel stays 0.0000, no
+// transcript). Muted playback forces the decode without emitting sound.
+const audioSinks = new Map();
 
 // Public Webex SDK media events. In transcoded (non-multistream) mode — the
 // mode our signalling-only join negotiates — the remote audio of every
@@ -86,6 +93,34 @@ function stopAudioMonitor(meetingId) {
   if (capture) {
     audioCaptures.delete(meetingId);
     try { capture.stop(); } catch { /* best effort */ }
+  }
+  const sink = meetingId && audioSinks.get(meetingId);
+  if (sink) {
+    audioSinks.delete(meetingId);
+    try {
+      sink.pause();
+      sink.srcObject = null;
+    } catch { /* best effort */ }
+  }
+}
+
+// Keep the remote track decoding (see audioSinks above). Reused across
+// media:ready re-fires so a renegotiated stream replaces the old one.
+function attachAudioSink(meetingId, stream) {
+  try {
+    let sink = audioSinks.get(meetingId);
+    if (!sink) {
+      sink = new Audio();
+      sink.muted = true;
+      sink.autoplay = true;
+      audioSinks.set(meetingId, sink);
+    }
+    if (sink.srcObject !== stream) sink.srcObject = stream;
+    // Autoplay is permitted in this launch (muted + no-user-gesture policy);
+    // play() is belt-and-braces in case autoplay didn't kick in.
+    sink.play?.().catch?.(() => {});
+  } catch (err) {
+    reportAudio('warn', `failed to attach audio sink element: ${err?.message ?? err}`);
   }
 }
 
@@ -148,6 +183,9 @@ async function subscribeAudio(meeting) {
 
   meeting.on(MEDIA_READY_EVENT, (payload) => {
     if (payload?.type !== REMOTE_AUDIO_TYPE || !payload.stream) return;
+    // Order matters: the sink element must consume the stream before (well,
+    // as soon as) the WebAudio taps read it, or they read undecoded silence.
+    attachAudioSink(meeting.id, payload.stream);
     monitor.attachStream(payload.stream);
     startAudioCapture(meeting.id, payload.stream);
   });
@@ -436,7 +474,7 @@ async function syncActive() {
 }
 
 async function dispose() {
-  const trackedMeetingIds = new Set([...audioMonitors.keys(), ...audioCaptures.keys()]);
+  const trackedMeetingIds = new Set([...audioMonitors.keys(), ...audioCaptures.keys(), ...audioSinks.keys()]);
   for (const meetingId of trackedMeetingIds) stopAudioMonitor(meetingId);
   if (!webex) return;
   if (webex.meetings?.registered) await webex.meetings.unregister();
