@@ -188,7 +188,18 @@ function createBrowserRuntime({
       const launch = launchChromium ?? ((options) => require('playwright').chromium.launch(options));
       browserPromise ??= launch({
         headless: true,
-        args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+        // --disable-web-security: several Webex endpoints (the Locus join
+        // POST, /people/me, calliope discovery) accept the request server-side
+        // but omit CORS headers for our synthetic openclaw.local origin, so
+        // Chromium blocks the *response* and the SDK misreports the operation
+        // as failed (net::ERR_FAILED, no HTTP status) even though it
+        // committed — the same failure class that forced the leave PUT to be
+        // dispatched from Node. This page only ever runs our own bundled SDK
+        // code via addScriptTag on a route-fulfilled document — no untrusted
+        // content — so disabling CORS enforcement here is contained and
+        // removes the whole class at once. The openclaw.local origin is still
+        // required: Webex rejects requests with no Origin header at all.
+        args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-web-security'],
       })
         .then((launchedBrowser) => {
           browser = launchedBrowser;
