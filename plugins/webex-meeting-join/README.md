@@ -65,8 +65,9 @@ Optional transcription (all no-ops unless `DEEPGRAM_API_KEY` is set):
 | `WEBEX_MEETING_DEEPGRAM_MODEL` | Deepgram Flux model. | `flux-general-en` |
 | `WEBEX_MEETING_EOT_THRESHOLD` | Flux end-of-turn confidence threshold (0–1). | `0.7` |
 | `WEBEX_MEETING_EOT_TIMEOUT_MS` | Flux end-of-turn silence timeout. | `5000` |
-| `WEBEX_MEETING_MIN_TURN_WORDS` | Skip turns shorter than this before gating. | `5` |
+| `WEBEX_MEETING_MIN_TURN_WORDS` | Skip turns shorter than this before gating (turns naming the assistant are exempt). | `5` |
 | `WEBEX_MEETING_GATE_THRESHOLD` | Gate score (0–1) a turn must clear to intervene. | `0.7` |
+| `WEBEX_MEETING_ADDRESSED_GATE_THRESHOLD` | Lower gate score for turns the gate classifies as `ADDRESSED` (a participant spoke to the assistant by name). | `0.45` |
 
 The gate LLM itself reuses the webex chat plugin's proactivity gate and its
 `CISCO_LLM_API_KEY` / `channels.webex.proactivity.gate` config — no extra key is
@@ -170,10 +171,15 @@ Enabled only when `DEEPGRAM_API_KEY` is set. End to end:
    for a completed speaker turn.
 3. **Gate + intervene (Node, `meeting-agent.js`).** Each turn is recorded as
    rolling context; trivially short turns (`< WEBEX_MEETING_MIN_TURN_WORDS`) are
-   dropped before any LLM call. Substantive turns go through
-   `../webex/gate.js#scoreMessage` — the **same** proactivity gate the chat
-   plugin uses — and if the score clears `WEBEX_MEETING_GATE_THRESHOLD` (and the
-   type isn't `NONE`), the transcript is dispatched to the main agent pipeline
+   dropped before any LLM call — unless the turn names the assistant
+   (`../webex/address.js#mentionsName`: "bot", "agent", "openclaw", …), which
+   always reaches the gate. Turns go through `../webex/gate.js#scoreMessage` —
+   the **same** proactivity gate the chat plugin uses — with a `botNamed` hint
+   when an assistant name was heard, so the gate can classify the turn as
+   `ADDRESSED` (spoken *to* the assistant, not *about* AI). `ADDRESSED` turns
+   clear the lower `WEBEX_MEETING_ADDRESSED_GATE_THRESHOLD`; everything else
+   must clear `WEBEX_MEETING_GATE_THRESHOLD` (and the type must not be `NONE`).
+   Accepted turns are dispatched to the main agent pipeline
    (`runtime.channel.reply…`, the same seam source-observer uses) and the reply
    is posted into the meeting's Webex space. One intervention at a time per room.
 

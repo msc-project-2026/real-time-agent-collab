@@ -22,6 +22,10 @@ const DEFAULT_MIN_TURN_WORDS = 5;
 // per-type thresholds; meeting turns are noisier, so we keep one conservative
 // bar). Tunable via env.
 const DEFAULT_MEETING_GATE_THRESHOLD = 0.7;
+// Lower bar when the gate classifies a turn as ADDRESSED (a participant spoke
+// to the assistant by name). Higher than the chat plugin's 0.35 because ASR
+// noise makes false name hits more likely in meetings.
+const DEFAULT_MEETING_ADDRESSED_THRESHOLD = 0.45;
 
 function trimmed(v) {
   const s = v == null ? '' : String(v).trim();
@@ -82,6 +86,7 @@ function getConfig(env = process.env) {
   const eotTimeoutMsRaw = Number(env.WEBEX_MEETING_EOT_TIMEOUT_MS);
   const minTurnWordsRaw = Number(env.WEBEX_MEETING_MIN_TURN_WORDS);
   const gateThresholdRaw = Number(env.WEBEX_MEETING_GATE_THRESHOLD);
+  const addressedThresholdRaw = Number(env.WEBEX_MEETING_ADDRESSED_GATE_THRESHOLD);
 
   const transcription = {
     enabled: Boolean(deepgramApiKey),
@@ -93,6 +98,10 @@ function getConfig(env = process.env) {
     eotTimeoutMs: Number.isFinite(eotTimeoutMsRaw) && eotTimeoutMsRaw > 0 ? eotTimeoutMsRaw : DEFAULT_EOT_TIMEOUT_MS,
     minTurnWords: Number.isFinite(minTurnWordsRaw) && minTurnWordsRaw >= 0 ? minTurnWordsRaw : DEFAULT_MIN_TURN_WORDS,
     gateThreshold: gateThresholdRaw > 0 && gateThresholdRaw <= 1 ? gateThresholdRaw : DEFAULT_MEETING_GATE_THRESHOLD,
+    addressedGateThreshold:
+      addressedThresholdRaw > 0 && addressedThresholdRaw <= 1
+        ? addressedThresholdRaw
+        : DEFAULT_MEETING_ADDRESSED_THRESHOLD,
   };
 
   return {

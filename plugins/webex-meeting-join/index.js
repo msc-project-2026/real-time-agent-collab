@@ -40,6 +40,7 @@ function register(api) {
       postToSpace: (roomId, markdown) =>
         webexFetch(cfg.botToken, '/messages', { method: 'POST', body: { roomId, markdown } }),
       gateThreshold: cfg.transcription.gateThreshold,
+      addressedGateThreshold: cfg.transcription.addressedGateThreshold,
       minTurnWords: cfg.transcription.minTurnWords,
       log,
     });

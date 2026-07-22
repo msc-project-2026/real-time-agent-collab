@@ -15,6 +15,7 @@
 'use strict';
 
 const { scoreMessage } = require('../webex/gate');
+const { mentionsName, getAddressNames } = require('../webex/address');
 
 const RECENT_TURNS_MAX = 12;
 const MEETING_SENDER = 'Meeting participant';
@@ -32,16 +33,36 @@ function resolveGateCfg(runtime) {
   };
 }
 
-function buildAgentPrompt({ transcript, recentTurns }) {
+// Extra assistant names configured for the chat plugin's direct-address
+// detection; the shared defaults ("bot", "agent", "openclaw", …) come from
+// ../webex/address.js. The bot's Webex display name isn't known here, but ASR
+// rarely transcribes it verbatim anyway — the spoken defaults are what matter.
+function resolveAddressAliases(runtime) {
+  const loaded = runtime?.config?.current?.() ?? {};
+  const names = loaded?.channels?.webex?.proactivity?.directAddressNames;
+  return Array.isArray(names) ? names : [];
+}
+
+function buildAgentPrompt({ transcript, recentTurns, addressed }) {
   const history = recentTurns.length
     ? ['Recent meeting transcript (oldest → newest):', ...recentTurns.map((t) => `  • ${t.text}`), ''].join('\n')
     : '';
+  const intro = addressed
+    ? [
+        'You are an AI teammate listening to a live Webex meeting for a software engineering team.',
+        'A participant just spoke to you directly by name. Answer them with a short, helpful reply',
+        '(1–3 sentences) in the team\'s Webex space. Be concise and skip pleasantries.',
+        'The transcript comes from speech recognition, so names and terms may be slightly garbled.',
+      ]
+    : [
+        'You are an AI teammate silently listening to a live Webex meeting for a software engineering team.',
+        'You have decided this moment is worth a brief, proactive message in the team\'s Webex space.',
+        'Write a short, helpful intervention (1–3 sentences): correct a factual error, unblock someone,',
+        'answer an open question, or add a genuinely useful pointer. Be concise and skip pleasantries.',
+        'If on reflection there is nothing useful to add, reply with an empty message.',
+      ];
   return [
-    'You are an AI teammate silently listening to a live Webex meeting for a software engineering team.',
-    'You have decided this moment is worth a brief, proactive message in the team\'s Webex space.',
-    'Write a short, helpful intervention (1–3 sentences): correct a factual error, unblock someone,',
-    'answer an open question, or add a genuinely useful pointer. Be concise and skip pleasantries.',
-    'If on reflection there is nothing useful to add, reply with an empty message.',
+    ...intro,
     '',
     history,
     'Latest thing said in the meeting:',
@@ -52,7 +73,8 @@ function buildAgentPrompt({ transcript, recentTurns }) {
 // runtime: OpenClaw plugin runtime (api.runtime) — provides the agent dispatcher
 //   and live config. postToSpace(roomId, markdown): posts the reply to Webex.
 //   scoreMessageFn is injectable for tests; it defaults to the shared webex gate.
-function createMeetingAgent({ runtime, postToSpace, gateThreshold, minTurnWords, log, scoreMessageFn = scoreMessage }) {
+function createMeetingAgent({ runtime, postToSpace, gateThreshold, addressedGateThreshold, minTurnWords, log, scoreMessageFn = scoreMessage }) {
+  const addressedThreshold = addressedGateThreshold ?? gateThreshold;
   const recentByRoom = new Map(); // roomId -> [{ text }]
   const inFlightRooms = new Set(); // rooms with a dispatch in progress
 
@@ -67,14 +89,14 @@ function createMeetingAgent({ runtime, postToSpace, gateThreshold, minTurnWords,
     return text.split(/\s+/).filter(Boolean).length;
   }
 
-  async function dispatchIntervention({ roomId, meetingId, transcript, recentTurns }) {
+  async function dispatchIntervention({ roomId, meetingId, transcript, recentTurns, addressed }) {
     const dispatch = runtime?.channel?.reply?.dispatchReplyWithBufferedBlockDispatcher;
     if (!dispatch) {
       log?.warn?.('[webex-meeting-join] agent pipeline dispatch unavailable; cannot intervene');
       return;
     }
     const loadedCfg = runtime.config?.current?.() ?? {};
-    const prompt = buildAgentPrompt({ transcript, recentTurns });
+    const prompt = buildAgentPrompt({ transcript, recentTurns, addressed });
     const now = new Date().toISOString();
 
     await dispatch({
@@ -122,13 +144,24 @@ function createMeetingAgent({ runtime, postToSpace, gateThreshold, minTurnWords,
     const priorTurns = (recentByRoom.get(roomId) ?? []).slice();
     recordTurn(roomId, transcript);
 
-    if (wordCount(transcript) < minTurnWords) return;      // trivially short turn
+    // A turn that names the assistant is never trivially short — "openclaw,
+    // thoughts?" must reach the gate.
+    const aliases = resolveAddressAliases(runtime);
+    const botNamed = mentionsName(transcript, { aliases });
+    if (!botNamed && wordCount(transcript) < minTurnWords) return; // trivially short turn
     if (inFlightRooms.has(roomId)) return;                  // already composing a reply
 
     let result;
     try {
       result = await scoreMessageFn(
-        { text: transcript, senderName: MEETING_SENDER, chatType: 'group', recentMessages: priorTurns.map((t) => ({ senderName: MEETING_SENDER, text: t.text })) },
+        {
+          text: transcript,
+          senderName: MEETING_SENDER,
+          chatType: 'group',
+          recentMessages: priorTurns.map((t) => ({ senderName: MEETING_SENDER, text: t.text })),
+          botNamed,
+          addressNames: getAddressNames({ aliases }),
+        },
         resolveGateCfg(runtime)
       );
     } catch (err) {
@@ -136,15 +169,17 @@ function createMeetingAgent({ runtime, postToSpace, gateThreshold, minTurnWords,
       return;
     }
 
-    const passed = result.score >= gateThreshold && result.type !== 'NONE';
+    const addressed = result.type === 'ADDRESSED';
+    const threshold = addressed ? addressedThreshold : gateThreshold;
+    const passed = result.score >= threshold && result.type !== 'NONE';
     log?.info?.(
-      `[webex-meeting-join] meeting gate room=${roomId} type=${result.type} score=${result.score.toFixed(2)} threshold=${gateThreshold.toFixed(2)} accepted=${passed}`
+      `[webex-meeting-join] meeting gate room=${roomId} type=${result.type} score=${result.score.toFixed(2)} threshold=${threshold.toFixed(2)} botNamed=${botNamed} accepted=${passed}`
     );
     if (!passed) return;
 
     inFlightRooms.add(roomId);
     try {
-      await dispatchIntervention({ roomId, meetingId, transcript, recentTurns: priorTurns });
+      await dispatchIntervention({ roomId, meetingId, transcript, recentTurns: priorTurns, addressed });
     } catch (err) {
       log?.error?.(`[webex-meeting-join] meeting intervention failed for room=${roomId}: ${err?.message ?? err}`);
     } finally {

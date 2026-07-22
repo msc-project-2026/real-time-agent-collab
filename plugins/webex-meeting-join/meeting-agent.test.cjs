@@ -85,6 +85,62 @@ test('a NONE classification never posts even at a high score', async () => {
   assert.equal(posts.length, 0);
 });
 
+test('a short turn that names the assistant still reaches the gate', async () => {
+  const posts = [];
+  let seenGateCtx = null;
+  const agent = createMeetingAgent({
+    runtime: makeRuntime('Here is what I think.'),
+    postToSpace: async (roomId, markdown) => posts.push({ roomId, markdown }),
+    gateThreshold: 0.7,
+    addressedGateThreshold: 0.45,
+    minTurnWords: 5,
+    scoreMessageFn: async (ctx) => { seenGateCtx = ctx; return { score: 0.6, type: 'ADDRESSED' }; },
+  });
+
+  // 3 words < minTurnWords, but names the bot → must be gated, not dropped.
+  await agent.handleTurn({ roomId: 'room-1', meetingId: 'm-1', transcript: 'openclaw any thoughts' });
+
+  assert.equal(seenGateCtx.botNamed, true);
+  assert.ok(seenGateCtx.addressNames.includes('openclaw'));
+  assert.equal(posts.length, 1); // 0.6 >= addressed threshold 0.45
+});
+
+test('ADDRESSED uses the lower addressed threshold; other types use the base threshold', async () => {
+  const posts = [];
+  let nextResult;
+  const agent = createMeetingAgent({
+    runtime: makeRuntime('reply'),
+    postToSpace: async (roomId, markdown) => posts.push({ roomId, markdown }),
+    gateThreshold: 0.7,
+    addressedGateThreshold: 0.45,
+    minTurnWords: 2,
+    scoreMessageFn: async () => nextResult,
+  });
+
+  // Same score: passes as ADDRESSED, fails as ELABORATION.
+  nextResult = { score: 0.5, type: 'ADDRESSED' };
+  await agent.handleTurn({ roomId: 'room-1', meetingId: 'm-1', transcript: 'hey agent can you summarize the decision' });
+  assert.equal(posts.length, 1);
+
+  nextResult = { score: 0.5, type: 'ELABORATION' };
+  await agent.handleTurn({ roomId: 'room-1', meetingId: 'm-1', transcript: 'we might want to revisit the schema later' });
+  assert.equal(posts.length, 1); // unchanged — ELABORATION at 0.5 stays below 0.7
+});
+
+test('a turn without the assistant name does not set botNamed', async () => {
+  let seenGateCtx = null;
+  const agent = createMeetingAgent({
+    runtime: makeRuntime('reply'),
+    postToSpace: async () => {},
+    gateThreshold: 1.1, // never passes; we only inspect the gate ctx
+    minTurnWords: 2,
+    scoreMessageFn: async (ctx) => { seenGateCtx = ctx; return { score: 0, type: 'NONE' }; },
+  });
+
+  await agent.handleTurn({ roomId: 'room-1', meetingId: 'm-1', transcript: 'the deploy failed again on staging' });
+  assert.equal(seenGateCtx.botNamed, false);
+});
+
 test('recent turns are passed to the gate as history (oldest first)', async () => {
   const seenHistories = [];
   const agent = createMeetingAgent({
