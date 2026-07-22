@@ -52,6 +52,7 @@ async function ensureBundle(log) {
   const bundledSourcePaths = [
     entryPath,
     path.join(__dirname, 'sdk-meeting-state.js'),
+    path.join(__dirname, 'audio-monitor.js'),
   ];
   const sourceMtime = Math.max(...bundledSourcePaths.map((sourcePath) => fs.statSync(sourcePath).mtimeMs));
   if (fs.existsSync(BUNDLE_CACHE_PATH)) {
@@ -163,6 +164,18 @@ function createBrowserRuntime({
   async function createPage() {
     page = await browser.newPage();
     attachNetworkDiagnostics(page);
+    // Bridge the audio monitor's page-side logs (see audio-monitor.js /
+    // browser-entry.js#reportAudio) to the Node logger. Guarded because the
+    // unit-test fake page has no exposeFunction; a fresh page each call means
+    // the binding name is never double-registered.
+    if (typeof page.exposeFunction === 'function') {
+      await page.exposeFunction('__openclawMeetingAudioLog', (level, message) => {
+        const emit = log?.[level] ?? log?.info;
+        emit?.call(log, `[webex-meeting-join][audio] ${message}`);
+      }).catch((err) => {
+        log?.warn?.(`[webex-meeting-join] could not expose audio log binding: ${err?.message ?? err}`);
+      });
+    }
     // A new Playwright page starts at about:blank and therefore sends
     // `Origin: null`. Webex's U2C and Hydra preflight responses reject that
     // origin, leaving meetings.register() stuck until its 60-second catalog
@@ -199,7 +212,16 @@ function createBrowserRuntime({
         // content — so disabling CORS enforcement here is contained and
         // removes the whole class at once. The openclaw.local origin is still
         // required: Webex rejects requests with no Origin header at all.
-        args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-web-security'],
+        // --autoplay-policy: let the audio monitor's WebAudio graph (see
+        // audio-monitor.js) run without a user gesture; otherwise the
+        // AudioContext stays suspended in headless Chromium and no samples flow.
+        args: [
+          '--no-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--disable-web-security',
+          '--autoplay-policy=no-user-gesture-required',
+        ],
       })
         .then((launchedBrowser) => {
           browser = launchedBrowser;

@@ -32,12 +32,86 @@ const {
   findMeeting: findSdkMeeting,
   meetingReferences,
 } = require('./sdk-meeting-state');
+const { createAudioMonitor } = require('./audio-monitor');
 
 const Webex = WebexCore.extend({ webex: true });
 
 let webex = null;
 let lifecycleStage = 'not-initialized';
 let lastError = null;
+
+// Live audio monitors keyed by SDK meeting id. Kept module-level so leave()/
+// dispose() can tear them down even though join() (where they're created) has
+// long since returned.
+const audioMonitors = new Map();
+
+// Public Webex SDK media events. In transcoded (non-multistream) mode — the
+// mode our signalling-only join negotiates — the remote audio of every
+// participant arrives as one mixed MediaStream on this event.
+const MEDIA_READY_EVENT = 'media:ready';
+const REMOTE_AUDIO_TYPE = 'remoteAudio';
+
+// Forward a log line from the page to the Node host via the binding
+// browser-runtime exposes (`__openclawMeetingAudioLog`). Falls back to console
+// so a bundle loaded without that binding (or a future test) still surfaces
+// something. Never throws into the caller.
+function reportAudio(level, message) {
+  try {
+    if (typeof window.__openclawMeetingAudioLog === 'function') {
+      window.__openclawMeetingAudioLog(level, message);
+      return;
+    }
+  } catch {
+    // fall through to console
+  }
+  try {
+    // eslint-disable-next-line no-console
+    console.log(`[webex-meeting-join][audio][${level}] ${message}`);
+  } catch {
+    // nothing else we can do
+  }
+}
+
+function stopAudioMonitor(meetingId) {
+  const monitor = meetingId && audioMonitors.get(meetingId);
+  if (!monitor) return;
+  audioMonitors.delete(meetingId);
+  try { monitor.stop(); } catch { /* best effort */ }
+}
+
+// Receive-only audio subscription: attach a media connection that receives the
+// meeting audio (no microphone, camera, or screen share published — a listening
+// bot, never a speaker) and hand the resulting MediaStream to a level meter.
+// Best-effort by contract: any failure here logs and returns without disturbing
+// the join it was fired from. This is the seam where a future Deepgram
+// real-time transcription pipeline will consume `payload.stream`.
+async function subscribeAudio(meeting) {
+  if (!meeting || audioMonitors.has(meeting.id)) return;
+  const monitor = createAudioMonitor({ meetingId: meeting.id, report: reportAudio });
+  audioMonitors.set(meeting.id, monitor);
+
+  meeting.on(MEDIA_READY_EVENT, (payload) => {
+    if (payload?.type !== REMOTE_AUDIO_TYPE || !payload.stream) return;
+    monitor.attachStream(payload.stream);
+  });
+
+  try {
+    await meeting.addMedia({
+      audioEnabled: true,
+      videoEnabled: false,
+      shareAudioEnabled: false,
+      shareVideoEnabled: false,
+      // audioEnabled negotiates a receive direction; sendAudio:false keeps us
+      // from publishing any microphone track. receiveVideo:false avoids
+      // negotiating video we'd only throw away.
+      additionalMediaOptions: { sendAudio: false, sendVideo: false, receiveVideo: false },
+    });
+    reportAudio('info', `subscribed to meeting audio (meeting ${meeting.id})`);
+  } catch (err) {
+    stopAudioMonitor(meeting.id);
+    reportAudio('warn', `could not subscribe to meeting audio: ${err?.message ?? err}`);
+  }
+}
 
 function waitForMeetingsReady(instance) {
   // Webex's metrics and device plugins finish constructing from the parent
@@ -211,15 +285,19 @@ async function join(destination, type) {
   let meeting;
   try {
     meeting = await webex.meetings.create(destination, type);
-    // Webex explicitly supports a signaling-only join. Media can be attached
-    // later with addMedia(); phase 1 deliberately joins without microphone,
-    // camera, or remote media.
+    // Join is signalling-only; audio is attached afterwards with addMedia().
     await meeting.join({ moderator: false });
+    // Fire-and-forget: ICE/TURN media negotiation can take several seconds, and
+    // this call runs inside browser-runtime's join timeout. Awaiting it here
+    // could time out (and evict) an otherwise-successful join, so let the audio
+    // subscription settle in the background — it's a best-effort add-on.
+    void subscribeAudio(meeting);
     return meeting.id;
   } catch (err) {
     const diagnostic = formatSdkError(err);
     const recovered = meeting && await confirmJoinedAfterError(meeting);
     if (recovered) {
+      void subscribeAudio(recovered);
       return { meetingId: recovered.id ?? meeting.id, recovered: true, diagnostic };
     }
     // Playwright normally serializes only Error.message/stack and hides the
@@ -251,6 +329,9 @@ async function leave(reference) {
     const id = typeof reference === 'string' ? reference : reference?.meetingId ?? reference?.sdkMeetingId;
     throw new Error(`no local or active Webex meeting object matched ${id ?? 'the requested meeting'}`);
   }
+  // We're leaving on request — stop metering its audio now, whatever the leave
+  // fetch itself does afterwards.
+  stopAudioMonitor(meeting.id);
 
   // meeting.leave() sends this exact Locus request from the browser. Unlike
   // the join endpoints, some Locus clusters do not return CORS headers for
@@ -298,6 +379,7 @@ async function syncActive() {
 }
 
 async function dispose() {
+  for (const meetingId of Array.from(audioMonitors.keys())) stopAudioMonitor(meetingId);
   if (!webex) return;
   if (webex.meetings?.registered) await webex.meetings.unregister();
   webex = null;

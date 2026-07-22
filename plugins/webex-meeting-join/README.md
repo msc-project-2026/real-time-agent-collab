@@ -6,9 +6,13 @@ chat command ("leave meeting"). No dependency on any other OpenClaw plugin or
 the `lib` workspace — copy this folder to another OpenClaw instance, set the
 env vars below, and it runs.
 
-Phase 1 scope only: **join and leave**. No transcription (native or
-Deepgram) — that's phase 2, and will need to revisit `browser-entry.js`'s
-media handling (see "Known limitations" below).
+Scope: **join, leave, and listen**. On join the bot now subscribes to the
+meeting's audio (receive-only — no microphone, camera, or screen share is
+published) and logs whether that audio is audible. It does **not** yet forward
+audio anywhere: real-time transcription (Deepgram) and a proactive agent reply
+in the originating space are the next step, and the subscribed `MediaStream` in
+`audio-monitor.js` is the seam they'll consume (see "Audio subscription" and
+"Known limitations" below).
 
 ## How it works (Approach 2 from the research phase)
 
@@ -88,7 +92,29 @@ failed. It accepts the join only when the SDK reports `JOINED` for the
 registered browser device itself; another client using the same meeting account
 cannot produce a false success.
 
-`meeting.join()` is intentionally called without `meeting.addMedia()` — the
-Webex SDK documents this as joining without media. No audio/video track is
-requested in phase 1; transcription will require adding receive-media handling
-in phase 2.
+## Audio subscription
+
+`meeting.join()` is signalling-only; audio is attached separately, right after
+the join succeeds, via `meeting.addMedia({ audioEnabled: true, videoEnabled:
+false, additionalMediaOptions: { sendAudio: false, receiveVideo: false } })`.
+That negotiates a **receive-only** audio direction: the bot hears the meeting
+but never publishes a microphone, camera, or screen-share track.
+
+Because the join negotiates transcoded (non-multistream) media, the remote
+audio of every participant arrives as a single mixed `MediaStream` on the SDK's
+`media:ready` event (`type: 'remoteAudio'`). `audio-monitor.js` runs that stream
+through a WebAudio `AnalyserNode` (routed to a muted gain node so samples flow in
+headless Chromium without emitting sound) and logs on the rising edge when the
+audio becomes audible, a throttled heartbeat while it stays audible, and when it
+goes quiet. Those page-side logs reach the Node logger through the
+`__openclawMeetingAudioLog` binding exposed in `browser-runtime.js`.
+
+`addMedia()` is fire-and-forget from within `join()`: ICE/TURN negotiation can
+take several seconds and would otherwise count against the join timeout, so a
+media hiccup can never evict an otherwise-successful join. The monitor is torn
+down on leave and on `dispose()`.
+
+**Next step (Deepgram):** the same `MediaStream` handed to the level meter is
+where a real-time transcription client will tap in, so the agent can respond
+proactively in the Webex space the meeting originated from. Nothing forwards
+audio off-box today.
