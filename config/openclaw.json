@@ -108,6 +108,7 @@
         "silenceGapMs": 14400000,
         "silenceThresholdBonus": 0.15,
         "thresholdByType": {
+          "ADDRESSED": 0.35,
           "FACTUAL_CORRECTION": 0.4,
           "BLOCKER": 0.45,
           "CLARIFICATION": 0.55,

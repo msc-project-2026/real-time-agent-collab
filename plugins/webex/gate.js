@@ -9,7 +9,8 @@
 //
 // On any failure the result defaults to { score: 0.0, type: 'NONE' } (fail-silent).
 
-// The five intervention types (DiscussLLM taxonomy, Patel et al. 2025):
+// The intervention types (DiscussLLM taxonomy, Patel et al. 2025, plus ADDRESSED):
+//   ADDRESSED          — the message speaks directly to the assistant
 //   FACTUAL_CORRECTION — someone states something incorrect
 //   BLOCKER            — someone is stuck / explicitly blocked
 //   CLARIFICATION      — an open question or ambiguity that can be answered
@@ -17,6 +18,7 @@
 //   NONE               — banter, ack, off-topic, noise
 
 const VALID_TYPES = new Set([
+  'ADDRESSED',
   'FACTUAL_CORRECTION',
   'BLOCKER',
   'CLARIFICATION',
@@ -24,7 +26,7 @@ const VALID_TYPES = new Set([
   'NONE',
 ]);
 
-function buildGatePrompt({ text, senderName, chatType, recentMessages }) {
+function buildGatePrompt({ text, senderName, chatType, recentMessages, botNamed, addressNames }) {
   const ctx = chatType === 'direct' ? 'a direct message' : 'a group channel';
 
   const historyBlock =
@@ -36,11 +38,22 @@ function buildGatePrompt({ text, senderName, chatType, recentMessages }) {
         ].join('\n')
       : '';
 
+  const botNamedBlock = botNamed
+    ? [
+        `Note: the latest message contains one of the assistant's names (${(addressNames ?? []).join(', ')}).`,
+        'If the message is speaking TO the assistant — a question, request, or greeting directed',
+        'at it — classify it as ADDRESSED with a high score, even if it is casual chatter.',
+        'If it merely talks ABOUT assistants/agents/AI in general, do not use ADDRESSED.',
+        '',
+      ].join('\n')
+    : '';
+
   return [
     'You are a relevance classifier for a software engineering team\'s AI assistant.',
     'Classify the latest message and score whether the assistant would add genuine value by responding.',
     '',
     'Intervention types:',
+    '  ADDRESSED          — the message speaks directly to the assistant (names it or asks it to act)',
     '  FACTUAL_CORRECTION — someone states something factually wrong',
     '  BLOCKER            — someone is stuck or explicitly blocked on something',
     '  CLARIFICATION      — an unanswered question or genuine ambiguity',
@@ -54,6 +67,7 @@ function buildGatePrompt({ text, senderName, chatType, recentMessages }) {
     'TYPE|score',
     'Example: CLARIFICATION|0.72',
     '',
+    botNamedBlock,
     historyBlock,
     `Latest message from ${senderName} in ${ctx}:`,
     `"${String(text ?? '').slice(0, 500)}"`,

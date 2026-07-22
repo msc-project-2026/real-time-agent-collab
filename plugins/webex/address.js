@@ -96,7 +96,37 @@ function isDirectAddress(text, options = {}) {
     `(?:^|[,;.!?]\\s*)@?(?:${namesPattern})(?=\\s*(?:[,!?;:.]|$))`,
     'iu'
   );
-  return vocative.test(message);
+  if (vocative.test(message)) return true;
+
+  // A name as the final word is a trailing vocative in casual chat, where the
+  // comma is usually dropped: “what do you think agent” or “thanks bot!”.
+  // A determiner or preposition before it marks a reference instead (“I'll ask
+  // the agent”, “switch to AI”), which must not trigger a reply.
+  const referentialLeadIn =
+    'the|a|an|this|that|these|those|my|your|our|their|its|some|any|every|each|no|' +
+    'of|about|with|via|for|from|on|in|into|by|as|like|to|use|using|called|named';
+  const trailingVocative = new RegExp(
+    `(?:^|\\s)(?<!\\b(?:${referentialLeadIn})\\s)@?(?:${namesPattern})\\s*[.!?…]*\\s*$`,
+    'iu'
+  );
+  return trailingVocative.test(message);
 }
 
-module.exports = { DEFAULT_DIRECT_ADDRESS_NAMES, isDirectAddress };
+// Loose detection: any word-boundary occurrence of an assistant name, whether
+// or not it is grammatically a direct address. Used to tighten the proactivity
+// gate rather than to guarantee a reply.
+function mentionsName(text, options = {}) {
+  const message = String(text ?? '').trim();
+  if (!message) return false;
+
+  const names = getAddressNames(options);
+  if (!names.length) return false;
+
+  const pattern = new RegExp(
+    `(?:^|[^\\p{L}\\p{N}])@?(?:${buildNamePattern(names)})(?=$|[^\\p{L}\\p{N}])`,
+    'iu'
+  );
+  return pattern.test(message);
+}
+
+module.exports = { DEFAULT_DIRECT_ADDRESS_NAMES, getAddressNames, isDirectAddress, mentionsName };

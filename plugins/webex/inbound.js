@@ -4,7 +4,7 @@
 const { webexFetch } = require('./api');
 const { getAccessToken } = require('./token');
 const { buildMsgBody } = require('./send');
-const { isDirectAddress } = require('./address');
+const { isDirectAddress, mentionsName, getAddressNames } = require('./address');
 const { scoreMessage } = require('./gate');
 const { recordMessage: lullRecord, waitForLull, getLastSeen } = require('./lull');
 const { recordMessage: ctxRecord, getRecentMessages } = require('./context');
@@ -52,6 +52,7 @@ function getProactivityCfg(loadedCfg) {
     silenceGapMs: p.silenceGapMs ?? 4 * 60 * 60 * 1000,      // 4 hours default
     silenceThresholdBonus: p.silenceThresholdBonus ?? 0.15,    // subtract from threshold
     thresholdByType: {
+      ADDRESSED: 0.35,
       FACTUAL_CORRECTION: 0.4,
       BLOCKER: 0.45,
       CLARIFICATION: 0.55,
@@ -339,6 +340,14 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
       aliases: proactivity.directAddressNames,
       botName,
     });
+  // Loose signal: an assistant name appears somewhere in the message. Not a
+  // guaranteed reply — the gate decides whether it was talking TO the bot.
+  const botNamed =
+    isDirectlyAddressed ||
+    mentionsName(agentText, {
+      aliases: proactivity.directAddressNames,
+      botName,
+    });
 
   // Meeting controls are handled by the dedicated meeting-join plugin. Do
   // not send them through the LLM, which has neither the browser SDK session
@@ -362,7 +371,8 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
   if (wasCommand) return;
 
   // ── Debounce ─────────────────────────────────────────────────────────────────
-  if (!isDirectlyAddressed && !tryAccept(roomId, personId)) {
+  // Never debounce a message that names the bot — it may be an address.
+  if (!botNamed && !tryAccept(roomId, personId)) {
     log?.info?.(`[webex:debounce] suppressed burst from ${senderName} in ${roomId}`);
     return;
   }
@@ -380,6 +390,11 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
         senderName,
         chatType: msg.roomType === 'direct' ? 'direct' : 'group',
         recentMessages,
+        botNamed,
+        addressNames: getAddressNames({
+          aliases: proactivity.directAddressNames,
+          botName,
+        }),
       },
       proactivity.gate
     );
@@ -436,6 +451,11 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
   }
 
   // ── Stage 2: Main agent dispatch ──────────────────────────────────────────
+  // Gate-confirmed ADDRESSED messages behave like direct addresses downstream:
+  // route as append_and_process, reply promptly instead of waiting for a lull,
+  // and don't count as proactive sends.
+  const treatAsDirect = isDirectlyAddressed || interventionType === 'ADDRESSED';
+
   const contextHeader = {
     spaceId: roomId,
     messageId: msg.id,
@@ -444,6 +464,7 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
     createdAt: msg.created,
     roomType: msg.roomType,
     isMentioned,
+    isDirectlyAddressed: treatAsDirect,
   };
 
   const routingInstruction = buildRoutingInstruction();
@@ -478,7 +499,7 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
     OriginatingTo: `webex:${roomId}`,
     MessageThreadId: msg.parentId,
     IsMentioned: isMentioned,
-    IsDirectlyAddressed: isDirectlyAddressed,
+    IsDirectlyAddressed: treatAsDirect,
     RoomId: roomId,
   };
 
@@ -489,7 +510,7 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
     return;
   }
 
-  const capturedIsDirectlyAddressed = isDirectlyAddressed;
+  const capturedIsDirectlyAddressed = treatAsDirect;
 
   const dispatchArgs = {
     ctx: ctxPayload,
