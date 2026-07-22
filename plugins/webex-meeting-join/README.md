@@ -49,7 +49,10 @@ account — falls back to `WEBEX_REFRESH_TOKEN`/`WEBEX_CLIENT_ID`/
 
 Optional tuning: `WEBEX_WEBHOOK_SECRET` (HMAC verification, shared with the
 main webex plugin's secret is fine), `WEBEX_MEETING_POLL_INTERVAL_MS`
-(default 300000), `WEBEX_MEETING_JOIN_TIMEOUT_MS` (default 20000).
+(default 300000), `WEBEX_MEETING_JOIN_TIMEOUT_MS` (default 20000),
+`WEBEX_MEETING_BROWSER_EXECUTABLE` (path to an H264-capable Chromium-based
+browser — see "Browser choice: the H264 requirement" below; when unset the
+runtime auto-detects Brave and otherwise falls back to Playwright's Chromium).
 
 ## Porting to another OpenClaw instance
 
@@ -118,3 +121,26 @@ down on leave and on `dispose()`.
 where a real-time transcription client will tap in, so the agent can respond
 proactively in the Webex space the meeting originated from. Nothing forwards
 audio off-box today.
+
+### Browser choice: the H264 requirement
+
+The Webex SDK hardcodes `requireH264: true` and `skipInactiveTransceivers:
+false` for its transcoded media connection, so `addMedia()` validates that the
+local SDP's video m-line offers H264 **even for our audio-only, receive-only
+subscription** — there is no SDK option to skip it. Playwright's stock
+Chromium ships without proprietary codecs on Linux (and no arm64 Google
+Chrome build exists to substitute), which surfaces as:
+
+    could not subscribe to meeting audio: H264 codec is missing for video media description with mid=1
+
+Fix: launch a Chromium-based browser that bundles H264. The runtime resolves
+one in this order: `WEBEX_MEETING_BROWSER_EXECUTABLE` if set (must exist —
+fails loudly rather than degrading), else auto-detected Brave
+(`/usr/bin/brave-browser` and friends — already installed in the deployment
+image), else Playwright's Chromium with a logged warning (join/leave still
+work; only the audio subscription needs H264).
+
+Profile isolation: Playwright's `chromium.launch()` always creates a fresh
+ephemeral user-data-dir per launch, so this Brave instance never opens — or
+contends on the `SingletonLock` of — the gateway's managed Brave profile,
+even though both run the same binary in the same container.

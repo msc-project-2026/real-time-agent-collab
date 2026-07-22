@@ -5,6 +5,8 @@ const test = require('node:test');
 const {
   createBrowserRuntime,
   assertLocusLeaveRequest,
+  resolveExecutablePath,
+  BRAVE_EXECUTABLE_CANDIDATES,
   RUNTIME_ORIGIN,
 } = require('./browser-runtime');
 
@@ -192,6 +194,74 @@ test('leave reports the actual Locus HTTP error returned outside browser CORS', 
     /Webex Locus leave failed with HTTP 403: participant cannot leave/
   );
   assert.equal(harness.pages[0].calls.at(-1).method, 'leave');
+});
+
+test('an explicitly configured browser executable wins and must exist', () => {
+  assert.equal(
+    resolveExecutablePath({
+      configuredPath: '/custom/chromium',
+      fileExists: (p) => p === '/custom/chromium',
+    }),
+    '/custom/chromium'
+  );
+  assert.throws(
+    () => resolveExecutablePath({ configuredPath: '/missing/browser', fileExists: () => false }),
+    /WEBEX_MEETING_BROWSER_EXECUTABLE not found: \/missing\/browser/
+  );
+});
+
+test('without configuration, Brave is auto-detected in candidate order', () => {
+  const brave = BRAVE_EXECUTABLE_CANDIDATES[1];
+  assert.equal(
+    resolveExecutablePath({ fileExists: (p) => p === brave }),
+    brave
+  );
+  // Earlier candidates take precedence when several exist.
+  assert.equal(
+    resolveExecutablePath({ fileExists: () => true }),
+    BRAVE_EXECUTABLE_CANDIDATES[0]
+  );
+});
+
+test('with no H264-capable browser, falls back to bundled Chromium with a warning', () => {
+  const warnings = [];
+  assert.equal(
+    resolveExecutablePath({ fileExists: () => false, log: { warn: (m) => warnings.push(m) } }),
+    undefined
+  );
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /no H264-capable browser found/);
+  assert.match(warnings[0], /audio subscription will fail/);
+});
+
+test('an injected executablePath is forwarded to the browser launcher', async () => {
+  let launchOptions = null;
+  const runtime = createBrowserRuntime({
+    joinTimeoutMs: 100,
+    executablePath: '/usr/bin/brave-browser',
+    launchChromium: async (options) => {
+      launchOptions = options;
+      return {
+        isConnected: () => true,
+        async newPage() {
+          return {
+            isClosed: () => false,
+            async route() {},
+            async goto() {},
+            async addScriptTag() {},
+            async evaluate() {},
+            async close() {},
+          };
+        },
+        async close() {},
+      };
+    },
+    loadBundle: async () => '/* fake bundle */',
+  });
+
+  await runtime.init('token-1');
+  assert.equal(launchOptions.executablePath, '/usr/bin/brave-browser');
+  assert.ok(launchOptions.args.includes('--autoplay-policy=no-user-gesture-required'));
 });
 
 test('Locus leave request validation rejects non-leave and non-HTTPS endpoints', () => {

@@ -24,7 +24,11 @@ function register(api) {
 
   const log = api.logger;
   const tokenStore = createTokenStore(cfg, log);
-  const browserRuntime = createBrowserRuntime({ log, joinTimeoutMs: cfg.joinTimeoutMs });
+  const browserRuntime = createBrowserRuntime({
+    log,
+    joinTimeoutMs: cfg.joinTimeoutMs,
+    executablePath: cfg.browserExecutablePath,
+  });
   const orchestrator = createOrchestrator({ cfg, tokenStore, browserRuntime, log });
 
   let refreshInterval = null;

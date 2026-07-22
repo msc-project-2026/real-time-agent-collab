@@ -13,6 +13,43 @@ const BUNDLE_CACHE_PATH = path.join(__dirname, '.generated', 'browser-entry.bund
 const RUNTIME_ORIGIN = 'http://openclaw.local';
 const LOCUS_LEAVE_PATH = /^\/locus\/api\/v1\/loci\/[^/]+\/participant\/[^/]+\/leave$/;
 
+// The Webex SDK hardcodes `requireH264: true` (with `skipInactiveTransceivers:
+// false`) for its transcoded media connection, so addMedia() validates that
+// the local SDP's video m-line offers H264 even though we only ever receive
+// audio. Playwright's stock Chromium has no proprietary codecs (no arm64
+// Chrome build exists to swap in either), so audio subscription fails there
+// with "H264 codec is missing for video media description". Brave bundles
+// H264 and is already installed in the deployment image, so prefer it when
+// present. Order matters: Linux (the deployed container) first, then macOS
+// for local development.
+const BRAVE_EXECUTABLE_CANDIDATES = [
+  '/usr/bin/brave-browser',
+  '/usr/bin/brave',
+  '/opt/brave.com/brave/brave-browser',
+  '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+];
+
+// Resolves which browser binary to launch. An explicitly configured path wins
+// and is required to exist (fail loudly over silently degrading to a browser
+// that cannot do meeting audio); otherwise probe for Brave and fall back to
+// Playwright's bundled Chromium (join/leave still work there — only the audio
+// subscription needs H264).
+function resolveExecutablePath({ configuredPath, log, fileExists = fs.existsSync }) {
+  if (configuredPath) {
+    if (!fileExists(configuredPath)) {
+      throw new Error(`webex-meeting-join: WEBEX_MEETING_BROWSER_EXECUTABLE not found: ${configuredPath}`);
+    }
+    return configuredPath;
+  }
+  const brave = BRAVE_EXECUTABLE_CANDIDATES.find((candidate) => fileExists(candidate));
+  if (brave) return brave;
+  log?.warn?.(
+    '[webex-meeting-join] no H264-capable browser found (set WEBEX_MEETING_BROWSER_EXECUTABLE or install Brave); '
+    + "falling back to Playwright's Chromium — joins will work but meeting audio subscription will fail"
+  );
+  return undefined;
+}
+
 function assertLocusLeaveRequest(request) {
   let url;
   try {
@@ -109,6 +146,7 @@ async function ensureBundle(log) {
 function createBrowserRuntime({
   log,
   joinTimeoutMs,
+  executablePath,
   launchChromium,
   loadBundle = ensureBundle,
   fetchImpl = globalThis.fetch,
@@ -199,8 +237,23 @@ function createBrowserRuntime({
   async function ensureBrowserAlive() {
     if (!browser?.isConnected?.()) {
       const launch = launchChromium ?? ((options) => require('playwright').chromium.launch(options));
+      // Resolved lazily (not at createBrowserRuntime time) so a Brave install
+      // or config change takes effect on the next relaunch, and so the fake
+      // launcher used in unit tests never probes the real filesystem.
+      const resolvedExecutablePath = launchChromium
+        ? executablePath
+        : resolveExecutablePath({ configuredPath: executablePath, log });
+      if (resolvedExecutablePath) {
+        log?.info?.(`[webex-meeting-join] launching browser: ${resolvedExecutablePath}`);
+      }
       browserPromise ??= launch({
         headless: true,
+        // Brave (or another Chromium build) via executablePath. Playwright's
+        // launch() always creates a fresh ephemeral user-data-dir per launch,
+        // so this instance never opens — or contends on the SingletonLock
+        // of — the gateway's managed Brave profile, even though both run the
+        // same binary in the same container.
+        ...(resolvedExecutablePath ? { executablePath: resolvedExecutablePath } : {}),
         // --disable-web-security: several Webex endpoints (the Locus join
         // POST, /people/me, calliope discovery) accept the request server-side
         // but omit CORS headers for our synthetic openclaw.local origin, so
@@ -412,6 +465,8 @@ module.exports = {
   createBrowserRuntime,
   ensureBundle,
   assertLocusLeaveRequest,
+  resolveExecutablePath,
+  BRAVE_EXECUTABLE_CANDIDATES,
   BUNDLE_CACHE_PATH,
   RUNTIME_ORIGIN,
 };

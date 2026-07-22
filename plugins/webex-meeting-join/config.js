@@ -43,7 +43,16 @@ function getConfig(env = process.env) {
     ? joinTimeoutMsRaw
     : DEFAULT_JOIN_TIMEOUT_MS;
 
+  // Optional path to the Chromium-based browser binary Playwright should
+  // launch. The Webex SDK hard-requires H264 in the SDP it negotiates for
+  // addMedia() (even for our audio-only, receive-only connection — the video
+  // m-line is always present), and Playwright's stock Chromium ships without
+  // proprietary codecs. When unset, browser-runtime auto-detects Brave (which
+  // bundles H264) before falling back to Playwright's Chromium.
+  const browserExecutablePath = trimmed(env.WEBEX_MEETING_BROWSER_EXECUTABLE);
+
   return {
+    browserExecutablePath,
     botToken,
     meetingAccessToken,
     meetingRefreshToken,
