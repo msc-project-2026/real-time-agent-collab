@@ -123,25 +123,64 @@ function cleanSdkText(value) {
   return text || null;
 }
 
+// The SDK nests the real HTTP failure several wrappers deep (e.g.
+// JoinMeetingError → intermediate SDK error → WebexHttpError carrying
+// statusCode/body). A single `err.error ?? err.cause` hop misses it, which
+// is how production logs ended up with "code 2" and no HTTP status or Locus
+// error body. Walk the whole chain instead.
+function collectErrorChain(err) {
+  const chain = [];
+  let current = err;
+  while (current && typeof current === 'object' && chain.length < 8 && !chain.includes(current)) {
+    chain.push(current);
+    current = current.error ?? current.cause ?? current.originalError ?? null;
+  }
+  return chain;
+}
+
+function pickFromChain(chain, extract) {
+  for (const entry of chain) {
+    const value = extract(entry);
+    if (value !== undefined && value !== null && value !== '') return value;
+  }
+  return null;
+}
+
+function safeBodySnippet(body) {
+  try {
+    const text = JSON.stringify(body, (key, value) => (
+      /token|authorization|password|secret/i.test(key) ? '[redacted]' : value
+    ));
+    if (!text || text === '{}') return null;
+    return text.length > 600 ? `${text.slice(0, 600)}…` : text;
+  } catch {
+    return null;
+  }
+}
+
 function formatSdkError(err) {
-  const cause = err?.error ?? err?.cause;
-  const status = cause?.statusCode
-    ?? cause?.status
-    ?? cause?.response?.statusCode
-    ?? cause?.response?.status
-    ?? err?.statusCode
-    ?? err?.status;
-  const code = cause?.body?.errorCode ?? cause?.code ?? err?.code;
-  const detail = cleanSdkText(cause?.body?.message)
-    ?? cleanSdkText(cause?.body?.errors?.map((item) => item?.description).filter(Boolean).join('; '))
-    ?? cleanSdkText(cause?.message)
-    ?? cleanSdkText(cause?.reason);
+  const chain = collectErrorChain(err);
+  const status = pickFromChain(
+    chain,
+    (e) => e?.statusCode ?? e?.status ?? e?.response?.statusCode ?? e?.response?.status
+  );
+  const rawBody = pickFromChain(chain, (e) => e?.body ?? null);
+  const body = rawBody && typeof rawBody === 'object' ? rawBody : null;
+  // Prefer the Locus/Webex service errorCode (e.g. 2423xxx) over the SDK's
+  // generic wrapper code (JoinMeetingError is always 2).
+  const code = body?.errorCode ?? pickFromChain(chain, (e) => e?.body?.errorCode ?? e?.code);
+  const detail = cleanSdkText(body?.message)
+    ?? cleanSdkText(body?.errors?.map((item) => item?.description).filter(Boolean).join('; '))
+    ?? pickFromChain(chain.slice(1), (e) => cleanSdkText(e?.message))
+    ?? pickFromChain(chain, (e) => cleanSdkText(e?.reason));
+  const bodySnippet = body ? safeBodySnippet(body) : cleanSdkText(rawBody);
   return [
     err?.name && err.name !== 'Error' ? err.name : null,
     cleanSdkText(err?.message) ?? 'Webex SDK operation failed',
     status ? `HTTP ${status}` : null,
     code ? `code ${code}` : null,
     detail && detail !== err?.message ? detail : null,
+    bodySnippet && bodySnippet !== detail ? `body ${bodySnippet}` : null,
   ].filter(Boolean).join(' — ');
 }
 

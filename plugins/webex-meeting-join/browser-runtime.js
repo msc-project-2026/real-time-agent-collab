@@ -122,8 +122,47 @@ function createBrowserRuntime({
   let browserPromise = null;
   let pagePromise = null;
 
+  // Network-layer diagnostics, independent of SDK error wrapping: the SDK
+  // sometimes buries (or drops) the real Locus/WDM HTTP failure inside nested
+  // error objects, so also log every Webex API error response as it happens.
+  // Metrics endpoints are excluded — their failures are frequent noise
+  // unrelated to join/leave health.
+  const WEBEX_API_URL = /https:\/\/[^/]*\.(?:wbx2|webex|webexapis|ciscospark)\.com\//;
+  const WEBEX_DIAG_IGNORE = /metrics|pinpoint|amplitude/i;
+
+  function attachNetworkDiagnostics(target) {
+    if (typeof target.on !== 'function') return;
+    target.on('response', (response) => {
+      void (async () => {
+        try {
+          const status = response.status();
+          const url = response.url();
+          if (status < 400 || !WEBEX_API_URL.test(url) || WEBEX_DIAG_IGNORE.test(url)) return;
+          const body = (await response.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 800);
+          log?.warn?.(
+            `[webex-meeting-join] Webex API error response: ${response.request().method()} ${url} → HTTP ${status}${body ? ` — ${body}` : ''}`
+          );
+        } catch {
+          // Diagnostics only — never interfere with the join/leave path.
+        }
+      })();
+    });
+    target.on('requestfailed', (request) => {
+      try {
+        const url = request.url();
+        if (!WEBEX_API_URL.test(url) || WEBEX_DIAG_IGNORE.test(url)) return;
+        log?.warn?.(
+          `[webex-meeting-join] Webex request failed without a response (network/CORS): ${request.method()} ${url} — ${request.failure()?.errorText ?? 'unknown'}`
+        );
+      } catch {
+        // Diagnostics only.
+      }
+    });
+  }
+
   async function createPage() {
     page = await browser.newPage();
+    attachNetworkDiagnostics(page);
     // A new Playwright page starts at about:blank and therefore sends
     // `Origin: null`. Webex's U2C and Hydra preflight responses reject that
     // origin, leaving meetings.register() stuck until its 60-second catalog

@@ -13,7 +13,7 @@
 
 const { WEBEX_API, WebexApiError, webexFetch } = require('./api');
 
-function createTokenStore(cfg) {
+function createTokenStore(cfg, log = null) {
   let currentAccessToken = cfg.meetingAccessToken ?? null;
   let currentRefreshToken = cfg.meetingRefreshToken ?? null;
   let refreshing = null;
@@ -38,6 +38,13 @@ function createTokenStore(cfg) {
       throw new Error(`Webex meeting-account token refresh → ${res.status}: ${text}`);
     }
     const data = await res.json();
+    // The browser meetings SDK needs the broad `spark:all` scope — granular
+    // meetings:* scopes satisfy REST but Locus rejects join/leave with them.
+    // The token endpoint reports the granted scopes, so surface them once per
+    // refresh to make that misconfiguration visible in production logs.
+    if (data.scope) {
+      log?.info?.(`[webex-meeting-join] meeting-account token scopes: ${data.scope}`);
+    }
     // Webex may return a renewed refresh token. Use it for later refreshes in
     // this process instead of repeatedly submitting the original value.
     if (data.refresh_token) currentRefreshToken = data.refresh_token;

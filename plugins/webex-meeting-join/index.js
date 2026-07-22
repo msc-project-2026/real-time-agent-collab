@@ -23,7 +23,7 @@ function register(api) {
   }
 
   const log = api.logger;
-  const tokenStore = createTokenStore(cfg);
+  const tokenStore = createTokenStore(cfg, log);
   const browserRuntime = createBrowserRuntime({ log, joinTimeoutMs: cfg.joinTimeoutMs });
   const orchestrator = createOrchestrator({ cfg, tokenStore, browserRuntime, log });
 
