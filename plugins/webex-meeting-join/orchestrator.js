@@ -6,7 +6,7 @@
 'use strict';
 
 const { webexFetch } = require('./api');
-const { parseCommand, isAddressedToBot, stripMention } = require('./commands');
+const { parseCommand, isJoinPolicyCommand, isAddressedToBot, stripMention } = require('./commands');
 const {
   classifyMeetingKind,
   resolveDestination,
@@ -14,9 +14,19 @@ const {
   isRoomMember,
   listActiveMeetings,
 } = require('./meetings');
+const { createSpacePrefs } = require('./space-prefs');
 
-function createOrchestrator({ cfg, tokenStore, browserRuntime, log, transcription = null, meetingAgent = null }) {
+function createOrchestrator({
+  cfg,
+  tokenStore,
+  browserRuntime,
+  log,
+  transcription = null,
+  meetingAgent = null,
+  spacePrefs = null,
+}) {
   const state = new (require('./state').MeetingState)();
+  const prefs = spacePrefs ?? createSpacePrefs({ log });
   let botId = null;
   let botName = null;
   let meetingPersonId = null;
@@ -88,9 +98,13 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log, transcriptio
     if (state.isSuppressed(meetingId)) return { skipped: 'suppressed' };
     if (state.isJoined(meetingId)) return { skipped: 'already-joined' };
     if (!roomId) return { skipped: 'no-room' }; // not a space meeting we can post into
+    // Durable per-space opt-out (natural-language "never join meetings").
+    // Checked before lock so reconcile/poll stays cheap when a space is opted out.
+    if (prefs.shouldNeverJoin(roomId)) return { skipped: 'space-opt-out' };
 
     return state.withLock(meetingId, async () => {
       if (state.isSuppressed(meetingId) || state.isJoined(meetingId)) return { skipped: 'race' };
+      if (prefs.shouldNeverJoin(roomId)) return { skipped: 'space-opt-out' };
 
       // If startup identity discovery was temporarily unavailable, the
       // webhook/poll path retries it before making the membership decision.
@@ -236,7 +250,7 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log, transcriptio
     }
   }
 
-  // resource: messages, event: created — the "leave the meeting" command path.
+  // resource: messages, event: created — leave / status / per-space join policy.
   async function handleMessageCreated(payload) {
     const messageId = payload?.data?.id;
     if (!messageId) return;
@@ -249,24 +263,69 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log, transcriptio
     // plain bot-name prefix is accepted only when it leaves an exact meeting
     // command, so "openclaw leave meeting" works the same way as a native
     // mention without treating normal discussion as a command.
+    //
+    // Join-policy utterances ("the agent should never join meetings") are
+    // themselves instructions about the bot, so they are accepted without an
+    // @mention when the whole message parses as never-join / allow-join.
     const isPlainTextCommandAddress = command && commandText !== String(message.text ?? '').trim();
-    if (!isAddressedToBot(message, botId) && !isPlainTextCommandAddress) return;
-    if (!command) return;
+    const addressed =
+      isAddressedToBot(message, botId) ||
+      isPlainTextCommandAddress ||
+      isJoinPolicyCommand(command);
+    if (!addressed || !command) return;
 
-    const current = state.findJoinedByRoom(message.roomId);
+    const roomId = message.roomId;
+    const current = state.findJoinedByRoom(roomId);
+    const neverJoin = prefs.shouldNeverJoin(roomId);
+
     if (command === 'status') {
-      await announce(message.roomId, current
+      const presence = current
         ? 'I am currently in this space’s meeting. Say "leave meeting" to have me exit.'
-        : 'No meeting currently joined for this space.');
+        : 'No meeting currently joined for this space.';
+      const policy = neverJoin
+        ? ' Auto-join is **off** for this space (I will not join future meetings). Say "you can join meetings" to turn it back on.'
+        : ' Auto-join is **on** for this space. Say "never join meetings" if you want me to stop joining.';
+      await announce(roomId, presence + policy);
       return;
     }
+
+    if (command === 'never-join') {
+      if (!neverJoin) {
+        prefs.setNeverJoin(roomId, true, { updatedBy: message.personId });
+      }
+      const joined = current ?? await recoverJoinedForRoom(roomId);
+      if (joined) {
+        await tryLeave(joined.meetingId, { roomId, suppress: true });
+      }
+      await announce(
+        roomId,
+        neverJoin && !joined
+          ? 'Auto-join is already off for this space — I will not join meetings here.'
+          : 'Got it — I will not join meetings in this space. Say "you can join meetings" anytime to turn auto-join back on.'
+      );
+      return;
+    }
+
+    if (command === 'allow-join') {
+      if (neverJoin) {
+        prefs.setNeverJoin(roomId, false, { updatedBy: message.personId });
+      }
+      await announce(
+        roomId,
+        neverJoin
+          ? 'Auto-join is back on for this space — I will join meetings here when they go live.'
+          : 'Auto-join is already on for this space — I will join meetings when they go live.'
+      );
+      return;
+    }
+
     if (command === 'leave') {
-      const joined = current ?? await recoverJoinedForRoom(message.roomId);
+      const joined = current ?? await recoverJoinedForRoom(roomId);
       if (!joined) {
-        await announce(message.roomId, 'There’s no meeting I’m currently in for this space.');
+        await announce(roomId, 'There’s no meeting I’m currently in for this space.');
         return;
       }
-      await tryLeave(joined.meetingId, { roomId: message.roomId, suppress: true });
+      await tryLeave(joined.meetingId, { roomId, suppress: true });
     }
   }
 
@@ -321,6 +380,7 @@ function createOrchestrator({ cfg, tokenStore, browserRuntime, log, transcriptio
     stopPolling,
     dispose,
     state, // exposed for tests only
+    spacePrefs: prefs, // exposed for tests only
   };
 }
 

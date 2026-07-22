@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { parseCommand, isAddressedToBot, stripMention } = require('./commands');
+const { parseCommand, isJoinPolicyCommand, isAddressedToBot, stripMention } = require('./commands');
 
 test('parseCommand recognizes leave and status phrasing, case/punctuation-insensitively', () => {
   assert.equal(parseCommand('leave meeting'), 'leave');
@@ -13,6 +13,32 @@ test('parseCommand recognizes leave and status phrasing, case/punctuation-insens
   assert.equal(parseCommand('what is the weather'), null);
   assert.equal(parseCommand(''), null);
   assert.equal(parseCommand(undefined), null);
+});
+
+test('parseCommand recognizes natural-language never-join and allow-join policy', () => {
+  assert.equal(parseCommand('never join meetings'), 'never-join');
+  assert.equal(parseCommand('The agent should never join the meeting.'), 'never-join');
+  assert.equal(parseCommand("don't join our meetings"), 'never-join');
+  assert.equal(parseCommand('please stop auto-joining meetings'), 'never-join');
+  assert.equal(parseCommand('/meeting never'), 'never-join');
+  assert.equal(parseCommand('you can join meetings'), 'allow-join');
+  assert.equal(parseCommand('Feel free to join meetings again!'), 'allow-join');
+  assert.equal(parseCommand('/meeting enable'), 'allow-join');
+  assert.equal(parseCommand('the agent can join meetings'), 'allow-join');
+});
+
+test('parseCommand does not treat ordinary discussion as join policy', () => {
+  assert.equal(parseCommand('we should never join that vendor demo as a team'), null);
+  assert.equal(parseCommand('Can OpenClaw leave a meeting?'), null);
+  assert.equal(parseCommand('join the meeting when you can'), null);
+});
+
+test('isJoinPolicyCommand flags durable opt-in/opt-out only', () => {
+  assert.equal(isJoinPolicyCommand('never-join'), true);
+  assert.equal(isJoinPolicyCommand('allow-join'), true);
+  assert.equal(isJoinPolicyCommand('leave'), false);
+  assert.equal(isJoinPolicyCommand('status'), false);
+  assert.equal(isJoinPolicyCommand(null), false);
 });
 
 test('isAddressedToBot treats direct messages as always addressed', () => {

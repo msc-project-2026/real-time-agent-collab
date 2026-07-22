@@ -32,7 +32,15 @@ the plugin behaves exactly as before and no audio leaves the browser.
    1:1 — asks the SDK for its authenticated Locus leave request, dispatches
    that request from the Node host (outside browser CORS), and sets a
    suppression flag so the bot won't auto-rejoin that same meeting instance.
-4. A startup reconciliation sweep + a periodic poll (default every 5
+4. Per-space auto-join policy (durable, default **on**): any member can opt
+   the space out with natural language such as "never join meetings" or
+   "the agent should never join the meeting" (no @mention required for these
+   policy phrases). That is stored under
+   `$OPENCLAW_WORKSPACE_DIR/.collab/spaces/<spaceId>/meeting-prefs.json` and
+   blocks webhook join, reconcile, and poll for that room until someone opts
+   back in ("you can join meetings", `/meeting enable`, etc.). Opting out
+   also leaves any meeting already joined in that space.
+5. A startup reconciliation sweep + a periodic poll (default every 5
    minutes) catch any meeting the `started` webhook missed.
 
 ## Required environment variables

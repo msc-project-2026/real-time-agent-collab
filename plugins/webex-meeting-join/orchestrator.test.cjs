@@ -1,8 +1,17 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const test = require('node:test');
 const { createOrchestrator } = require('./orchestrator');
+const { createSpacePrefs } = require('./space-prefs');
+
+function tempSpacePrefs() {
+  const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'meeting-orch-prefs-'));
+  return createSpacePrefs({ workspaceRoot });
+}
 
 function response(data) {
   return { ok: true, json: async () => data, text: async () => '' };
@@ -490,6 +499,160 @@ test('reconcile() does not rejoin a meeting the user explicitly asked us to leav
     orchestrator.state.suppressed.add('meeting-1');
     await orchestrator.reconcile();
     assert.equal(browserRuntime.calls.join.length, 0);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('handleMeetingStarted skips join when the space has opted out of auto-join', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => {
+    if (String(url).endsWith('/people/me')) return response({ id: 'bot-id' });
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  try {
+    const spacePrefs = tempSpacePrefs();
+    spacePrefs.setNeverJoin('room-1', true);
+    const browserRuntime = fakeBrowserRuntime();
+    const orchestrator = createOrchestrator({
+      cfg: baseCfg(),
+      tokenStore: fakeTokenStore([
+        ['/people/me', { id: 'meeting-person-id' }],
+        ['/meetings/meeting-1', { id: 'meeting-1', roomId: 'room-1', sipUrl: 'sip:x@webex.com' }],
+      ]),
+      browserRuntime,
+      spacePrefs,
+    });
+    await orchestrator.start();
+    await orchestrator.handleMeetingStarted({ data: { id: 'meeting-1' } });
+    assert.equal(browserRuntime.calls.join.length, 0);
+    assert.equal(orchestrator.state.isJoined('meeting-1'), false);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('handleMessageCreated persists never-join from natural language without @mention', async () => {
+  const originalFetch = global.fetch;
+  const posted = [];
+  global.fetch = async (url, opts = {}) => {
+    if (String(url).endsWith('/people/me')) return response({ id: 'bot-id' });
+    if (String(url).endsWith('/messages/msg-1')) {
+      return response({
+        id: 'msg-1',
+        personId: 'human-1',
+        roomId: 'room-1',
+        roomType: 'group',
+        mentionedPeople: [],
+        text: 'the agent should never join the meeting',
+      });
+    }
+    if (String(url).endsWith('/messages')) {
+      posted.push(JSON.parse(opts.body));
+      return response({ id: 'ack' });
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  try {
+    const spacePrefs = tempSpacePrefs();
+    const browserRuntime = fakeBrowserRuntime();
+    const orchestrator = createOrchestrator({
+      cfg: baseCfg(),
+      tokenStore: fakeTokenStore([['/people/me', { id: 'meeting-person-id' }]]),
+      browserRuntime,
+      spacePrefs,
+    });
+    await orchestrator.start();
+    await orchestrator.handleMessageCreated({ data: { id: 'msg-1' } });
+    assert.equal(spacePrefs.shouldNeverJoin('room-1'), true);
+    assert.match(posted.at(-1).markdown, /will not join meetings/i);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('never-join leaves a live meeting and blocks reconcile rejoin', async () => {
+  const originalFetch = global.fetch;
+  const posted = [];
+  global.fetch = async (url, opts = {}) => {
+    if (String(url).endsWith('/people/me')) return response({ id: 'bot-id' });
+    if (String(url).endsWith('/messages/msg-1')) {
+      return response({
+        id: 'msg-1',
+        personId: 'human-1',
+        roomId: 'room-1',
+        roomType: 'group',
+        mentionedPeople: [],
+        text: 'never join meetings',
+      });
+    }
+    if (String(url).endsWith('/messages')) {
+      posted.push(JSON.parse(opts.body));
+      return response({ id: 'ack' });
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  try {
+    const spacePrefs = tempSpacePrefs();
+    const browserRuntime = fakeBrowserRuntime();
+    const orchestrator = createOrchestrator({
+      cfg: baseCfg(),
+      tokenStore: fakeTokenStore([
+        ['/people/me', { id: 'meeting-person-id' }],
+        ['/meetings?', { items: [{ id: 'meeting-1', roomId: 'room-1', state: 'inprogress' }] }],
+      ]),
+      browserRuntime,
+      spacePrefs,
+    });
+    await orchestrator.start();
+    orchestrator.state.markJoined('meeting-1', { roomId: 'room-1' });
+    await orchestrator.handleMessageCreated({ data: { id: 'msg-1' } });
+    assert.equal(browserRuntime.calls.leave.length, 1);
+    assert.equal(orchestrator.state.isJoined('meeting-1'), false);
+    assert.equal(spacePrefs.shouldNeverJoin('room-1'), true);
+
+    await orchestrator.reconcile();
+    assert.equal(browserRuntime.calls.join.length, 0);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('allow-join turns auto-join back on for the space', async () => {
+  const originalFetch = global.fetch;
+  const posted = [];
+  global.fetch = async (url, opts = {}) => {
+    if (String(url).endsWith('/people/me')) return response({ id: 'bot-id' });
+    if (String(url).endsWith('/messages/msg-1')) {
+      return response({
+        id: 'msg-1',
+        personId: 'human-1',
+        roomId: 'room-1',
+        roomType: 'group',
+        mentionedPeople: ['bot-id'],
+        text: '@Bot you can join meetings',
+      });
+    }
+    if (String(url).endsWith('/messages')) {
+      posted.push(JSON.parse(opts.body));
+      return response({ id: 'ack' });
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  try {
+    const spacePrefs = tempSpacePrefs();
+    spacePrefs.setNeverJoin('room-1', true);
+    const browserRuntime = fakeBrowserRuntime();
+    const orchestrator = createOrchestrator({
+      cfg: baseCfg(),
+      tokenStore: fakeTokenStore([['/people/me', { id: 'meeting-person-id' }]]),
+      browserRuntime,
+      spacePrefs,
+    });
+    await orchestrator.start();
+    await orchestrator.handleMessageCreated({ data: { id: 'msg-1' } });
+    assert.equal(spacePrefs.shouldNeverJoin('room-1'), false);
+    assert.match(posted.at(-1).markdown, /back on/i);
   } finally {
     global.fetch = originalFetch;
   }

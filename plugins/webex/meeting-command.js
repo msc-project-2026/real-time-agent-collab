@@ -3,7 +3,17 @@
 // the chat agent from replying as if it could control a meeting.
 'use strict';
 
-const COMMANDS = new Set([
+// Keep phrase detection aligned with plugins/webex-meeting-join/commands.js.
+// Prefer requiring that module when present; fall back to a local phrase set
+// so the chat plugin still loads if meeting-join is not installed.
+let parseMeetingJoinCommand = null;
+try {
+  ({ parseCommand: parseMeetingJoinCommand } = require('../webex-meeting-join/commands'));
+} catch {
+  parseMeetingJoinCommand = null;
+}
+
+const FALLBACK_COMMANDS = new Set([
   '/meeting',
   '/meeting status',
   '/meeting leave',
@@ -12,6 +22,16 @@ const COMMANDS = new Set([
   'leave the meeting',
   'please leave meeting',
   'please leave the meeting',
+  '/meeting never',
+  '/meeting disable',
+  '/meeting off',
+  '/meeting enable',
+  '/meeting always',
+  '/meeting on',
+  'never join meetings',
+  'never join the meeting',
+  "don't join meetings",
+  'you can join meetings',
 ]);
 
 function escapeRegExp(value) {
@@ -30,10 +50,14 @@ function stripLeadingAddress(text, botName) {
 }
 
 function isMeetingControlCommand(text, botName) {
-  const command = stripLeadingAddress(text, botName)
+  const command = stripLeadingAddress(text, botName);
+  if (parseMeetingJoinCommand) {
+    return parseMeetingJoinCommand(command) != null;
+  }
+  const normalized = command
     .toLowerCase()
     .replace(/[.!]+$/, '');
-  return COMMANDS.has(command);
+  return FALLBACK_COMMANDS.has(normalized);
 }
 
 module.exports = { isMeetingControlCommand, stripLeadingAddress };
