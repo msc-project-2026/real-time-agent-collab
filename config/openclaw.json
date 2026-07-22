@@ -61,12 +61,6 @@
         "model": {
           "primary": "cisco/bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0"
         }
-      },
-      {
-        "id": "meeting-notes",
-        "model": {
-          "primary": "cisco/bedrock/global.anthropic.claude-sonnet-4-6"
-        }
       }
     ]
   },
@@ -97,7 +91,6 @@
       "clientSecret": "${WEBEX_CLIENT_SECRET}",
       "webhookUrl": "${WEBEX_WEBHOOK_URL}",
       "webhookSecret": "${WEBEX_WEBHOOK_SECRET}",
-      "defaultMeetingNotesRoomId": "${WEBEX_DEFAULT_MEETING_NOTES_ROOM_ID}",
       "dmPolicy": "allowlisted",
       "allowFrom": [
         "ucabtg2@ucl.ac.uk",
@@ -135,15 +128,7 @@
     "allowRequestSessionKey": true,
     "allowedSessionKeyPrefixes": ["agent:main:webex:", "hook:"],
     "defaultSessionKey": "hook:collab-sync",
-    "mappings": [
-    {
-      "match": { "path": "meeting-notes" },
-      "action": "agent",
-      "agentId": "meeting-notes",
-      "sessionKey": "hook:meeting-notes:{{meetingId}}",
-      "deliver": true
-    }
-  ]
+    "mappings": []
   },
   "browser": {
     "enabled": true,

@@ -42,8 +42,6 @@ const WEBHOOK_SPECS = [
   { name: 'OpenClaw Message Handler', resource: 'messages', event: 'created', pathSuffix: '' },
   { name: 'OpenClaw Membership Handler', resource: 'memberships', event: 'created', pathSuffix: '' },
   { name: 'OpenClaw Card Action Handler', resource: 'attachmentActions', event: 'created', pathSuffix: '' },
-  { name: 'OpenClaw Meeting Transcript Handler', resource: 'meetingTranscripts', event: 'created', pathSuffix: '/meeting-transcripts' },
-  
 ];
 
 async function ensureWebhook(cfg) {
