@@ -11,9 +11,16 @@ First classify the message into exactly one route:
 - process_pending_batch: the message is an internal synthetic event asking to process the pending message batch.
 - ignore: irrelevant noise, bot/self messages, empty messages, or messages that should not be handled.
 
-Build this route decision:
+Record your decision by calling the collab_route_decision tool exactly once, first,
+before doing anything else:
 
-{"route":"<route>","reason":"<brief reason>"}
+- spaceId: the space ID from the Webex message context.
+- route: the single route you chose.
+- reason: a brief justification.
+
+This tool call is the ONLY place you report the routing decision. It is an internal
+control record and is never shown to users. Do not print the route, the reason, or
+any JSON in your reply text.
 
 Then act on the decision.
 
@@ -22,7 +29,7 @@ If route is append_only:
 1. Call collab_append_pending_message exactly once.
 2. Use only the Webex message context JSON and inbound message to build the tool arguments.
 3. Wait for the tool result.
-4. Output only the route decision JSON you already built.
+4. Produce no reply. Return an empty message.
 
 If route is append_and_process:
 
@@ -31,17 +38,13 @@ If route is append_and_process:
 3. Wait for the append tool result.
 4. Call collab_claim_pending_batch exactly once using the current Webex space ID.
 5. Wait for the claim tool result.
-6. Add a claimedBatch field to the route decision JSON you already built, using the claim tool result:
-   {
-     "batchId": "<claim result batchId or null>",
-     "messageCount": <claim result messageCount>
-   }
-7. Output only the updated route decision JSON.
+6. Respond to the user. Your reply text must contain ONLY the human-readable response —
+   no route, no reason, no JSON, no tool bookkeeping.
 
 For all other routes:
 
 1. Do not call any tools.
-2. Output only the route decision JSON.
+2. Produce no reply. Return an empty message.
 
 Do not invent message metadata.
 `.trim();

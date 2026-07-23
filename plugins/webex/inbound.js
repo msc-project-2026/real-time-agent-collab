@@ -17,6 +17,7 @@ const { enqueueSessionDispatch } = require('./session-dispatch');
 const { isMeetingControlCommand, isMeetingPolicyCommand, isMeetingSlashCommand } = require('./meeting-command');
 
 const { buildRoutingInstruction } = require('./prompts/routing');
+const { extractRoutingPrefix } = require('./routing-prefix');
 
 let pluginRuntime = null;
 function setRuntime(r) {
@@ -549,30 +550,16 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
     dispatcherOptions: {
       deliver: async (out) => {
         log?.info?.(`[webex:${account.accountId}] raw out.text: ${JSON.stringify(out?.text)}`);
-        const reply = (out?.text ?? '').trim();
-        if (!reply) return;
 
-        // The LLM prepends its routing decision JSON to the actual response in a
-        // single delivery. Strip that prefix so only the human-readable reply reaches Webex.
-        if (reply.startsWith('{')) {
-          try {
-            let depth = 0, end = -1;
-            for (let i = 0; i < reply.length; i++) {
-              if (reply[i] === '{') depth++;
-              else if (reply[i] === '}') { depth--; if (depth === 0) { end = i + 1; break; } }
-            }
-            if (end > 0) {
-              const parsed = JSON.parse(reply.slice(0, end));
-              if (parsed && typeof parsed.route === 'string') {
-                reply = reply.slice(end).trim();
-                log?.info?.(`[webex:${account.accountId}] stripped routing prefix (route=${parsed.route})`);
-                if (!reply) return;
-              }
-            }
-          } catch {
-            // Not routing JSON — fall through and send as-is
-          }
+        // The routing decision now travels on the collab_route_decision tool
+        // call, so out.text should be the human reply only. extractRoutingPrefix
+        // is a non-throwing backstop: if a model ever still prepends a routing
+        // object, we strip it here so it never reaches the space.
+        const { route, reply } = extractRoutingPrefix(out?.text);
+        if (route) {
+          log?.info?.(`[webex:${account.accountId}] stripped stray routing prefix (route=${route})`);
         }
+        if (!reply) return;
 
         // ── Stage 3: Lull wait ────────────────────────────────────────────────
         if (!capturedIsDirectlyAddressed) {

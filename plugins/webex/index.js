@@ -3,6 +3,7 @@
 
 const { appendPendingMessageTool } = require('./tools/append-pending-message');
 const { claimPendingBatchTool } = require('./tools/claim-pending-batch');
+const { routeDecisionTool } = require('./tools/route-decision');
 
 const { webexPlugin } = require('./channel');
 const { webhookRouter } = require('./webhook');
@@ -24,6 +25,7 @@ function register(api) {
   });
 
   // Tools
+  api.registerTool(routeDecisionTool());
   api.registerTool(appendPendingMessageTool());
   api.registerTool(claimPendingBatchTool());
 }
