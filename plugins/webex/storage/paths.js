@@ -82,16 +82,8 @@ function contextDir(spaceId, explicitRoot) {
   return path.join(spaceDir(spaceId, explicitRoot), 'context');
 }
 
-function contextSummaryPath(spaceId, explicitRoot) {
-  return path.join(contextDir(spaceId, explicitRoot), 'summary.md');
-}
-
-function contextAnalysisPath(spaceId, batchId, explicitRoot) {
-  return path.join(
-    contextDir(spaceId, explicitRoot),
-    'analyses',
-    `${batchId}.json`
-  );
+function conversationsPath(spaceId, explicitRoot) {
+  return path.join(contextDir(spaceId, explicitRoot), 'conversations.json');
 }
 
 module.exports = {
@@ -109,4 +101,5 @@ module.exports = {
   configDir,
   activeConfigPath,
   contextDir,
+  conversationsPath,
 };

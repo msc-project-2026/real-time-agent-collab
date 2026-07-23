@@ -4,14 +4,14 @@
 const fs = require('node:fs/promises');
 
 const { processingBatchPath } = require('../storage/paths.js');
-const { readContextSummary } = require('../context/store.js');
-const { read } = require('node:fs');
+const { getConversations } = require('../context/conversations-store.js');
 
 async function loadProcessingBatch({ spaceId, batchId, explicitRoot }) {
   if (!spaceId) throw new Error('spaceId is required');
   if (!batchId) throw new Error('batchId is required');
 
   try {
+    // Get messages
     const raw = await fs.readFile(
       processingBatchPath(spaceId, batchId, explicitRoot),
       'utf8'
@@ -23,12 +23,15 @@ async function loadProcessingBatch({ spaceId, batchId, explicitRoot }) {
       .filter(Boolean)
       .map((line) => JSON.parse(line));
 
-    const currentContextSummary = await readContextSummary({
+    // Get last message
+    const lastMessage = messages.at(-1);
+
+    // Get conversations
+    const conversations = await getConversations({
       spaceId,
       explicitRoot,
+      statuses: ['active', 'dormant'],
     });
-
-    const lastMessage = messages.at(-1);
 
     return {
       ok: true,
@@ -36,8 +39,8 @@ async function loadProcessingBatch({ spaceId, batchId, explicitRoot }) {
       batchId,
       messageCount: messages.length,
       messages,
-      currentContextSummary,
       suggestedReplyToId: lastMessage?.parentId ?? null,
+      conversations,
     };
   } catch (err) {
     if (err?.code === 'ENOENT') {

@@ -1,54 +1,85 @@
 // ********* PROCESSING.JS *********
 'use strict';
 
-function buildProcessingInstruction() {
+function buildProcessingInstruction({ batch }) {
   return `
-You are processing a staged Webex collaboration batch.
+## Task
 
-Your job:
-1. Read the staged batch using collab_read_processing_batch.
-2. Decide whether a response is needed.
-3. If a response is needed, send one Webex message using the Message tool.
-4. Mark the batch complete using collab_complete_processing_batch.
+You are processing a batch of Webex space messages.
 
-Use the batchId and spaceId from the internal event.
+Read the batch and existing conversations below. Determine:
 
-Do not call append or stage tools.
-Do not rely on final assistant output to send Webex messages.
+1. Which existing conversation(s), if any, the batch continues.
+2. Whether the batch starts any new conversation(s).
+3. Whether any part of the batch is not informative and should not be tracked as a conversation.
+4. Whether the agent should send a local response now.
 
-Threading:
-- collab_read_processing_batch may return suggestedReplyToId.
-- If you send a Webex response and suggestedReplyToId is present, pass that value as replyToId to the Message tool.
-- If suggestedReplyToId is null or missing, omit replyToId.
-- Do not infer, invent, or transform thread IDs.
+A conversation should only be tracked if it may be useful for future project context, coordination, task identification, or direct questions to the agent.
 
-A response is needed when the batch contains a clear question, request, or action for the agent.
-A response may also be sent when the agent can add clear, useful value without interrupting the conversation.
-If the batch does not benefit from an agent response, do not send a message.
+Avoid creating duplicate conversations. Prefer updating an existing conversation when the batch clearly continues the same issue, decision, question, task, or work topic.
 
-Afterwards, call collab_complete_processing_batch with a result object containing:
+### Output
+
+Output exactly one JSON object:
 
 {
-  "summary": "<brief summary of the batch>",
-  "responseNeeded": true | false,
-  "responseSent": true | false
+  "conversationUpdates": [
+    {
+      "conversationId": "<existing conversation id>",
+      "summary": "<updated concise summary of the conversation>",
+      "reason": "<brief reason this batch belongs to the conversation>",
+      "messageIds": ["<message id>"]
+    }
+  ],
+  "newConversations": [
+    {
+      "topic": "<short conversation topic>",
+      "summary": "<concise summary of the new conversation>",
+      "messageIds": ["<message id>"]
+    }
+  ],
+  "untrackedMessageIds": ["<message id>"],
+  "responseDecision": {
+    "needed": true | false,
+    "reason": "<brief reason>",
+    "message": "<message to send, or null>",
+    "replyToId": "<replyToId, or null>"
+  }
 }
 
-Only mark the batch complete after any required Webex message has been sent successfully.
+### Rules
+- Use only message ids that appear in the batch.
+- Use only conversation ids that appear in the existing conversations.
+- If no response is needed, set message and replyToId to null.
+- If a response is needed and suggestedReplyToId is available, use it as replyToId.
+- Do not include text outside the JSON object.
 
-After attempting to complete the batch, output exactly one JSON object:
+## Batch metadata
 
-{
-  "eventType": "process_staged_batch",
-  "status": "completed" | "failed",
-  "batchId": "<batchId>",
-  "messageCount": <messageCount>,
-  "responseNeeded": true | false,
-  "responseSent": true | false
-}
+\`\`\`json
+${JSON.stringify(
+  {
+    spaceId: batch.spaceId,
+    batchId: batch.batchId,
+    messageCount: batch.messageCount,
+    suggestedReplyToId: batch.suggestedReplyToId,
+  },
+  null,
+  2
+)}
+\`\`\`
 
-Set "status" to "completed" only if all required tool calls succeed.
-If any required tool call fails or returns an error, set "status" to "failed".
+## Batch messages
+
+\`\`\`json
+${JSON.stringify(batch.messages, null, 2)}
+\`\`\`
+
+## Existing conversations
+
+\`\`\`json
+${JSON.stringify(batch.conversations, null, 2)}
+\`\`\`
 `.trim();
 }
 

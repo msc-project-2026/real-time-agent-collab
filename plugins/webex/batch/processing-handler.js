@@ -4,6 +4,8 @@
 const { buildProcessingInstruction } = require('../instructions/processing');
 const { dispatchToAgentForSpace } = require('../dispatch');
 const { getPluginRuntime } = require('../runtime');
+const { makeProcessingResultHandler } = require('../processing/result-handler');
+const { loadProcessingBatch } = require('./load');
 
 // Process staged batch
 async function handleProcessStagedBatchRequest({
@@ -14,38 +16,27 @@ async function handleProcessStagedBatchRequest({
 }) {
   if (!spaceId) throw new Error('spaceId is required');
   if (!batchId) throw new Error('batchId is required');
+  if (!account) throw new Error('account is requried');
 
-  const processingInstruction = buildProcessingInstruction();
+  const processingBatch = await loadProcessingBatch({
+    spaceId,
+    batchId,
+  });
+
+  const processingInstruction = buildProcessingInstruction({
+    batch: processingBatch,
+  });
 
   function buildProcessStagedBatchCtxPayload(sessionKeySuffix) {
-    const context = {
-      eventType: 'process_staged_batch',
-      internal: true,
-      spaceId,
-      batchId,
-      createdAt: new Date().toISOString(),
-    };
-
     return {
       Body: '',
       RawBody: '',
-      CommandBody: [
-        processingInstruction,
-        '',
-        'Internal collaboration event:',
-        '',
-        '```json',
-        JSON.stringify(context, null, 2),
-        '```',
-      ].join('\n'),
-
+      CommandBody: processingInstruction,
       From: 'webex:internal-batch-processor',
       To: `webex:${spaceId}`,
-
       SessionKey: sessionKeySuffix
         ? `agent:main:webex:${spaceId}:batch:${batchId}:${sessionKeySuffix}`
         : `agent:main:webex:${spaceId}:batch:${batchId}`,
-
       WebexRoomId: spaceId,
       AccountId: account.accountId,
       ChatType: 'group',
@@ -67,6 +58,11 @@ async function handleProcessStagedBatchRequest({
     account,
     log,
     buildCtxPayload: buildProcessStagedBatchCtxPayload,
+    onAgentOutput: makeProcessingResultHandler({
+      processingBatch,
+      account,
+      log,
+    }),
   });
 }
 
