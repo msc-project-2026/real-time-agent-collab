@@ -255,7 +255,10 @@ function createOrchestrator({
     const messageId = payload?.data?.id;
     if (!messageId) return;
     await ensureIdentities();
-    const message = await webexFetch(cfg.botToken, `/messages/${encodeURIComponent(messageId)}`).catch(() => null);
+    // Fetched with the meeting-account token: the webhook is registered under
+    // that account (bots never receive un-@mentioned group messages), and a
+    // bot token can't read messages it wasn't mentioned in either.
+    const message = await tokenStore.meetingFetch(`/messages/${encodeURIComponent(messageId)}`).catch(() => null);
     if (!message || message.personId === botId || message.personId === meetingPersonId) return;
     const commandText = stripMention(message.text, botName);
     const command = parseCommand(commandText);

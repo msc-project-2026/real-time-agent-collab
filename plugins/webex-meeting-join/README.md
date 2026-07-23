@@ -19,8 +19,14 @@ the plugin behaves exactly as before and no audio leaves the browser.
 ## How it works (Approach 2 from the research phase)
 
 1. This plugin registers its own Webex webhooks: `meetings/started`,
-   `meetings/ended` (owned by the dedicated meeting account), and
-   `messages/created` (owned by the bot account).
+   `meetings/ended`, and `messages/created`, all owned by the dedicated
+   meeting account. `messages/created` deliberately does NOT use the bot
+   account: Webex only delivers message webhooks to a bot when it is
+   @mentioned (or in a 1:1), which would make the no-mention join-policy
+   phrases below invisible to the plugin. The meeting account is a normal
+   user and receives every message in the spaces it belongs to — exactly
+   the spaces where auto-join is possible. Replies are still posted as the
+   bot.
 2. When a `meetings/started` webhook fires, it resolves the meeting's
    SDK-facing REST `sipUrl`/`sipAddress` (falling back to the meeting ID),
    confirms the meeting account is a member of the associated space, and
@@ -47,8 +53,8 @@ the plugin behaves exactly as before and no audio leaves the browser.
 
 | Variable | Purpose |
 |---|---|
-| `WEBEX_BOT_TOKEN` | Bot identity — posts chat messages, owns the `messages/created` webhook |
-| `WEBEX_MEETING_ACCESS_TOKEN` (or falls back to `WEBEX_ACCESS_TOKEN`) | Dedicated human-user account that actually joins meetings (bot accounts cannot) |
+| `WEBEX_BOT_TOKEN` | Bot identity — posts chat messages |
+| `WEBEX_MEETING_ACCESS_TOKEN` (or falls back to `WEBEX_ACCESS_TOKEN`) | Dedicated human-user account that actually joins meetings (bot accounts cannot) and owns all three webhooks, including `messages/created` |
 | `WEBEX_MEETING_WEBHOOK_URL` | Public base URL this plugin's own webhook route is reachable at, e.g. `https://your-domain/webhooks/webex-meeting-join` |
 
 Optional (enable proactive + reactive OAuth token refresh for the meeting

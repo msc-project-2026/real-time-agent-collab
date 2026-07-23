@@ -264,9 +264,6 @@ test('handleMessageCreated leaves the meeting when addressed and asked to leave'
   const posted = [];
   global.fetch = async (url, opts = {}) => {
     if (String(url).endsWith('/people/me')) return response({ id: 'bot-id' });
-    if (String(url).endsWith('/messages/msg-1')) {
-      return response({ id: 'msg-1', personId: 'human-1', roomId: 'room-1', roomType: 'group', mentionedPeople: ['bot-id'], text: '@Bot leave meeting' });
-    }
     if (String(url).endsWith('/messages')) {
       posted.push(JSON.parse(opts.body));
       return response({ id: 'ack' });
@@ -277,7 +274,10 @@ test('handleMessageCreated leaves the meeting when addressed and asked to leave'
     const browserRuntime = fakeBrowserRuntime();
     const orchestrator = createOrchestrator({
       cfg: baseCfg(),
-      tokenStore: fakeTokenStore([['/people/me', { id: 'meeting-person-id' }]]),
+      tokenStore: fakeTokenStore([
+        ['/people/me', { id: 'meeting-person-id' }],
+        ['/messages/msg-1', { id: 'msg-1', personId: 'human-1', roomId: 'room-1', roomType: 'group', mentionedPeople: ['bot-id'], text: '@Bot leave meeting' }],
+      ]),
       browserRuntime,
     });
     await orchestrator.start();
@@ -303,9 +303,6 @@ test('handleMessageCreated accepts a plain bot-name prefix for an exact leave co
   const posted = [];
   global.fetch = async (url, opts = {}) => {
     if (String(url).endsWith('/people/me')) return response({ id: 'bot-id', displayName: 'OpenClaw' });
-    if (String(url).endsWith('/messages/msg-1')) {
-      return response({ id: 'msg-1', personId: 'human-1', roomId: 'room-1', roomType: 'group', mentionedPeople: [], text: 'openclaw leave meeting' });
-    }
     if (String(url).endsWith('/messages')) {
       posted.push(JSON.parse(opts.body));
       return response({ id: 'ack' });
@@ -316,7 +313,10 @@ test('handleMessageCreated accepts a plain bot-name prefix for an exact leave co
     const browserRuntime = fakeBrowserRuntime();
     const orchestrator = createOrchestrator({
       cfg: baseCfg(),
-      tokenStore: fakeTokenStore([['/people/me', { id: 'meeting-person-id' }]]),
+      tokenStore: fakeTokenStore([
+        ['/people/me', { id: 'meeting-person-id' }],
+        ['/messages/msg-1', { id: 'msg-1', personId: 'human-1', roomId: 'room-1', roomType: 'group', mentionedPeople: [], text: 'openclaw leave meeting' }],
+      ]),
       browserRuntime,
     });
     await orchestrator.start();
@@ -337,9 +337,6 @@ test('leave command recovers a server-committed join that was missing from local
   const posted = [];
   global.fetch = async (url, opts = {}) => {
     if (String(url).endsWith('/people/me')) return response({ id: 'bot-id' });
-    if (String(url).endsWith('/messages/msg-1')) {
-      return response({ id: 'msg-1', personId: 'human-1', roomId: 'room-1', roomType: 'group', mentionedPeople: ['bot-id'], text: '@Bot leave meeting' });
-    }
     if (String(url).endsWith('/messages')) {
       posted.push(JSON.parse(opts.body));
       return response({ id: 'ack' });
@@ -356,6 +353,7 @@ test('leave command recovers a server-committed join that was missing from local
       cfg: baseCfg(),
       tokenStore: fakeTokenStore([
         ['/people/me', { id: 'meeting-person-id' }],
+        ['/messages/msg-1', { id: 'msg-1', personId: 'human-1', roomId: 'room-1', roomType: 'group', mentionedPeople: ['bot-id'], text: '@Bot leave meeting' }],
         ['/meetings?', { items: [{
           id: 'meeting-1',
           roomId: 'room-1',
@@ -387,9 +385,6 @@ test('leave failure is reported to the room instead of failing silently', async 
   const posted = [];
   global.fetch = async (url, opts = {}) => {
     if (String(url).endsWith('/people/me')) return response({ id: 'bot-id' });
-    if (String(url).endsWith('/messages/msg-1')) {
-      return response({ id: 'msg-1', personId: 'human-1', roomId: 'room-1', roomType: 'group', mentionedPeople: ['bot-id'], text: '@Bot leave meeting' });
-    }
     if (String(url).endsWith('/messages')) {
       posted.push(JSON.parse(opts.body));
       return response({ id: 'ack' });
@@ -404,7 +399,10 @@ test('leave failure is reported to the room instead of failing silently', async 
     };
     const orchestrator = createOrchestrator({
       cfg: baseCfg(),
-      tokenStore: fakeTokenStore([['/people/me', { id: 'meeting-person-id' }]]),
+      tokenStore: fakeTokenStore([
+        ['/people/me', { id: 'meeting-person-id' }],
+        ['/messages/msg-1', { id: 'msg-1', personId: 'human-1', roomId: 'room-1', roomType: 'group', mentionedPeople: ['bot-id'], text: '@Bot leave meeting' }],
+      ]),
       browserRuntime,
     });
     await orchestrator.start();
@@ -426,16 +424,16 @@ test('handleMessageCreated ignores messages not addressed to the bot', async () 
   const originalFetch = global.fetch;
   global.fetch = async (url) => {
     if (String(url).endsWith('/people/me')) return response({ id: 'bot-id' });
-    if (String(url).endsWith('/messages/msg-1')) {
-      return response({ id: 'msg-1', personId: 'human-1', roomId: 'room-1', roomType: 'group', mentionedPeople: [], text: 'leave meeting' });
-    }
     throw new Error(`unexpected fetch: ${url}`);
   };
   try {
     const browserRuntime = fakeBrowserRuntime();
     const orchestrator = createOrchestrator({
       cfg: baseCfg(),
-      tokenStore: fakeTokenStore([['/people/me', { id: 'meeting-person-id' }]]),
+      tokenStore: fakeTokenStore([
+        ['/people/me', { id: 'meeting-person-id' }],
+        ['/messages/msg-1', { id: 'msg-1', personId: 'human-1', roomId: 'room-1', roomType: 'group', mentionedPeople: [], text: 'leave meeting' }],
+      ]),
       browserRuntime,
     });
     await orchestrator.start();
@@ -537,16 +535,6 @@ test('handleMessageCreated persists never-join from natural language without @me
   const posted = [];
   global.fetch = async (url, opts = {}) => {
     if (String(url).endsWith('/people/me')) return response({ id: 'bot-id' });
-    if (String(url).endsWith('/messages/msg-1')) {
-      return response({
-        id: 'msg-1',
-        personId: 'human-1',
-        roomId: 'room-1',
-        roomType: 'group',
-        mentionedPeople: [],
-        text: 'the agent should never join the meeting',
-      });
-    }
     if (String(url).endsWith('/messages')) {
       posted.push(JSON.parse(opts.body));
       return response({ id: 'ack' });
@@ -558,7 +546,17 @@ test('handleMessageCreated persists never-join from natural language without @me
     const browserRuntime = fakeBrowserRuntime();
     const orchestrator = createOrchestrator({
       cfg: baseCfg(),
-      tokenStore: fakeTokenStore([['/people/me', { id: 'meeting-person-id' }]]),
+      tokenStore: fakeTokenStore([
+        ['/people/me', { id: 'meeting-person-id' }],
+        ['/messages/msg-1', {
+          id: 'msg-1',
+          personId: 'human-1',
+          roomId: 'room-1',
+          roomType: 'group',
+          mentionedPeople: [],
+          text: 'the agent should never join the meeting',
+        }],
+      ]),
       browserRuntime,
       spacePrefs,
     });
@@ -576,16 +574,6 @@ test('never-join leaves a live meeting and blocks reconcile rejoin', async () =>
   const posted = [];
   global.fetch = async (url, opts = {}) => {
     if (String(url).endsWith('/people/me')) return response({ id: 'bot-id' });
-    if (String(url).endsWith('/messages/msg-1')) {
-      return response({
-        id: 'msg-1',
-        personId: 'human-1',
-        roomId: 'room-1',
-        roomType: 'group',
-        mentionedPeople: [],
-        text: 'never join meetings',
-      });
-    }
     if (String(url).endsWith('/messages')) {
       posted.push(JSON.parse(opts.body));
       return response({ id: 'ack' });
@@ -599,6 +587,14 @@ test('never-join leaves a live meeting and blocks reconcile rejoin', async () =>
       cfg: baseCfg(),
       tokenStore: fakeTokenStore([
         ['/people/me', { id: 'meeting-person-id' }],
+        ['/messages/msg-1', {
+          id: 'msg-1',
+          personId: 'human-1',
+          roomId: 'room-1',
+          roomType: 'group',
+          mentionedPeople: [],
+          text: 'never join meetings',
+        }],
         ['/meetings?', { items: [{ id: 'meeting-1', roomId: 'room-1', state: 'inprogress' }] }],
       ]),
       browserRuntime,
@@ -623,16 +619,6 @@ test('allow-join turns auto-join back on for the space', async () => {
   const posted = [];
   global.fetch = async (url, opts = {}) => {
     if (String(url).endsWith('/people/me')) return response({ id: 'bot-id' });
-    if (String(url).endsWith('/messages/msg-1')) {
-      return response({
-        id: 'msg-1',
-        personId: 'human-1',
-        roomId: 'room-1',
-        roomType: 'group',
-        mentionedPeople: ['bot-id'],
-        text: '@Bot you can join meetings',
-      });
-    }
     if (String(url).endsWith('/messages')) {
       posted.push(JSON.parse(opts.body));
       return response({ id: 'ack' });
@@ -645,7 +631,17 @@ test('allow-join turns auto-join back on for the space', async () => {
     const browserRuntime = fakeBrowserRuntime();
     const orchestrator = createOrchestrator({
       cfg: baseCfg(),
-      tokenStore: fakeTokenStore([['/people/me', { id: 'meeting-person-id' }]]),
+      tokenStore: fakeTokenStore([
+        ['/people/me', { id: 'meeting-person-id' }],
+        ['/messages/msg-1', {
+          id: 'msg-1',
+          personId: 'human-1',
+          roomId: 'room-1',
+          roomType: 'group',
+          mentionedPeople: ['bot-id'],
+          text: '@Bot you can join meetings',
+        }],
+      ]),
       browserRuntime,
       spacePrefs,
     });

@@ -14,7 +14,7 @@ const prefs = require('./prefs');
 const { dispatchWithRetry } = require('../../lib/dispatch-retry.js');
 const { buildWelcomeCard, buildPresetCard } = require('./card');
 const { enqueueSessionDispatch } = require('./session-dispatch');
-const { isMeetingControlCommand } = require('./meeting-command');
+const { isMeetingControlCommand, isMeetingPolicyCommand } = require('./meeting-command');
 
 const { buildRoutingInstruction } = require('./prompts/routing');
 
@@ -352,7 +352,13 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
   // Meeting controls are handled by the dedicated meeting-join plugin. Do
   // not send them through the LLM, which has neither the browser SDK session
   // nor the meeting state and otherwise produces a misleading chat reply.
-  if (isDirectlyAddressed && isMeetingControlCommand(agentText, botName)) {
+  // Join-policy commands ("never join meetings") are valid WITHOUT an
+  // address, matching the meeting-join plugin's rules — they must early-return
+  // here too, or they'd fall into the proactivity gate and be dropped.
+  if (
+    (isDirectlyAddressed && isMeetingControlCommand(agentText, botName)) ||
+    isMeetingPolicyCommand(agentText, botName)
+  ) {
     log?.info?.(`[webex:meeting-command] delegated control command in roomId=${roomId}`);
     return;
   }
