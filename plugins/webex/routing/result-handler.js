@@ -69,6 +69,7 @@ function makeRouteResultHandler({ message, account, log }) {
             spaceId,
             route: parsed.route,
             error: err?.message ?? String(err),
+            stack: err?.stack ?? null,
           }
         )}`
       );

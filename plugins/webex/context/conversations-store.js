@@ -74,7 +74,7 @@ async function getConversations({
 
   const state = await readConversationsState({ spaceId, explicitRoot });
 
-  const conversations = Array.isArray(state?.conversations)
+  let conversations = Array.isArray(state?.conversations)
     ? state.conversations
     : [];
 
