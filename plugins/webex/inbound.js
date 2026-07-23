@@ -11,7 +11,7 @@ const { recordMessage: ctxRecord, getRecentMessages } = require('./context');
 const { tryAccept } = require('./debounce');
 const { logDecision } = require('./audit');
 const prefs = require('./prefs');
-const { dispatchWithRetry } = require('../../lib/dispatch-retry.js');
+const { dispatchWithSessionRecovery } = require('../../lib/dispatch-retry.js');
 const { buildWelcomeCard, buildPresetCard } = require('./card');
 const { enqueueSessionDispatch } = require('./session-dispatch');
 const { isMeetingControlCommand, isMeetingPolicyCommand, isMeetingSlashCommand } = require('./meeting-command');
@@ -536,8 +536,15 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
 
   const capturedIsDirectlyAddressed = treatAsDirect;
 
-  const dispatchArgs = {
-    ctx: ctxPayload,
+  const canonicalSessionKey = ctxPayload.SessionKey;
+
+  // The suffix variant only runs for the recovery fallback in
+  // dispatchWithSessionRecovery; the queue below always keys on the
+  // canonical SessionKey so room FIFO ordering is unaffected.
+  const buildDispatchArgs = (sessionKeySuffix) => ({
+    ctx: sessionKeySuffix
+      ? { ...ctxPayload, SessionKey: `${canonicalSessionKey}:${sessionKeySuffix}` }
+      : ctxPayload,
     cfg: loadedCfg,
     dispatcherOptions: {
       deliver: async (out) => {
@@ -591,10 +598,16 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
       },
     },
     replyOptions: {},
-  };
+  });
 
-  await enqueueSessionDispatch(ctxPayload.SessionKey, () =>
-    dispatchWithRetry(dispatch, dispatchArgs)
+  await enqueueSessionDispatch(canonicalSessionKey, () =>
+    dispatchWithSessionRecovery(dispatch, buildDispatchArgs, {
+      onRecovery: (recoverySuffix, err) =>
+        log?.warn?.(
+          `[webex:${account.accountId}] reply session conflict persisted after retries; ` +
+            `dispatching once with recovery session key ${recoverySuffix}: ${err?.message ?? err}`
+        ),
+    })
   );
 }
 

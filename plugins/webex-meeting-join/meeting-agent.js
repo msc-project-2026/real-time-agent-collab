@@ -16,6 +16,7 @@
 
 const { scoreMessage } = require('../webex/gate');
 const { mentionsName, getAddressNames } = require('../webex/address');
+const { dispatchWithSessionRecovery } = require('../../lib/dispatch-retry.js');
 
 const RECENT_TURNS_MAX = 12;
 const MEETING_SENDER = 'Meeting participant';
@@ -98,8 +99,13 @@ function createMeetingAgent({ runtime, postToSpace, gateThreshold, addressedGate
     const loadedCfg = runtime.config?.current?.() ?? {};
     const prompt = buildAgentPrompt({ transcript, recentTurns, addressed });
     const now = new Date().toISOString();
+    const canonicalSessionKey = `agent:meeting:webex:${roomId}`;
+    const messageSid = `webex-meeting:${meetingId}:${Date.now()}`;
 
-    await dispatch({
+    // The suffix variant only runs for the recovery fallback in
+    // dispatchWithSessionRecovery, when the canonical key's initialization
+    // conflict never clears (see lib/dispatch-retry.js).
+    const buildDispatchArgs = (sessionKeySuffix) => ({
       ctx: {
         Body: transcript,
         RawBody: transcript,
@@ -108,14 +114,16 @@ function createMeetingAgent({ runtime, postToSpace, gateThreshold, addressedGate
         To: `webex:${roomId}`,
         // Per-room session so the agent keeps meeting context across turns and
         // stays separate from the room's chat session.
-        SessionKey: `agent:meeting:webex:${roomId}`,
+        SessionKey: sessionKeySuffix
+          ? `${canonicalSessionKey}:${sessionKeySuffix}`
+          : canonicalSessionKey,
         WebexRoomId: roomId,
         ChatType: 'group',
         SenderName: MEETING_SENDER,
         SenderId: `webex-meeting:${meetingId}`,
         Provider: 'webex-meeting',
         Surface: 'webex-meeting',
-        MessageSid: `webex-meeting:${meetingId}:${Date.now()}`,
+        MessageSid: messageSid,
         Timestamp: now,
         OriginatingChannel: 'webex-meeting',
         OriginatingTo: `webex:${roomId}`,
@@ -134,6 +142,14 @@ function createMeetingAgent({ runtime, postToSpace, gateThreshold, addressedGate
         },
       },
       replyOptions: {},
+    });
+
+    await dispatchWithSessionRecovery(dispatch, buildDispatchArgs, {
+      onRecovery: (recoverySuffix, err) =>
+        log?.warn?.(
+          `[webex-meeting-join] meeting session conflict persisted after retries; ` +
+            `dispatching once with recovery session key ${recoverySuffix}: ${err?.message ?? err}`
+        ),
     });
   }
 

@@ -3,6 +3,7 @@
 
 const { createObserver } = require('./observer');
 const prefs = require('../webex/prefs');
+const { dispatchWithSessionRecovery } = require('../../lib/dispatch-retry.js');
 
 const CHANNEL_ID = 'source-observer';
 const DEFAULT_ACCOUNT = 'default';
@@ -153,22 +154,29 @@ async function dispatchAgentPrompt(prompt, log) {
   const replies = [];
   const loadedCfg = pluginRuntime.config?.current?.() ?? {};
   const now = new Date().toISOString();
+  const canonicalSessionKey = 'agent:observer:source-observer:default';
+  const messageSid = `source-observer:${Date.now()}`;
 
-  await dispatch({
+  // The suffix variant only runs for the recovery fallback in
+  // dispatchWithSessionRecovery, when the canonical key's initialization
+  // conflict never clears (see lib/dispatch-retry.js).
+  const buildDispatchArgs = (sessionKeySuffix) => ({
     ctx: {
       Body: prompt,
       RawBody: prompt,
       CommandBody: prompt,
       From: 'source-observer',
       To: 'source-observer',
-      SessionKey: 'agent:observer:source-observer:default',
+      SessionKey: sessionKeySuffix
+        ? `${canonicalSessionKey}:${sessionKeySuffix}`
+        : canonicalSessionKey,
       AccountId: DEFAULT_ACCOUNT,
       ChatType: 'direct',
       SenderName: 'Source Observer',
       SenderId: 'source-observer',
       Provider: CHANNEL_ID,
       Surface: CHANNEL_ID,
-      MessageSid: `source-observer:${Date.now()}`,
+      MessageSid: messageSid,
       Timestamp: now,
       OriginatingChannel: CHANNEL_ID,
       OriginatingTo: CHANNEL_ID,
@@ -185,6 +193,14 @@ async function dispatchAgentPrompt(prompt, log) {
       },
     },
     replyOptions: {},
+  });
+
+  await dispatchWithSessionRecovery(dispatch, buildDispatchArgs, {
+    onRecovery: (recoverySuffix, err) =>
+      log?.warn?.(
+        `[${CHANNEL_ID}] observer session conflict persisted after retries; ` +
+          `dispatching once with recovery session key ${recoverySuffix}: ${err?.message ?? err}`
+      ),
   });
 
   return replies.join('\n');
