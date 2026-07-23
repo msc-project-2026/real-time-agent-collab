@@ -4,7 +4,10 @@
 #
 # Pin the browser-enabled OpenClaw image; this image also installs Brave below
 # for OpenClaw's gateway-managed browser session.
-ARG OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:latest-browser@sha256:d4f53c02f77c9e8d67c2ecd009cf1b32e165596829405a3d723dae039c46cb90
+# 2026.6.34 (built 2026-07-22): must stay >= 2026-07-13's #105754 — earlier
+# builds permanently wedge sessions with "reply session initialization
+# conflicted" until the gateway restarts (openclaw/openclaw#102020).
+ARG OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:latest-browser@sha256:3f77a6f12d43a88012dc76997eb61fe868f3df9b043f9d9f62a1db2a647b70fd
 
 FROM ${OPENCLAW_IMAGE}
 

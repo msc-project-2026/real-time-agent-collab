@@ -16,3 +16,4 @@ client-brief.md
 .memory/
 .mcp.json
 failures-docs-Asa/
+*.bak
