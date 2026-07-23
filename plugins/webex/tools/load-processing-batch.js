@@ -1,13 +1,13 @@
-// ********* READ_PROCESSING-BATCH.JS *********
+// ********* LOAD_PROCESSING-BATCH.JS *********
 'use strict';
 
-const { readProcessingBatch } = require('../lifecycle/read-processing');
+const { loadProcessingBatch } = require('../batch/load');
 
-function readProcessingBatchTool() {
+function loadProcessingBatchTool() {
   return {
-    name: 'collab_read_processing_batch',
+    name: 'collab_load_processing_batch',
     description:
-      'Read a staged processing batch for a Webex space. Returns the normalized messages from processing/<batchId>.jsonl.',
+      'Load a staged processing batch for a Webex space. Returns the normalized messages from processing/<batchId>.jsonl with additional context.',
     parameters: {
       type: 'object',
       properties: {
@@ -19,9 +19,9 @@ function readProcessingBatchTool() {
     },
     async execute(toolUseId, params) {
       const { spaceId, batchId } = params ?? {};
-      const result = await readProcessingBatch({ spaceId, batchId });
+      const result = await loadProcessingBatch({ spaceId, batchId });
 
-      console.info('[webex] collab_read_processing_batch result', {
+      console.info('[webex] collab_load_processing_batch result', {
         spaceId,
         batchId,
         messageCount: result.messageCount,
@@ -33,5 +33,5 @@ function readProcessingBatchTool() {
 }
 
 module.exports = {
-  readProcessingBatchTool,
+  loadProcessingBatchTool,
 };

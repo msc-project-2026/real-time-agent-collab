@@ -1,13 +1,14 @@
-// ********* APPEND-BATCH.JS *********
+// ********* BATCH/APPEND.JS *********
 'use strict';
 
 const fs = require('node:fs/promises');
+const { readPendingBatchState } = require('./state.js');
 
 const {
   pendingDir,
   pendingMessagesPath,
   pendingBatchStatePath,
-} = require('./paths.js');
+} = require('../storage/paths.js');
 
 async function appendPendingMessage({
   spaceId,
@@ -34,7 +35,7 @@ async function appendPendingMessage({
     'utf8'
   );
 
-  const batchState = await readBatchState(spaceId, explicitRoot);
+  const batchState = await readPendingBatchState(spaceId, explicitRoot);
 
   const nextState = {
     firstMessageAt: batchState?.firstMessageAt ?? record.receivedAt,
@@ -58,19 +59,6 @@ async function appendPendingMessage({
     pendingMessageCount: nextState.messageCount,
     scheduledRunAfter: nextState.scheduledRunAfter,
   };
-}
-
-async function readBatchState(spaceId, explicitRoot) {
-  try {
-    const raw = await fs.readFile(
-      pendingBatchStatePath(spaceId, explicitRoot),
-      'utf8'
-    );
-    return JSON.parse(raw);
-  } catch (err) {
-    if (err?.code === 'ENOENT') return null;
-    throw err;
-  }
 }
 
 module.exports = {

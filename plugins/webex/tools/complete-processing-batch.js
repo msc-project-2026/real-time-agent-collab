@@ -1,7 +1,7 @@
 // ********* COMPLETE_PROCESSING-BATCH.JS *********
 'use strict';
 
-const { completeProcessingBatch } = require('../lifecycle/complete-processing');
+const { completeProcessingBatch } = require('../batch/complete');
 
 function completeProcessingBatchTool() {
   return {

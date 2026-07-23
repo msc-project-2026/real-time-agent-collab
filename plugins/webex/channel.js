@@ -16,10 +16,8 @@ const {
 const { targets, normPath } = require('./webhook/router');
 const { handleInboundWebexWebhook } = require('./inbound');
 const { sendWebexMessage } = require('./send');
-const {
-  runPendingBatchStagingRecovery,
-} = require('./lifecycle/schedule-pending');
-const { handleStagePendingBatchRequest } = require('./batch/staging');
+const { runPendingBatchStagingRecovery } = require('./batch/schedule');
+const { handleStagePendingBatchRequest } = require('./batch/staging-handler');
 
 const DEFAULT_ACCOUNT = 'default';
 

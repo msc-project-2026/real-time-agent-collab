@@ -2,7 +2,7 @@
 'use strict';
 
 const fs = require('node:fs/promises');
-const { activeConfigPath, configDir } = require('../lifecycle/paths');
+const { activeConfigPath, configDir } = require('../storage/paths');
 const { write } = require('node:fs');
 const { type } = require('node:os');
 

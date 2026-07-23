@@ -1,8 +1,8 @@
-// ********* SCHEDULE-PENDING.JS *********
+// ********* BATCH/SCHEDULE.JS *********
 'use strict';
 
 const fs = require('node:fs/promises');
-const { spacesRoot, pendingBatchStatePath } = require('./paths');
+const { spacesRoot, pendingBatchStatePath } = require('../storage/paths');
 
 // *** Scheduler
 // Note: timers are in-memory (map) only. They are lost on gateway restart/deploy.

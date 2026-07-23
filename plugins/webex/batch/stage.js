@@ -1,9 +1,10 @@
-// ********* STAGE-PENDING.JS *********
+// ********* BATCH/STAGE.JS *********
 'use strict';
 
 const fs = require('node:fs/promises');
 const crypto = require('node:crypto');
 
+const { readPendingBatchState } = require('./state.js');
 const {
   pendingMessagesPath,
   pendingBatchStatePath,
@@ -47,20 +48,6 @@ async function stagePendingBatch({ spaceId, explicitRoot }) {
     batchId,
     messageCount: state.messageCount,
   };
-}
-
-async function readPendingBatchState(spaceId, explicitRoot) {
-  try {
-    const raw = await fs.readFile(
-      pendingBatchStatePath(spaceId, explicitRoot),
-      'utf8'
-    );
-
-    return JSON.parse(raw);
-  } catch (err) {
-    if (err?.code === 'ENOENT') return null;
-    throw err;
-  }
 }
 
 function createBatchId() {

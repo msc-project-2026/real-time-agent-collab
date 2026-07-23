@@ -1,4 +1,4 @@
-// ********* COMPLETE.JS *********
+// ********* BATCH/COMPLETE.JS *********
 'use strict';
 
 const fs = require('node:fs/promises');
@@ -7,7 +7,7 @@ const {
   processedDir,
   processedBatchPath,
   processedBatchMetaPath,
-} = require('./paths');
+} = require('../storage/paths.js');
 
 async function completeProcessingBatch({
   spaceId,

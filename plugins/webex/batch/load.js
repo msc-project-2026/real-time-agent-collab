@@ -1,11 +1,11 @@
-// ********* READ.JS *********
+// ********* BATCH/LOAD.JS *********
 'use strict';
 
 const fs = require('node:fs/promises');
 
-const { processingBatchPath } = require('./paths.js');
+const { processingBatchPath } = require('../storage/paths.js');
 
-async function readProcessingBatch({ spaceId, batchId, explicitRoot }) {
+async function loadProcessingBatch({ spaceId, batchId, explicitRoot }) {
   if (!spaceId) throw new Error('spaceId is required');
   if (!batchId) throw new Error('batchId is required');
 
@@ -40,5 +40,5 @@ async function readProcessingBatch({ spaceId, batchId, explicitRoot }) {
 }
 
 module.exports = {
-  readProcessingBatch,
+  loadProcessingBatch,
 };

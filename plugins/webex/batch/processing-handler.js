@@ -1,4 +1,4 @@
-// ********* BATCH/PROCESSING.JS *********
+// ********* BATCH/PROCESSING-HANDLER.JS *********
 'use strict';
 
 const { buildProcessingInstruction } = require('../instructions/processing');

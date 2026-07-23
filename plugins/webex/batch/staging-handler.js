@@ -1,8 +1,8 @@
-// ********* BATCH/STAGING.JS *********
+// ********* BATCH/STAGING-HANDLER.JS *********
 'use strict';
 
-const { stagePendingBatch } = require('../lifecycle/stage-pending');
-const { handleProcessStagedBatchRequest } = require('./processing');
+const { stagePendingBatch } = require('./stage');
+const { handleProcessStagedBatchRequest } = require('./processing-handler');
 
 async function handleStagePendingBatchRequest({ spaceId, account, log }) {
   if (!spaceId) throw new Error('spaceId is required');

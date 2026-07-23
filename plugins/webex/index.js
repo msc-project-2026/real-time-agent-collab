@@ -1,9 +1,7 @@
 // Entry point: registers the Webex channel plugin, HTTP route, and plugin tools with the OpenClaw plugin API.
 'use strict';
 
-const { appendPendingMessageTool } = require('./tools/append-pending-message');
-const { stagePendingBatchTool } = require('./tools/stage-pending-batch');
-const { readProcessingBatchTool } = require('./tools/read-processing-batch');
+const { loadProcessingBatchTool } = require('./tools/load-processing-batch');
 const {
   completeProcessingBatchTool,
 } = require('./tools/complete-processing-batch');
@@ -27,9 +25,7 @@ function register(api) {
   });
 
   // Tools
-  api.registerTool(appendPendingMessageTool());
-  api.registerTool(stagePendingBatchTool());
-  api.registerTool(readProcessingBatchTool());
+  api.registerTool(loadProcessingBatchTool());
   api.registerTool(completeProcessingBatchTool());
 }
 

@@ -2,12 +2,10 @@
 'use strict';
 
 const { parseJsonObjectFromText } = require('../utils/parse-json');
-const { appendPendingMessage } = require('../lifecycle/append-pending');
-const {
-  schedulePendingBatchStaging,
-} = require('../lifecycle/schedule-pending');
+const { appendPendingMessage } = require('../batch/append');
+const { schedulePendingBatchStaging } = require('../batch/schedule');
 const { handleConfigRequest } = require('../config/handle-request');
-const { handleStagePendingBatchRequest } = require('../batch/staging');
+const { handleStagePendingBatchRequest } = require('../batch/staging-handler');
 
 // Make handler for parsing message routing result
 function makeRouteResultHandler({ message, account, log }) {
