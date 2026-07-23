@@ -3,6 +3,9 @@
 
 const { webexFetch } = require('../api');
 const { getAccessToken } = require('../token');
+const {
+  handleConfigSubmission,
+} = require('../config/handle-config-submission');
 
 async function handleInboundWebexAttachmentAction(
   payload,
@@ -25,10 +28,8 @@ async function handleInboundWebexAttachmentAction(
     )}`
   );
 
-  const action = await webexFetch(
-    getAccessToken() ?? cfg.token,
-    `/attachment/actions/${actionId}`
-  );
+  // Fetch action from Id
+  const action = await webexFetch(cfg.token, `/attachment/actions/${actionId}`);
 
   log?.info?.(
     `[webex:${account.accountId}] received attachment action ${JSON.stringify({
@@ -43,16 +44,7 @@ async function handleInboundWebexAttachmentAction(
 
   switch (actionType) {
     case 'submit_config': {
-      // later:
-      // await handleConfigCardSubmission({ action, account, log });
-      log?.info?.(
-        `[webex:${account.accountId}] config submit action received ${JSON.stringify(
-          {
-            roomId: action.roomId,
-            inputs: action.inputs,
-          }
-        )}`
-      );
+      await handleConfigSubmission({ action, account, log });
       return;
     }
 
