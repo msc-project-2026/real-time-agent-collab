@@ -53,7 +53,7 @@ function schedulePendingBatchStaging({
           spaceId,
         }
       );
-    } catch {
+    } catch (err) {
       log?.error?.(
         `[webex:${account.accountId}] pending batch trigger failed: ${err?.message ?? err}`
       );
