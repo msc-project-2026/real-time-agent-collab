@@ -23,6 +23,17 @@ function setRuntime(r) {
   pluginRuntime = r;
 }
 
+// Webex sometimes re-delivers the same webhook event several times in quick
+// succession. Deduplicate by message ID to prevent session initialization
+// conflicts and duplicate agent responses.
+const recentlyProcessed = new Set();
+function isDuplicate(messageId) {
+  if (recentlyProcessed.has(messageId)) return true;
+  recentlyProcessed.add(messageId);
+  setTimeout(() => recentlyProcessed.delete(messageId), 30_000);
+  return false;
+}
+
 
 
 function isDmAllowed(cfg, personId, personEmail) {
@@ -305,6 +316,11 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
     `/messages/${payload.data.id}`
   );
 
+  if (isDuplicate(msg.id)) {
+    log?.info?.(`[webex:dedup] skipping duplicate delivery of ${msg.id}`);
+    return;
+  }
+
   let membership;
   try {
     membership = await webexFetch(
@@ -526,6 +542,28 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
         log?.info?.(`[webex:${account.accountId}] raw out.text: ${JSON.stringify(out?.text)}`);
         const reply = (out?.text ?? '').trim();
         if (!reply) return;
+
+        // The LLM prepends its routing decision JSON to the actual response in a
+        // single delivery. Strip that prefix so only the human-readable reply reaches Webex.
+        if (reply.startsWith('{')) {
+          try {
+            let depth = 0, end = -1;
+            for (let i = 0; i < reply.length; i++) {
+              if (reply[i] === '{') depth++;
+              else if (reply[i] === '}') { depth--; if (depth === 0) { end = i + 1; break; } }
+            }
+            if (end > 0) {
+              const parsed = JSON.parse(reply.slice(0, end));
+              if (parsed && typeof parsed.route === 'string') {
+                reply = reply.slice(end).trim();
+                log?.info?.(`[webex:${account.accountId}] stripped routing prefix (route=${parsed.route})`);
+                if (!reply) return;
+              }
+            }
+          } catch {
+            // Not routing JSON — fall through and send as-is
+          }
+        }
 
         // ── Stage 3: Lull wait ────────────────────────────────────────────────
         if (!capturedIsDirectlyAddressed) {

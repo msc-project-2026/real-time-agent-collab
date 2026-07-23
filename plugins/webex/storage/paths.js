@@ -49,4 +49,6 @@ module.exports = {
   pendingDir,
   pendingMessagesPath,
   pendingBatchStatePath,
+  processingDir,
+  processingBatchPath,
 };

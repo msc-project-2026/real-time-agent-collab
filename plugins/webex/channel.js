@@ -1,6 +1,9 @@
 // Webex channel plugin object implementing the OpenClaw channel contract.
 'use strict';
 
+const { readFile: fsReadFile } = require('node:fs/promises');
+const { extname, basename } = require('node:path');
+
 const { WEBEX_API, webexFetch } = require('./api');
 const {
   getAccessToken,
@@ -14,6 +17,39 @@ const { handleInbound } = require('./inbound');
 const { targets, normPath } = require('./webhook');
 
 const DEFAULT_ACCOUNT = 'default';
+
+const IMAGE_MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
+
+// Multipart upload helper — handles both data-URI and local-file-path sources.
+// Webex's JSON API only accepts public URLs in the `files` array; anything else
+// (data URI, local path) must be uploaded as multipart/form-data instead.
+async function sendMultipart(token, to, text, replyToId, buffer, mimeType, filename) {
+  const formData = new FormData();
+  if (to.includes('@')) {
+    formData.append('toPersonEmail', to);
+  } else {
+    try {
+      const dec = Buffer.from(to, 'base64').toString('utf-8');
+      formData.append(dec.includes('/PEOPLE/') ? 'toPersonId' : 'roomId', to);
+    } catch {
+      formData.append('roomId', to);
+    }
+  }
+  if (text) formData.append('markdown', text);
+  if (replyToId) formData.append('parentId', replyToId);
+  formData.append('files', new Blob([buffer], { type: mimeType }), filename);
+
+  const res = await fetch(`${WEBEX_API}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`Webex POST /messages (multipart) → ${res.status}: ${errText}`);
+  }
+  return res.json();
+}
 
 function redactAccount(a) {
   if (!a) return null;
@@ -239,6 +275,28 @@ const webexPlugin = {
         throw new Error(
           'Webex sendMedia failed: missing resolvedAccount.config.token'
         );
+      }
+
+      // Webex's JSON API only accepts public URLs in `files[]`.
+      // Local file paths (built-in browser tool saves to /home/node/.openclaw/media/...)
+      // and data URIs both require a multipart upload instead.
+      if (typeof mediaUrl === 'string' && /^\/|^\.\.?\//.test(mediaUrl)) {
+        const ext = extname(mediaUrl).slice(1).toLowerCase() || 'bin';
+        const mimeType = IMAGE_MIME[ext] ?? 'application/octet-stream';
+        const buffer = await fsReadFile(mediaUrl);
+        const msg = await sendMultipart(resolvedAccount.config.token, to, text, replyToId, buffer, mimeType, basename(mediaUrl));
+        return { channel: 'webex', messageId: msg.id, roomId: msg.roomId };
+      }
+
+      if (typeof mediaUrl === 'string' && mediaUrl.startsWith('data:')) {
+        const match = mediaUrl.match(/^data:([^;,]+);base64,(.+)$/s);
+        if (match) {
+          const mimeType = match[1];
+          const buffer = Buffer.from(match[2], 'base64');
+          const ext = mimeType.split('/')[1]?.replace(/[^a-z0-9]/g, '') || 'bin';
+          const msg = await sendMultipart(resolvedAccount.config.token, to, text, replyToId, buffer, mimeType, `attachment.${ext}`);
+          return { channel: 'webex', messageId: msg.id, roomId: msg.roomId };
+        }
       }
 
       const msg = await webexFetch(resolvedAccount.config.token, '/messages', {
