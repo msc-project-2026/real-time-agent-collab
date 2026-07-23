@@ -16,7 +16,7 @@ async function handleProcessStagedBatchRequest({
 }) {
   if (!spaceId) throw new Error('spaceId is required');
   if (!batchId) throw new Error('batchId is required');
-  if (!account) throw new Error('account is requried');
+  if (!account) throw new Error('account is required');
 
   const processingBatch = await loadProcessingBatch({
     spaceId,
@@ -26,6 +26,8 @@ async function handleProcessStagedBatchRequest({
   const processingInstruction = buildProcessingInstruction({
     batch: processingBatch,
   });
+
+  const now = new Date().toISOString();
 
   function buildProcessStagedBatchCtxPayload(sessionKeySuffix) {
     return {
@@ -45,7 +47,7 @@ async function handleProcessStagedBatchRequest({
       Provider: 'webex',
       Surface: 'webex',
       MessageSid: `process_staged_batch:${spaceId}:${batchId}:${Date.now()}`,
-      Timestamp: context.createdAt,
+      Timestamp: now,
       OriginatingChannel: 'webex',
       OriginatingTo: `webex:${spaceId}`,
       MessageThreadId: null,
