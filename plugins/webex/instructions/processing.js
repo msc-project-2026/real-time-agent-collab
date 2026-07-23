@@ -14,6 +14,9 @@ Read the batch and existing conversations below. Determine:
 3. Whether any part of the batch is not informative and should not be tracked as a conversation.
 4. Whether the agent should send a local response now.
 
+
+The batch may contain messages belonging to different conversations; assess each message or coherent subset of messages and assign the relevant messageIds accordingly.
+
 A conversation should only be tracked if it may be useful for future project context, coordination, task identification, or direct questions to the agent.
 
 Avoid creating duplicate conversations. Prefer updating an existing conversation when the batch clearly continues the same issue, decision, question, task, or work topic.
