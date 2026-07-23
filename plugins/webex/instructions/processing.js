@@ -20,8 +20,9 @@ Avoid creating duplicate conversations. Prefer updating an existing conversation
 
 ### Output
 
-Output exactly one JSON object:
+Output exactly **one JSON object**:
 
+\`\`\`json
 {
   "conversationUpdates": [
     {
@@ -46,6 +47,7 @@ Output exactly one JSON object:
     "replyToId": "<replyToId, or null>"
   }
 }
+\`\`\`
 
 ### Rules
 - Use only message ids that appear in the batch.
