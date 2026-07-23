@@ -1,7 +1,7 @@
 // ********* HANDLE-CONFIG-REQUEST.JS *********
 'use strict';
 
-const { readActiveConfig } = require('../lifecycle/config');
+const { readActiveConfig } = require('./store');
 const { sendConfigCard } = require('./cards');
 
 // Handler
