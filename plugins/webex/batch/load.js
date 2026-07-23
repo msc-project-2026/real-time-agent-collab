@@ -4,6 +4,8 @@
 const fs = require('node:fs/promises');
 
 const { processingBatchPath } = require('../storage/paths.js');
+const { readContextSummary } = require('../context/store.js');
+const { read } = require('node:fs');
 
 async function loadProcessingBatch({ spaceId, batchId, explicitRoot }) {
   if (!spaceId) throw new Error('spaceId is required');
@@ -21,6 +23,11 @@ async function loadProcessingBatch({ spaceId, batchId, explicitRoot }) {
       .filter(Boolean)
       .map((line) => JSON.parse(line));
 
+    const currentContextSummary = await readContextSummary({
+      spaceId,
+      explicitRoot,
+    });
+
     const lastMessage = messages.at(-1);
 
     return {
@@ -29,6 +36,7 @@ async function loadProcessingBatch({ spaceId, batchId, explicitRoot }) {
       batchId,
       messageCount: messages.length,
       messages,
+      currentContextSummary,
       suggestedReplyToId: lastMessage?.parentId ?? null,
     };
   } catch (err) {

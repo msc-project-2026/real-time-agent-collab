@@ -77,12 +77,21 @@ function activeConfigPath(spaceId, explicitRoot) {
   return path.join(configDir(spaceId, explicitRoot), 'active.json');
 }
 
-function pendingConfigPath(spaceId, explicitRoot) {
-  return path.join(configDir(spaceId, explicitRoot), 'pending.json');
+// -- .collab/spaces/<spaceId>/context/
+function contextDir(spaceId, explicitRoot) {
+  return path.join(spaceDir(spaceId, explicitRoot), 'context');
 }
 
-function configAuditPath(spaceId, explicitRoot) {
-  return path.join(configDir(spaceId, explicitRoot), 'audit.jsonl');
+function contextSummaryPath(spaceId, explicitRoot) {
+  return path.join(contextDir(spaceId, explicitRoot), 'summary.md');
+}
+
+function contextAnalysisPath(spaceId, batchId, explicitRoot) {
+  return path.join(
+    contextDir(spaceId, explicitRoot),
+    'analyses',
+    `${batchId}.json`
+  );
 }
 
 module.exports = {
@@ -99,6 +108,5 @@ module.exports = {
   processedBatchMetaPath,
   configDir,
   activeConfigPath,
-  pendingConfigPath,
-  configAuditPath,
+  contextDir,
 };
