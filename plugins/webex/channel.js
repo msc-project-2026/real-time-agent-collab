@@ -241,6 +241,44 @@ const webexPlugin = {
         );
       }
 
+      // Webex cannot fetch data URIs — upload binary via multipart/form-data instead.
+      // Node 18+ provides FormData and Blob as globals; no extra packages needed.
+      if (typeof mediaUrl === 'string' && mediaUrl.startsWith('data:')) {
+        const match = mediaUrl.match(/^data:([^;,]+);base64,(.+)$/s);
+        if (match) {
+          const mimeType = match[1];
+          const buffer = Buffer.from(match[2], 'base64');
+          const ext = mimeType.split('/')[1]?.replace(/[^a-z0-9]/g, '') || 'bin';
+
+          const formData = new FormData();
+          if (to.includes('@')) {
+            formData.append('toPersonEmail', to);
+          } else {
+            try {
+              const dec = Buffer.from(to, 'base64').toString('utf-8');
+              formData.append(dec.includes('/PEOPLE/') ? 'toPersonId' : 'roomId', to);
+            } catch {
+              formData.append('roomId', to);
+            }
+          }
+          if (text) formData.append('markdown', text);
+          if (replyToId) formData.append('parentId', replyToId);
+          formData.append('files', new Blob([buffer], { type: mimeType }), `attachment.${ext}`);
+
+          const res = await fetch(`${WEBEX_API}/messages`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${resolvedAccount.config.token}` },
+            body: formData,
+          });
+          if (!res.ok) {
+            const errText = await res.text().catch(() => '');
+            throw new Error(`Webex POST /messages (multipart) → ${res.status}: ${errText}`);
+          }
+          const msg = await res.json();
+          return { channel: 'webex', messageId: msg.id, roomId: msg.roomId };
+        }
+      }
+
       const msg = await webexFetch(resolvedAccount.config.token, '/messages', {
         method: 'POST',
         body: buildMsgBody(

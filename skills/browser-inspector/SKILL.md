@@ -22,11 +22,14 @@ The primary inspection tool. Use this first when asked to check a page. It repor
 
 Set `check_links: true` when the user specifically asks about broken links — this follows every internal link and checks for 404s, so it takes longer.
 
+`inspect_webpage` does **not** send a screenshot. If the user wants to see what the page looks like, call `screenshot_page` separately after running the inspection.
+
 ### `screenshot_page`
 Takes a visual screenshot of the page. Use when:
 - The user asks what the page looks like
 - You need to verify layout or styling
 - A visual issue has been reported
+- You have just run `inspect_webpage` and the user wants to see the page
 
 ### `inspect_element`
 Targets a specific element by CSS selector. Use when:
@@ -61,7 +64,7 @@ When you find issues, report them clearly and concisely:
 - If multiple issues are found, group them by severity
 
 ### Logging to `.collab/issues.md`
-When you find significant issues (broken links, console errors, failed resources), log them to `.collab/issues.md` using the `append_to_collab_file` tool with `Source: browser`. This ensures browser-discovered issues are tracked alongside issues from chat and source code review.
+When you find significant issues (broken links, console errors, failed resources), log them to `.collab/issues.md` using the `log_browser_issue` tool. It auto-assigns a sequential `I-NNN` ID and sets `Source: browser` so browser-discovered issues are tracked alongside issues from chat and source code review.
 
 Only log confirmed, actionable issues — do not log minor warnings or informational findings unless the user asks you to.
 

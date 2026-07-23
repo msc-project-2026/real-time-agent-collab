@@ -2,17 +2,17 @@
 
 const { inspectPage, screenshotPage, inspectElement, getPageStructure } = require('../../lib/browser.js');
 
-let appendToFile, readSourceFile, saveSuggestion, commitSuggestion, updateSuggestionStatus;
+let saveIssue, readSourceFile, saveSuggestion, commitSuggestion, updateSuggestionStatus;
 try {
   ({
-    appendToFile,
+    saveIssue,
     readSourceFile,
     saveSuggestion,
     commitSuggestion,
     updateSuggestionStatus,
   } = require('../../lib/collab-cache.js'));
 } catch {
-  appendToFile = null;
+  saveIssue = null;
   readSourceFile = null;
   saveSuggestion = null;
   commitSuggestion = null;
@@ -156,21 +156,11 @@ function register(api) {
       required: ['room_id', 'title', 'severity', 'description'],
     },
     handler: async ({ room_id, title, severity, description }) => {
-      if (!appendToFile) {
+      if (!saveIssue) {
         return { ok: false, error: 'collab-cache module not available — issues.md logging is disabled' };
       }
-      const timestamp = new Date().toISOString();
-      const entry = [
-        `## I-???`,
-        `- **Title:** ${title}`,
-        `- **Source:** browser`,
-        `- **Severity:** ${severity}`,
-        `- **Status:** open`,
-        `- **Reported at:** ${timestamp}`,
-        `- **Description:** ${description}`,
-      ].join('\n');
-      await appendToFile(room_id, 'issues.md', entry);
-      return { ok: true };
+      const result = await saveIssue(room_id, { title, severity, description });
+      return { ok: true, id: result.id };
     },
   });
 
