@@ -25,7 +25,7 @@ Set `check_links: true` when the user specifically asks about broken links — t
 `inspect_webpage` does **not** send a screenshot. If the user wants to see what the page looks like, call `screenshot_page` separately after running the inspection.
 
 ### `screenshot_page`
-Takes a visual screenshot of the page. Use when:
+Takes a visual screenshot of the page and posts it **directly to the Webex space** as an image attachment. You must pass `room_id` (the `spaceId` from the Webex message context). The image is sent automatically — do not attempt to describe or echo the image bytes in your reply; just confirm it was posted. Use when:
 - The user asks what the page looks like
 - You need to verify layout or styling
 - A visual issue has been reported

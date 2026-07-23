@@ -48,7 +48,8 @@ function register(api) {
   api.registerTool({
     name: 'screenshot_page',
     description:
-      'Take a screenshot of a webpage. Returns a base64-encoded PNG image. ' +
+      'Take a screenshot of a webpage and post it directly to the Webex space as an image attachment. ' +
+      'The image is sent immediately — do not attempt to include or describe the image bytes in your reply. ' +
       'Useful for visually inspecting page layout, styling, or rendering issues.',
     parameters: {
       type: 'object',
@@ -56,6 +57,10 @@ function register(api) {
         url: {
           type: 'string',
           description: 'The full URL to screenshot',
+        },
+        room_id: {
+          type: 'string',
+          description: 'The Webex room ID to post the screenshot to (from the Webex message context)',
         },
         full_page: {
           type: 'boolean',
@@ -70,14 +75,38 @@ function register(api) {
           description: 'Viewport height in pixels (default 720)',
         },
       },
-      required: ['url'],
+      required: ['url', 'room_id'],
     },
-    handler: async ({ url, full_page, viewport_width, viewport_height }) => {
-      return screenshotPage(url, {
+    handler: async ({ url, room_id, full_page, viewport_width, viewport_height }) => {
+      const { base64, mimeType } = await screenshotPage(url, {
         fullPage: full_page,
         width: viewport_width,
         height: viewport_height,
       });
+
+      // Post directly to Webex rather than returning base64 to the LLM.
+      // Sending a multi-MB base64 string back as a tool result would overflow
+      // the context window and cause the next LLM request to time out.
+      const token = process.env.WEBEX_BOT_TOKEN;
+      if (!token) return { ok: false, error: 'WEBEX_BOT_TOKEN not set — cannot post screenshot' };
+
+      const buffer = Buffer.from(base64, 'base64');
+      const formData = new FormData();
+      formData.append('roomId', room_id);
+      formData.append('files', new Blob([buffer], { type: mimeType }), 'screenshot.png');
+
+      const res = await fetch('https://webexapis.com/v1/messages', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        return { ok: false, error: `Webex upload failed: ${res.status} ${errText}` };
+      }
+
+      return { ok: true, posted: true, url };
     },
   });
 

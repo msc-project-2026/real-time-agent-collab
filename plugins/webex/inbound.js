@@ -521,6 +521,13 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
         const reply = (out?.text ?? '').trim();
         if (!reply) return;
 
+        // The routing-classification stage emits its decision as JSON before the
+        // main response stage runs. Swallow it — users should never see raw routing JSON.
+        if (/^\{[^}]*"route"\s*:/.test(reply)) {
+          log?.info?.(`[webex:${account.accountId}] suppressed routing artifact`);
+          return;
+        }
+
         // ── Stage 3: Lull wait ────────────────────────────────────────────────
         if (!capturedIsDirectlyAddressed) {
           await waitForLull(roomId, {
