@@ -19,6 +19,18 @@ const LEAVE_PHRASES = new Set([
 
 const STATUS_PHRASES = new Set(['/meeting', '/meeting status', 'meeting status']);
 
+// One-off join request for the meeting currently in progress. Requires the
+// normal address rules (mention / bot-name prefix / slash form / 1:1) like
+// leave and status, and does NOT change the durable per-space policy — it
+// overrides a space opt-out or an earlier "leave" for this meeting only.
+const JOIN_PHRASES = new Set(['/meeting join']);
+
+// Anchored to the whole (normalized) message so discussion like "join the
+// meeting when you can" is not treated as a command.
+const JOIN_PATTERNS = [
+  /^(?:please\s+)?(?:(?:can|could|would)\s+you\s+)?(?:please\s+)?join\s+(?:the\s+|this\s+|our\s+)?(?:current\s+)?meeting(?:\s+now|\s+please)?$/,
+];
+
 // Durable per-space auto-join policy. Exact phrases first; freer natural
 // language is matched by the patterns below.
 const NEVER_JOIN_PHRASES = new Set([
@@ -160,11 +172,13 @@ function parseCommand(text) {
   if (STATUS_PHRASES.has(normalized)) return 'status';
   if (NEVER_JOIN_PHRASES.has(normalized)) return 'never-join';
   if (ALLOW_JOIN_PHRASES.has(normalized)) return 'allow-join';
+  if (JOIN_PHRASES.has(normalized)) return 'join';
 
-  // Prefer durable policy over a one-off leave when the wording is clearly
-  // about meetings in general / auto-join, not "this" instance.
+  // Prefer durable policy over a one-off leave/join when the wording is
+  // clearly about meetings in general / auto-join, not "this" instance.
   if (matchesAny(normalized, NEVER_JOIN_PATTERNS)) return 'never-join';
   if (matchesAny(normalized, ALLOW_JOIN_PATTERNS)) return 'allow-join';
+  if (matchesAny(normalized, JOIN_PATTERNS)) return 'join';
 
   return null;
 }
@@ -174,6 +188,16 @@ function parseCommand(text) {
 // the normal address rules.
 function isJoinPolicyCommand(command) {
   return command === 'never-join' || command === 'allow-join';
+}
+
+// Slash-prefixed forms ("/meeting join", "/meeting leave", …) are unambiguous
+// bot commands — nobody types them at another human — so they are accepted
+// without an @mention. Callers must still require parseCommand() to have
+// recognised the text, so an unknown "/meeting blah" falls through to the
+// normal chat pipeline instead of dying silently.
+function isExplicitSlashCommand(text) {
+  const normalized = normalizeCommandText(text);
+  return normalized.startsWith('/meeting') || normalized === '/leave meeting';
 }
 
 function escapeRegExp(value) {
@@ -215,6 +239,7 @@ function stripMention(text, botName) {
 module.exports = {
   parseCommand,
   isJoinPolicyCommand,
+  isExplicitSlashCommand,
   isAddressedToBot,
   stripMention,
   stripAddress,

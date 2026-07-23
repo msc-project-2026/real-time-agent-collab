@@ -34,11 +34,16 @@ const FALLBACK_COMMANDS = new Set([
   '/meeting',
   '/meeting status',
   '/meeting leave',
+  '/meeting join',
   '/leave meeting',
   'leave meeting',
   'leave the meeting',
   'please leave meeting',
   'please leave the meeting',
+  'join meeting',
+  'join the meeting',
+  'join this meeting',
+  'please join the meeting',
   ...FALLBACK_POLICY_COMMANDS,
 ]);
 
@@ -85,4 +90,14 @@ function isMeetingPolicyCommand(text, botName) {
   return FALLBACK_POLICY_COMMANDS.has(normalized);
 }
 
-module.exports = { isMeetingControlCommand, isMeetingPolicyCommand, stripLeadingAddress };
+// Slash-prefixed meeting commands ("/meeting join") are unambiguous bot
+// commands and are handled by the meeting-join plugin WITHOUT an @mention, so
+// the chat pipeline must early-return them even when unaddressed. Only known
+// commands count — an unrecognised "/meeting blah" still goes to the LLM.
+function isMeetingSlashCommand(text, botName) {
+  const command = stripLeadingAddress(text, botName).toLowerCase();
+  if (!command.startsWith('/')) return false;
+  return isMeetingControlCommand(text, botName);
+}
+
+module.exports = { isMeetingControlCommand, isMeetingPolicyCommand, isMeetingSlashCommand, stripLeadingAddress };

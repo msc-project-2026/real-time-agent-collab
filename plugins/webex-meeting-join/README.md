@@ -46,7 +46,14 @@ the plugin behaves exactly as before and no audio leaves the browser.
    blocks webhook join, reconcile, and poll for that room until someone opts
    back in ("you can join meetings", `/meeting enable`, etc.). Opting out
    also leaves any meeting already joined in that space.
-5. A startup reconciliation sweep + a periodic poll (default every 5
+5. One-off join on request: `/meeting join` (or an addressed "join the
+   meeting") makes the bot join the meeting currently in progress — even when
+   the space is opted out, and even if it was told to leave that meeting
+   earlier. It joins **only that one meeting**: the durable opt-out is not
+   flipped, so the next meeting is still not auto-joined. Slash forms
+   (`/meeting …`) work without an @mention; natural-language join requests
+   need the normal address rules.
+6. A startup reconciliation sweep + a periodic poll (default every 5
    minutes) catch any meeting the `started` webhook missed.
 
 ## Required environment variables

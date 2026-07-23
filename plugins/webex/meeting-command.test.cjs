@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { isMeetingControlCommand, isMeetingPolicyCommand, stripLeadingAddress } = require('./meeting-command');
+const { isMeetingControlCommand, isMeetingPolicyCommand, isMeetingSlashCommand, stripLeadingAddress } = require('./meeting-command');
 
 test('recognizes supported meeting controls with a native or plain-text address', () => {
   assert.equal(isMeetingControlCommand('@OpenClaw leave meeting', 'OpenClaw'), true);
@@ -30,6 +30,13 @@ test('join-policy commands are recognised without any address so the gate never 
   assert.equal(isMeetingPolicyCommand('the agent should never join the meeting', 'OpenClaw'), true);
   assert.equal(isMeetingPolicyCommand('you can join meetings', 'OpenClaw'), true);
   assert.equal(isMeetingPolicyCommand('/meeting disable', 'OpenClaw'), true);
+});
+
+test('slash commands are recognised without any address; unknown slash text is not', () => {
+  assert.equal(isMeetingSlashCommand('/meeting join', 'OpenClaw'), true);
+  assert.equal(isMeetingSlashCommand('/meeting leave', 'OpenClaw'), true);
+  assert.equal(isMeetingSlashCommand('/meeting blah', 'OpenClaw'), false);
+  assert.equal(isMeetingSlashCommand('join the meeting', 'OpenClaw'), false);
 });
 
 test('leave/status are not policy commands and ordinary talk is not policy', () => {

@@ -6,7 +6,7 @@
 'use strict';
 
 const { webexFetch } = require('./api');
-const { parseCommand, isJoinPolicyCommand, isAddressedToBot, stripMention } = require('./commands');
+const { parseCommand, isJoinPolicyCommand, isExplicitSlashCommand, isAddressedToBot, stripMention } = require('./commands');
 const {
   classifyMeetingKind,
   resolveDestination,
@@ -91,20 +91,25 @@ function createOrchestrator({
   // from their own REST call, and fetching it twice was a real bug found
   // while writing the reconcile() test: an unnecessary extra REST round-trip
   // that's also an extra way for the join to fail.
-  async function tryJoin(meeting, { announceFailure = true } = {}) {
+  // `force` is the explicit-user-request path (`/meeting join`): it overrides
+  // both the per-meeting "leave" suppression and the space's durable opt-out
+  // for THIS meeting only. Neither piece of policy state is written, so future
+  // meetings are unaffected (markJoined clears the suppression flag on
+  // success, which is what "rejoin after being told to leave" needs anyway).
+  async function tryJoin(meeting, { announceFailure = true, force = false } = {}) {
     const meetingId = meeting?.id;
     const roomId = meeting?.roomId;
     if (!meetingId) return { skipped: 'no-id' };
-    if (state.isSuppressed(meetingId)) return { skipped: 'suppressed' };
+    if (!force && state.isSuppressed(meetingId)) return { skipped: 'suppressed' };
     if (state.isJoined(meetingId)) return { skipped: 'already-joined' };
     if (!roomId) return { skipped: 'no-room' }; // not a space meeting we can post into
     // Durable per-space opt-out (natural-language "never join meetings").
     // Checked before lock so reconcile/poll stays cheap when a space is opted out.
-    if (prefs.shouldNeverJoin(roomId)) return { skipped: 'space-opt-out' };
+    if (!force && prefs.shouldNeverJoin(roomId)) return { skipped: 'space-opt-out' };
 
     return state.withLock(meetingId, async () => {
-      if (state.isSuppressed(meetingId) || state.isJoined(meetingId)) return { skipped: 'race' };
-      if (prefs.shouldNeverJoin(roomId)) return { skipped: 'space-opt-out' };
+      if (state.isJoined(meetingId)) return { skipped: 'race' };
+      if (!force && (state.isSuppressed(meetingId) || prefs.shouldNeverJoin(roomId))) return { skipped: 'race' };
 
       // If startup identity discovery was temporarily unavailable, the
       // webhook/poll path retries it before making the membership decision.
@@ -274,7 +279,8 @@ function createOrchestrator({
     const addressed =
       isAddressedToBot(message, botId) ||
       isPlainTextCommandAddress ||
-      isJoinPolicyCommand(command);
+      isJoinPolicyCommand(command) ||
+      isExplicitSlashCommand(commandText);
     if (!addressed || !command) return;
 
     const roomId = message.roomId;
@@ -286,7 +292,7 @@ function createOrchestrator({
         ? 'I am currently in this space’s meeting. Say "leave meeting" to have me exit.'
         : 'No meeting currently joined for this space.';
       const policy = neverJoin
-        ? ' Auto-join is **off** for this space (I will not join future meetings). Say "you can join meetings" to turn it back on.'
+        ? ' Auto-join is **off** for this space (I will not join future meetings). Say "you can join meetings" to turn it back on, or `/meeting join` to bring me into the current meeting just this once.'
         : ' Auto-join is **on** for this space. Say "never join meetings" if you want me to stop joining.';
       await announce(roomId, presence + policy);
       return;
@@ -304,7 +310,7 @@ function createOrchestrator({
         roomId,
         neverJoin && !joined
           ? 'Auto-join is already off for this space — I will not join meetings here.'
-          : 'Got it — I will not join meetings in this space. Say "you can join meetings" anytime to turn auto-join back on.'
+          : 'Got it — I will not join meetings in this space. Say "you can join meetings" anytime to turn auto-join back on, or `/meeting join` to bring me into a specific meeting just this once.'
       );
       return;
     }
@@ -319,6 +325,44 @@ function createOrchestrator({
           ? 'Auto-join is back on for this space — I will join meetings here when they go live.'
           : 'Auto-join is already on for this space — I will join meetings when they go live.'
       );
+      return;
+    }
+
+    // One-off, user-requested join of the meeting currently in progress.
+    // Overrides the space opt-out and any earlier "leave" suppression for
+    // this meeting only; the durable policy is not touched.
+    if (command === 'join') {
+      if (current) {
+        await announce(roomId, 'I’m already in this space’s meeting. Say "leave meeting" to have me exit.');
+        return;
+      }
+      let active;
+      try {
+        active = await listActiveMeetings(tokenStore.meetingFetch);
+      } catch (err) {
+        await announce(roomId, `I couldn't look up this space's meetings (${err?.message ?? 'unknown error'}). Please try again.`);
+        return;
+      }
+      const roomMeetings = active.filter((meeting) => meeting.roomId === roomId);
+      if (!roomMeetings.length) {
+        await announce(roomId, 'I couldn’t find a meeting in progress for this space.');
+        return;
+      }
+      // Same caution as recoverJoinedForRoom: with several concurrent
+      // candidates, refuse to guess which one was meant.
+      if (roomMeetings.length > 1) {
+        await announce(roomId, 'I found more than one in-progress meeting for this space, so I don’t know which one to join.');
+        return;
+      }
+
+      const result = await tryJoin(roomMeetings[0], { force: true });
+      if (result?.skipped === 'not-a-member') {
+        await announce(roomId, 'I can’t join: my meeting account isn’t a member of this space.');
+      } else if (result?.skipped === 'already-joined' || result?.skipped === 'race') {
+        await announce(roomId, 'I’m already in this space’s meeting.');
+      } else if (result?.joined && neverJoin) {
+        await announce(roomId, 'Auto-join stays **off** for this space — I joined this meeting only because you asked.');
+      }
       return;
     }
 

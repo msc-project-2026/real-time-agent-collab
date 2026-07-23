@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { parseCommand, isJoinPolicyCommand, isAddressedToBot, stripMention } = require('./commands');
+const { parseCommand, isJoinPolicyCommand, isExplicitSlashCommand, isAddressedToBot, stripMention } = require('./commands');
 
 test('parseCommand recognizes leave and status phrasing, case/punctuation-insensitively', () => {
   assert.equal(parseCommand('leave meeting'), 'leave');
@@ -33,12 +33,36 @@ test('parseCommand does not treat ordinary discussion as join policy', () => {
   assert.equal(parseCommand('join the meeting when you can'), null);
 });
 
+test('parseCommand recognizes an explicit one-off join request', () => {
+  assert.equal(parseCommand('/meeting join'), 'join');
+  assert.equal(parseCommand('join the meeting'), 'join');
+  assert.equal(parseCommand('join meeting'), 'join');
+  assert.equal(parseCommand('Please join this meeting!'), 'join');
+  assert.equal(parseCommand('can you join the meeting'), 'join');
+  assert.equal(parseCommand('join the current meeting now'), 'join');
+});
+
+test('durable policy phrasing still wins over one-off join wording', () => {
+  assert.equal(parseCommand('you can join meetings'), 'allow-join');
+  assert.equal(parseCommand('join meetings again'), 'allow-join');
+  assert.equal(parseCommand("don't join this meeting"), 'leave');
+});
+
 test('isJoinPolicyCommand flags durable opt-in/opt-out only', () => {
   assert.equal(isJoinPolicyCommand('never-join'), true);
   assert.equal(isJoinPolicyCommand('allow-join'), true);
   assert.equal(isJoinPolicyCommand('leave'), false);
   assert.equal(isJoinPolicyCommand('status'), false);
+  assert.equal(isJoinPolicyCommand('join'), false);
   assert.equal(isJoinPolicyCommand(null), false);
+});
+
+test('isExplicitSlashCommand accepts slash forms and nothing else', () => {
+  assert.equal(isExplicitSlashCommand('/meeting join'), true);
+  assert.equal(isExplicitSlashCommand('/meeting leave'), true);
+  assert.equal(isExplicitSlashCommand('/leave meeting'), true);
+  assert.equal(isExplicitSlashCommand('join the meeting'), false);
+  assert.equal(isExplicitSlashCommand('leave meeting'), false);
 });
 
 test('isAddressedToBot treats direct messages as always addressed', () => {

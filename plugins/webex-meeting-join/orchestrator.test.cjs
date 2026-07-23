@@ -653,3 +653,149 @@ test('allow-join turns auto-join back on for the space', async () => {
     global.fetch = originalFetch;
   }
 });
+
+test('/meeting join joins the in-progress meeting despite the space opt-out, without flipping the policy', async () => {
+  const originalFetch = global.fetch;
+  const posted = [];
+  global.fetch = async (url, opts = {}) => {
+    if (String(url).endsWith('/people/me')) return response({ id: 'bot-id' });
+    if (String(url).endsWith('/messages')) {
+      posted.push(JSON.parse(opts.body));
+      return response({ id: 'ack' });
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  try {
+    const spacePrefs = tempSpacePrefs();
+    spacePrefs.setNeverJoin('room-1', true);
+    const browserRuntime = fakeBrowserRuntime();
+    const orchestrator = createOrchestrator({
+      cfg: baseCfg(),
+      tokenStore: fakeTokenStore([
+        ['/people/me', { id: 'meeting-person-id' }],
+        // Slash form, no @mention — must still be treated as addressed.
+        ['/messages/msg-1', { id: 'msg-1', personId: 'human-1', roomId: 'room-1', roomType: 'group', mentionedPeople: [], text: '/meeting join' }],
+        ['/memberships?', { items: [{ id: 'm1' }] }],
+        ['/meetings/meeting-2', { id: 'meeting-2', roomId: 'room-1', sipUrl: 'sip:y@webex.com' }],
+        ['/meetings?', { items: [{ id: 'meeting-1', roomId: 'room-1', state: 'inprogress', sipUrl: 'sip:x@webex.com' }] }],
+      ]),
+      browserRuntime,
+      spacePrefs,
+    });
+    await orchestrator.start();
+
+    await orchestrator.handleMessageCreated({ data: { id: 'msg-1' } });
+
+    assert.equal(orchestrator.state.isJoined('meeting-1'), true);
+    assert.deepEqual(browserRuntime.calls.join, [{ destination: 'sip:x@webex.com', type: 'SIP_URI' }]);
+    // The durable opt-out is untouched…
+    assert.equal(spacePrefs.shouldNeverJoin('room-1'), true);
+    assert.match(posted.at(-1).markdown, /only because you asked/);
+
+    // …so the NEXT meeting in this space is still not auto-joined.
+    await orchestrator.handleMeetingEnded({ data: { id: 'meeting-1' } });
+    await orchestrator.handleMeetingStarted({ data: { id: 'meeting-2' } });
+    assert.equal(browserRuntime.calls.join.length, 1);
+    assert.equal(orchestrator.state.isJoined('meeting-2'), false);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('an explicit join rejoins a meeting the bot was previously told to leave', async () => {
+  const originalFetch = global.fetch;
+  const posted = [];
+  global.fetch = async (url, opts = {}) => {
+    if (String(url).endsWith('/people/me')) return response({ id: 'bot-id' });
+    if (String(url).endsWith('/messages')) {
+      posted.push(JSON.parse(opts.body));
+      return response({ id: 'ack' });
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  try {
+    const browserRuntime = fakeBrowserRuntime();
+    const orchestrator = createOrchestrator({
+      cfg: baseCfg(),
+      tokenStore: fakeTokenStore([
+        ['/people/me', { id: 'meeting-person-id' }],
+        ['/messages/msg-1', { id: 'msg-1', personId: 'human-1', roomId: 'room-1', roomType: 'group', mentionedPeople: ['bot-id'], text: '@Bot join meeting' }],
+        ['/memberships?', { items: [{ id: 'm1' }] }],
+        ['/meetings?', { items: [{ id: 'meeting-1', roomId: 'room-1', state: 'inprogress', sipUrl: 'sip:x@webex.com' }] }],
+      ]),
+      browserRuntime,
+    });
+    await orchestrator.start();
+    orchestrator.state.suppressed.add('meeting-1'); // earlier "leave meeting"
+
+    await orchestrator.handleMessageCreated({ data: { id: 'msg-1' } });
+
+    assert.equal(browserRuntime.calls.join.length, 1);
+    assert.equal(orchestrator.state.isJoined('meeting-1'), true);
+    assert.equal(orchestrator.state.isSuppressed('meeting-1'), false);
+    assert.match(posted.at(-1).markdown, /Joined/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('join announces when there is no in-progress meeting for the space', async () => {
+  const originalFetch = global.fetch;
+  const posted = [];
+  global.fetch = async (url, opts = {}) => {
+    if (String(url).endsWith('/people/me')) return response({ id: 'bot-id' });
+    if (String(url).endsWith('/messages')) {
+      posted.push(JSON.parse(opts.body));
+      return response({ id: 'ack' });
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  try {
+    const browserRuntime = fakeBrowserRuntime();
+    const orchestrator = createOrchestrator({
+      cfg: baseCfg(),
+      tokenStore: fakeTokenStore([
+        ['/people/me', { id: 'meeting-person-id' }],
+        ['/messages/msg-1', { id: 'msg-1', personId: 'human-1', roomId: 'room-1', roomType: 'group', mentionedPeople: [], text: '/meeting join' }],
+        ['/meetings?', { items: [] }],
+      ]),
+      browserRuntime,
+    });
+    await orchestrator.start();
+    await orchestrator.handleMessageCreated({ data: { id: 'msg-1' } });
+    assert.equal(browserRuntime.calls.join.length, 0);
+    assert.match(posted.at(-1).markdown, /find a meeting in progress/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('an unaddressed natural-language join request is ignored (not a policy command)', async () => {
+  const originalFetch = global.fetch;
+  const posted = [];
+  global.fetch = async (url, opts = {}) => {
+    if (String(url).endsWith('/people/me')) return response({ id: 'bot-id' });
+    if (String(url).endsWith('/messages')) {
+      posted.push(JSON.parse(opts.body));
+      return response({ id: 'ack' });
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  try {
+    const browserRuntime = fakeBrowserRuntime();
+    const orchestrator = createOrchestrator({
+      cfg: baseCfg(),
+      tokenStore: fakeTokenStore([
+        ['/people/me', { id: 'meeting-person-id' }],
+        ['/messages/msg-1', { id: 'msg-1', personId: 'human-1', roomId: 'room-1', roomType: 'group', mentionedPeople: [], text: 'join the meeting' }],
+      ]),
+      browserRuntime,
+    });
+    await orchestrator.start();
+    await orchestrator.handleMessageCreated({ data: { id: 'msg-1' } });
+    assert.equal(browserRuntime.calls.join.length, 0);
+    assert.equal(posted.length, 0);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
