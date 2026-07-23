@@ -6,7 +6,7 @@ const { webexFetch } = require('../api');
 const { getAccessToken } = require('../token');
 const { buildRoutingInstruction } = require('../instructions/routing');
 const { dispatchToAgentForSpace } = require('../dispatch');
-const { makeRouteResultHandler } = require('../internal-events');
+const { makeRouteResultHandler } = require('../routing/result-handler');
 const { getPluginRuntime } = require('../runtime');
 
 // DmPolicy enforcement

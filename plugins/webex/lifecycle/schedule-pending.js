@@ -88,14 +88,15 @@ async function scanPendingBatchStaging({ account, log, batchStagingHandler }) {
     try {
       state = JSON.parse(await fs.readFile(statePath, 'utf8'));
     } catch (err) {
-      if (err?.code === 'ENOENT') continue;
-      log?.warn?.(
-        `[webex:${account.accountId}] failed to read pending batch state`,
-        {
-          spaceId,
-          error: err?.message ?? String(err),
-        }
-      );
+      if (err?.code === 'ENOENT') {
+        log?.warn?.(
+          `[webex:${account.accountId}] failed to read pending batch state`,
+          {
+            spaceId,
+            error: err?.message ?? String(err),
+          }
+        );
+      }
       continue;
     }
 

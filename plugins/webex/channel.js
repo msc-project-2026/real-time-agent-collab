@@ -19,7 +19,7 @@ const { sendWebexMessage } = require('./send');
 const {
   runPendingBatchStagingRecovery,
 } = require('./lifecycle/schedule-pending');
-const { handleStagePendingBatchRequest } = require('./internal-events');
+const { handleStagePendingBatchRequest } = require('./batch/staging');
 
 const DEFAULT_ACCOUNT = 'default';
 
