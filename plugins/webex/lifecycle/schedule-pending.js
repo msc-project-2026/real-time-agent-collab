@@ -88,15 +88,17 @@ async function scanPendingBatchStaging({ account, log, batchStagingHandler }) {
     try {
       state = JSON.parse(await fs.readFile(statePath, 'utf8'));
     } catch (err) {
-      if (err?.code === 'ENOENT') {
-        log?.warn?.(
-          `[webex:${account.accountId}] failed to read pending batch state`,
+      if (err?.code === 'ENOENT') continue;
+      log?.warn?.(
+        `[webex:${account.accountId}] failed to read pending batch state ${JSON.stringify(
           {
             spaceId,
+            statePath,
             error: err?.message ?? String(err),
+            code: err?.code ?? null,
           }
-        );
-      }
+        )}`
+      );
       continue;
     }
 
@@ -121,15 +123,12 @@ async function scanPendingBatchStaging({ account, log, batchStagingHandler }) {
         await batchStagingHandler({ spaceId, account, log });
       } catch (err) {
         log?.error?.(
-          `[webex:${account.accountId}] failed to recover pending batch ${JSON.stringify(
-            {
-              spaceId,
-              error: err?.message ?? String(err),
-              stack: err?.stack ?? null,
-            }
-          )}`
+          `[webex:${account.accountId}] failed to recover pending batch ${JSON.stringify}`,
+          {
+            spaceId,
+            error: err?.message ?? String(err),
+          }
         );
-
         continue;
       }
     }
