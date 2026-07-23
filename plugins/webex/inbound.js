@@ -521,11 +521,26 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
         const reply = (out?.text ?? '').trim();
         if (!reply) return;
 
-        // The routing-classification stage emits its decision as JSON before the
-        // main response stage runs. Swallow it — users should never see raw routing JSON.
-        if (/^\{[^}]*"route"\s*:/.test(reply)) {
-          log?.info?.(`[webex:${account.accountId}] suppressed routing artifact`);
-          return;
+        // The LLM prepends its routing decision JSON to the actual response in a
+        // single delivery. Strip that prefix so only the human-readable reply reaches Webex.
+        if (reply.startsWith('{')) {
+          try {
+            let depth = 0, end = -1;
+            for (let i = 0; i < reply.length; i++) {
+              if (reply[i] === '{') depth++;
+              else if (reply[i] === '}') { depth--; if (depth === 0) { end = i + 1; break; } }
+            }
+            if (end > 0) {
+              const parsed = JSON.parse(reply.slice(0, end));
+              if (parsed && typeof parsed.route === 'string') {
+                reply = reply.slice(end).trim();
+                log?.info?.(`[webex:${account.accountId}] stripped routing prefix (route=${parsed.route})`);
+                if (!reply) return;
+              }
+            }
+          } catch {
+            // Not routing JSON — fall through and send as-is
+          }
         }
 
         // ── Stage 3: Lull wait ────────────────────────────────────────────────
