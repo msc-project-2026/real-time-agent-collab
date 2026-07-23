@@ -3,9 +3,7 @@
 
 const { webexFetch } = require('../api');
 const { getAccessToken } = require('../token');
-const {
-  handleConfigSubmission,
-} = require('../config/handle-config-submission');
+const { handleConfigSubmission } = require('../config/handle-submission');
 
 async function handleInboundWebexAttachmentAction(
   payload,

@@ -1,4 +1,4 @@
-// ********* CONFIG.JS *********
+// ********* CONFIG/STORE.JS *********
 'use strict';
 
 const fs = require('node:fs/promises');

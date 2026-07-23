@@ -1,4 +1,4 @@
-// ********* CARDS.JS *********
+// ********* CONFIG/CARD.JS *********
 'use strict';
 
 const { webexFetch } = require('../api');

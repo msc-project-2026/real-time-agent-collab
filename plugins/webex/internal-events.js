@@ -8,7 +8,7 @@ const { getPluginRuntime } = require('./runtime');
 const { stagePendingBatch } = require('./lifecycle/stage-pending');
 const { appendPendingMessage } = require('./lifecycle/append-pending');
 const { schedulePendingBatchStaging } = require('./lifecycle/schedule-pending');
-const { handleConfigRequest } = require('./config/handle-config-request');
+const { handleConfigRequest } = require('./config/handle-request');
 
 // *** Helpers
 function parseJsonObjectFromText(text) {

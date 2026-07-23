@@ -1,8 +1,8 @@
-// ********* HANDLE-CONFIG-REQUEST.JS *********
+// ********* CONFIG/HANDLE-REQUEST.JS *********
 'use strict';
 
 const { readActiveConfig } = require('./store');
-const { sendConfigCard } = require('./cards');
+const { sendConfigCard } = require('./card');
 
 // Handler
 async function handleConfigRequest({ spaceId, account, log }) {

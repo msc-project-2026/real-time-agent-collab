@@ -1,4 +1,4 @@
-// ********* HANDLE-CONFIG-SUBMISSION.JS *********
+// ********* CONFIG/HANDLE-SUBMISSION.JS *********
 'use strict';
 
 const { writeActiveConfig } = require('./store');
