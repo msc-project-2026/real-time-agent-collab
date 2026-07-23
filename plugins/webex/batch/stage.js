@@ -10,7 +10,7 @@ const {
   pendingBatchStatePath,
   processingDir,
   processingBatchPath,
-} = require('./paths.js');
+} = require('../storage/paths.js');
 
 async function stagePendingBatch({ spaceId, explicitRoot }) {
   if (!spaceId) throw new Error('spaceId is required');
