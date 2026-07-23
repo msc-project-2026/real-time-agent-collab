@@ -6,11 +6,13 @@ const crypto = require('node:crypto');
 
 const { contextDir, conversationsPath } = require('../storage/paths');
 
-const DEFAULT_CONVERSATIONS_STATE = {
-  schemaVersion: 1,
-  conversations: [],
-  updatedAt: null,
-};
+function defaultConversationsState() {
+  return {
+    schemaVersion: 1,
+    conversations: [],
+    updatedAt: null,
+  };
+}
 
 // Helpers
 function createConversationId() {
@@ -38,12 +40,13 @@ async function writeConversationsState({ spaceId, state, explicitRoot }) {
     throw new Error('state object is required');
   }
 
+  const defaults = defaultConversationsState();
+
   const record = {
-    schemaVersion:
-      state.schemaVersion ?? DEFAULT_CONVERSATIONS_STATE.schemaVersion,
+    schemaVersion: state.schemaVersion ?? defaults.schemaVersion,
     conversations: Array.isArray(state.conversations)
       ? state.conversations
-      : DEFAULT_CONVERSATIONS_STATE.conversations,
+      : defaults.conversations,
     updatedAt: state.updatedAt ?? new Date().toISOString(),
   };
 
@@ -91,6 +94,7 @@ async function getConversations({
 }
 
 module.exports = {
-  DEFAULT_CONVERSATIONS_STATE,
+  readConversationsState,
+  writeConversationsState,
   getConversations,
 };
