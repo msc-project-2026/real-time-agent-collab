@@ -55,7 +55,13 @@ function schedulePendingBatchStaging({
       );
     } catch (err) {
       log?.error?.(
-        `[webex:${account.accountId}] pending batch trigger failed: ${err?.message ?? err}`
+        `[webex:${account.accountId}] pending batch trigger failed ${JSON.stringify(
+          {
+            spaceId,
+            error: err?.message ?? String(err),
+            stack: err?.stack ?? null,
+          }
+        )}`
       );
     }
   }, PENDING_BATCH_DEBOUNCE_MS);
