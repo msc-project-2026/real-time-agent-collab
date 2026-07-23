@@ -23,6 +23,17 @@ function setRuntime(r) {
   pluginRuntime = r;
 }
 
+// Webex sometimes re-delivers the same webhook event several times in quick
+// succession. Deduplicate by message ID to prevent session initialization
+// conflicts and duplicate agent responses.
+const recentlyProcessed = new Set();
+function isDuplicate(messageId) {
+  if (recentlyProcessed.has(messageId)) return true;
+  recentlyProcessed.add(messageId);
+  setTimeout(() => recentlyProcessed.delete(messageId), 30_000);
+  return false;
+}
+
 
 
 function isDmAllowed(cfg, personId, personEmail) {
@@ -304,6 +315,11 @@ async function handleInbound(payload, { botId, botName, cfg, account, log }) {
     getAccessToken() ?? cfg.token,
     `/messages/${payload.data.id}`
   );
+
+  if (isDuplicate(msg.id)) {
+    log?.info?.(`[webex:dedup] skipping duplicate delivery of ${msg.id}`);
+    return;
+  }
 
   let membership;
   try {
