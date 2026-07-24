@@ -6,6 +6,7 @@ const { validateProcessingResult } = require('./validate-result');
 const {
   updateConversationsFromProcessingResult,
 } = require('./update-conversations');
+const { extractItemsFromProcessingResult } = require('./extract-items');
 
 // Make handler for parsing batch processing result
 function makeProcessingResultHandler({ processingBatch, account, log }) {
@@ -101,12 +102,25 @@ async function handleProcessingResult({
       log,
     });
 
+  // Extract items
+  const itemExtractionResult = await extractItemsFromProcessingResult({
+    processingBatch,
+    processingResult,
+    touchedConversationIds,
+    account,
+    log,
+  });
+
   return {
     ok: true,
     result: processingResult,
     conversationsUpdated: processingResult.conversationUpdates.length,
     conversationsCreated: processingResult.newConversations.length,
     touchedConversationIds,
+    itemExtraction: {
+      skipped: itemExtractionResult.skipped,
+      candidateItemCount: itemExtractionResult.candidateItems?.length ?? 0,
+    },
   };
 }
 
