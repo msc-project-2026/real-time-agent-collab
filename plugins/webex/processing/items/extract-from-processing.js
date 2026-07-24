@@ -1,9 +1,15 @@
-// ********* PROCESSING/CONVERSATIONS/EXTRACT-FROM-PROCESSING.JS *********
+// ********* PROCESSING/ITEMS/EXTRACT-FROM-PROCESSING.JS *********
 'use strict';
+
+const { dispatchToAgentForSpace } = require('../../dispatch');
+const { getPluginRuntime } = require('../../runtime');
 
 const { readConversationsState } = require('../../context/conversations-store');
 const { getCandidateItems } = require('../../context/items-store');
+
 const { asArray } = require('../../utils/normalise');
+const { buildItemExtractionInstruction } = require('./instruction');
+const { makeItemExtractionResultHandler } = require('./result-handler');
 
 function getTouchedConversations({
   conversationsState,
@@ -48,6 +54,7 @@ async function extractItemsFromProcessingResult({
     return {
       ok: true,
       skipped: true,
+      dispatched: false,
       reason: 'no touched conversations',
       touchedConversationIds: [],
     };
@@ -76,12 +83,58 @@ async function extractItemsFromProcessingResult({
     })}`
   );
 
+  // Dispatch item extraction
+  const itemExtractionInstruction = buildItemExtractionInstruction({
+    processingBatch,
+    touchedConversations,
+    candidateItems,
+  });
+
+  function buildItemExtractionCtxPayload(sessionKeySuffix) {
+    return {
+      Body: '',
+      RawBody: '',
+      CommandBody: itemExtractionInstruction,
+      From: 'webex:internal-item-extractor',
+      To: `webex:${spaceId}`,
+      SessionKey: sessionKeySuffix
+        ? `agent:main:webex:${spaceId}:batch:${batchId}:items:${sessionKeySuffix}`
+        : `agent:main:webex:${spaceId}:batch:${batchId}:items`,
+      WebexRoomId: spaceId,
+      AccountId: account.accountId,
+      ChatType: 'group',
+      SenderName: 'internal-item-extractor',
+      SenderId: 'internal-item-extractor',
+      Provider: 'webex',
+      Surface: 'webex',
+      MessageSid: `extract_items:${spaceId}:${batchId}:${Date.now()}`,
+      Timestamp: new Date().toISOString(),
+      OriginatingChannel: 'webex',
+      OriginatingTo: `webex:${spaceId}`,
+      MessageThreadId: null,
+    };
+  }
+
+  await dispatchToAgentForSpace({
+    pluginRuntime: getPluginRuntime(),
+    spaceId,
+    account,
+    log,
+    buildCtxPayload: buildItemExtractionCtxPayload,
+    onAgentOutput: makeItemExtractionResultHandler({
+      processingBatch,
+      account,
+      log,
+    }),
+  });
+
   return {
     ok: true,
     skipped: false,
+    dispatched: true,
     touchedConversationIds,
-    touchedConversations,
-    candidateItems,
+    touchedConversationCount: touchedConversations.length,
+    candidateItemCount: candidateItems.length,
   };
 }
 
