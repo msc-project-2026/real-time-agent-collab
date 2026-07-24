@@ -1,9 +1,9 @@
-// ********* PROCESSING/EXTRACT-ITEMS.JS *********
+// ********* PROCESSING/CONVERSATIONS/EXTRACT-FROM-PROCESSING.JS *********
 'use strict';
 
-const { readConversationsState } = require('../context/conversations-store');
-const { getCandidateItems } = require('../context/items-store');
-const { asArray } = require('../utils/normalise');
+const { readConversationsState } = require('../../context/conversations-store');
+const { getCandidateItems } = require('../../context/items-store');
+const { asArray } = require('../../utils/normalise');
 
 function getTouchedConversations({
   conversationsState,

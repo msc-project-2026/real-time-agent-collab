@@ -1,4 +1,4 @@
-// ********* PROCESSING/UPDATE-CONVERSATIONS.JS *********
+// ********* PROCESSING/CONVERSATIONS/UPDATE-FROM-PROCESSING.JS *********
 'use strict';
 
 const crypto = require('node:crypto');
@@ -6,8 +6,8 @@ const crypto = require('node:crypto');
 const {
   readConversationsState,
   writeConversationsState,
-} = require('../context/conversations-store');
-const { asArray, cleanString, unique } = require('../utils/normalise');
+} = require('../../context/conversations-store');
+const { asArray, cleanString, unique } = require('../../utils/normalise');
 
 // Helpers
 function createConversationId() {
