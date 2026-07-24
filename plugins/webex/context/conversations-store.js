@@ -14,12 +14,17 @@ function defaultConversationsState() {
   };
 }
 
-// Helpers
-function createConversationId() {
-  return `conv_${crypto.randomUUID()}`;
-}
+// ** Conversation shape ** {
+//     id: 'conv_...',
+//     topic: '',
+//     summary: '',
+//     status: 'active|dormant|closed',
+//     lastMessageIds: [],
+//     startedAt: '',
+//     updatedAt: '',
+// }
 
-// *** read in
+// Read in
 async function readConversationsState({ spaceId, explicitRoot } = {}) {
   if (!spaceId) throw new Error('spaceId is required');
 
@@ -33,7 +38,7 @@ async function readConversationsState({ spaceId, explicitRoot } = {}) {
   }
 }
 
-// *** write out
+// Write
 async function writeConversationsState({ spaceId, state, explicitRoot }) {
   if (!spaceId) throw new Error('spaceId is required');
   if (!state || typeof state !== 'object') {
@@ -63,7 +68,7 @@ async function writeConversationsState({ spaceId, state, explicitRoot }) {
   return record;
 }
 
-// *** get conversations
+// Get
 async function getConversations({
   spaceId,
   explicitRoot,
