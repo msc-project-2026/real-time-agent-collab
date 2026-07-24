@@ -2,23 +2,14 @@
   "gateway": {
     "mode": "local",
     "controlUi": {
-      "allowedOrigins": [
-        "https://real-time-agent-collab-production.up.railway.app"
-      ],
+      "allowedOrigins": ["${CONTROL_UI_ORIGIN}"],
       "dangerouslyDisableDeviceAuth": true
     },
     "auth": {
       "mode": "token",
       "token": "${OPENCLAW_GATEWAY_TOKEN}"
     },
-    "trustedProxies": [
-      "100.64.0.3",
-      "100.64.0.5",
-      "100.64.0.6",
-      "100.64.0.7",
-      "100.64.0.8",
-      "100.64.0.11"
-    ]
+    "trustedProxies": ["172.28.0.10"]
   },
   "models": {
     "mode": "merge",
@@ -50,6 +41,9 @@
       "model": {
         "primary": "cisco/bedrock/global.anthropic.claude-sonnet-4-6"
       },
+      "sandbox": {
+        "mode": "off"
+      },
       "memorySearch": {
         "provider": "none"
       }
@@ -57,7 +51,16 @@
     "list": [
       {
         "id": "main",
-        "default": true
+        "default": true,
+        "tools": {
+          "alsoAllow": ["browser"]
+        }
+      },
+      {
+        "id": "observer",
+        "model": {
+          "primary": "cisco/bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0"
+        }
       }
     ]
   },
@@ -69,9 +72,16 @@
     {
       "agentId": "main",
       "match": { "channel": "webex" }
+    },
+    {
+      "agentId": "observer",
+      "match": { "channel": "source-observer" }
     }
   ],
   "channels": {
+    "source-observer": {
+      "enabled": true
+    },
     "webex": {
       "enabled": true,
       "token": "${WEBEX_BOT_TOKEN}",
@@ -79,8 +89,8 @@
       "refreshToken": "${WEBEX_REFRESH_TOKEN}",
       "clientId": "${WEBEX_CLIENT_ID}",
       "clientSecret": "${WEBEX_CLIENT_SECRET}",
-      "botWebhookUrl": "https://real-time-agent-collab-production.up.railway.app/webhooks/webex/bot/default",
-      "oauthWebhookUrl": "https://real-time-agent-collab-production.up.railway.app/webhooks/webex/oauth/default",
+      "botWebhookUrl": "${WEBEX_BOT_WEBHOOK_URL}",
+      "oauthWebhookUrl": "${WEBEX_OAUTH_WEBHOOK_URL}",
       "webhookSecret": "${WEBEX_WEBHOOK_SECRET}",
       "dmPolicy": "allowlisted",
       "allowFrom": [
@@ -99,12 +109,43 @@
     "allowedSessionKeyPrefixes": ["agent:main:webex:", "hook:"],
     "defaultSessionKey": "hook:collab-sync"
   },
+  "browser": {
+    "enabled": true,
+    "evaluateEnabled": true,
+    "defaultProfile": "openclaw",
+    "headless": true,
+    "noSandbox": true,
+    "executablePath": "/usr/bin/brave-browser",
+    "tabCleanup": {
+      "enabled": false
+    },
+    "ssrfPolicy": {
+      "allowedHostnames": ["localhost", "127.0.0.1"]
+    }
+  },
   "plugins": {
     "load": {
-      "paths": ["plugins/webex"]
+      "paths": [
+        "plugins/webex",
+        "plugins/openclaw",
+        "plugins/source-observer",
+        "plugins/webex-meeting-join"
+      ]
     },
     "entries": {
+      "source-observer": {
+        "enabled": true
+      },
       "webex": {
+        "enabled": true
+      },
+      "webex-meeting-join": {
+        "enabled": true
+      },
+      "collab-writer": {
+        "enabled": true
+      },
+      "browser-inspector": {
         "enabled": true
       }
     }
