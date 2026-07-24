@@ -361,6 +361,7 @@ const webexPlugin = {
       // Resolve bot identity so we can filter self-messages and detect mentions
       const botInfo = await webexFetch(cfg.token, '/people/me');
       const botId = botInfo.id;
+      const botName = botInfo.displayName ?? null;
       log?.info?.(`[webex:${account.accountId}] bot id=${botId}`);
 
       // Refresh access token every 12 days (tokens last ~14 days); Webex auto-renews the refresh token.
@@ -394,6 +395,7 @@ const webexPlugin = {
             identity: 'bot',
             tokenKind: 'bot',
             botId,
+            botName,
             cfg,
             account,
             log,
@@ -411,6 +413,7 @@ const webexPlugin = {
             identity: 'oauth',
             tokenKind: 'oauth',
             botId,
+            botName,
             cfg,
             account,
             log,

@@ -8,6 +8,12 @@ const { buildRoutingInstruction } = require('../instructions/routing');
 const { dispatchToAgentForSpace } = require('../dispatch');
 const { makeRouteResultHandler } = require('../routing/result-handler');
 const { getPluginRuntime } = require('../runtime');
+const {
+  isMeetingControlCommand,
+  isMeetingPolicyCommand,
+  isMeetingSlashCommand,
+  stripLeadingAddress,
+} = require('../meeting-command');
 
 // DmPolicy enforcement
 function isDmAllowed(cfg, personId, personEmail) {
@@ -30,7 +36,7 @@ function isDmAllowed(cfg, personId, personEmail) {
 // fetches full message details, then dispatches to the OpenClaw agent pipeline.
 async function handleInboundWebexMessage(
   payload,
-  { botId, cfg, account, log }
+  { botId, botName, cfg, account, log }
 ) {
   if (payload.resource !== 'messages' || payload.event !== 'created') return;
 
@@ -66,6 +72,27 @@ async function handleInboundWebexMessage(
 
   const isMentioned =
     Array.isArray(msg.mentionedPeople) && msg.mentionedPeople.includes(botId);
+
+  // Meeting join/leave/status and durable join-policy commands are executed by
+  // the webex-meeting-join plugin, which sees the same message through its own
+  // webhook. Early-return them so the batch pipeline doesn't also produce a
+  // reply from an agent that has no meeting state. Addressing rules mirror the
+  // meeting plugin's: control commands need an @mention or a bot-name prefix;
+  // policy phrases ("never join meetings") and slash commands count unaddressed.
+  const text = msg.text ?? '';
+  const isAddressed =
+    isMentioned ||
+    (botName != null && stripLeadingAddress(text, botName) !== text.trim());
+  if (
+    (isAddressed && isMeetingControlCommand(text, botName)) ||
+    isMeetingPolicyCommand(text, botName) ||
+    isMeetingSlashCommand(text, botName)
+  ) {
+    log?.info?.(
+      `[webex:${account.accountId}] meeting command delegated to meeting-join plugin (roomId=${msg.roomId})`
+    );
+    return;
+  }
 
   const contextHeader = {
     spaceId: msg.roomId,
