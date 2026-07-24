@@ -79,7 +79,6 @@ function makeRouteResultHandler({ message, account, log }) {
   };
 }
 
-// *** Handlers
 // Handle route result
 async function handleRouteResult({ routeResult, message, account, log }) {
   if (!message?.roomId) throw new Error('message.roomId is required');

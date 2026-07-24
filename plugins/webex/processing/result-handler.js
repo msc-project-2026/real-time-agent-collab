@@ -1,130 +1,13 @@
 // ********* PROCESSING/RESULT-HANDLER.JS *********
 'use strict';
 
-const crypto = require('node:crypto');
-
 const { parseJsonObjectFromText } = require('../utils/parse-json');
+const { validateProcessingResult } = require('./validate-result');
 const {
-  validateProcessingResult,
-  asArray,
-  cleanString,
-} = require('./validate-result');
-const {
-  readConversationsState,
-  writeConversationsState,
-} = require('../context/conversations-store');
+  updateConversationsFromProcessingResult,
+} = require('./update-conversations');
 
-// Helpers
-function createConversationId() {
-  return `conv_${crypto.randomUUID()}`;
-}
-
-function unique(values) {
-  return Array.from(new Set(values.filter(Boolean)));
-}
-
-// *** Apply result to state
-function applyConversationResult({ conversationsState, result }) {
-  const now = new Date().toISOString();
-
-  const conversations = [...asArray(conversationsState.conversations)];
-
-  for (const update of asArray(result.conversationUpdates)) {
-    const index = conversations.findIndex(
-      (conversation) => conversation.id === update.conversationId
-    );
-
-    if (index === -1) continue;
-
-    const existing = conversations[index];
-
-    conversations[index] = {
-      ...existing,
-      summary: cleanString(update.summary) || existing.summary,
-      status: 'active',
-      lastMessageIds: unique([
-        ...asArray(existing.lastMessageIds),
-        ...asArray(update.messageIds),
-      ]).slice(-20),
-      updatedAt: now,
-    };
-  }
-
-  for (const conversation of asArray(result.newConversations)) {
-    conversations.push({
-      id: createConversationId(),
-      topic: cleanString(conversation.topic),
-      summary: cleanString(conversation.summary),
-      status: 'active',
-      lastMessageIds: unique(asArray(conversation.messageIds)).slice(-20),
-      startedAt: now,
-      updatedAt: now,
-    });
-  }
-
-  return {
-    ...conversationsState,
-    conversations,
-    updatedAt: now,
-  };
-}
-
-// *** Handle result
-async function handleProcessingResult({
-  result,
-  processingBatch,
-  account,
-  log,
-}) {
-  if (!processingBatch) throw new Error('processingBatch is required');
-  if (!processingBatch.spaceId)
-    throw new Error('processingBatch.spaceId is required');
-  if (!account) throw new Error('account is required');
-
-  // Validate
-  const errors = validateProcessingResult(result, {
-    processingBatch,
-  });
-
-  if (errors.length > 0) {
-    throw new Error(`invalid processing result: ${errors.join('; ')}`);
-  }
-
-  // Update
-  const spaceId = processingBatch.spaceId;
-  const currentConversationsState = await readConversationsState({ spaceId });
-
-  const updatedConversationsState = applyConversationResult({
-    conversationsState: currentConversationsState,
-    result,
-  });
-
-  await writeConversationsState({
-    spaceId,
-    state: updatedConversationsState,
-  });
-
-  log?.info?.(
-    `[webex:${account.accountId}] updated conversation state from processing result ${JSON.stringify(
-      {
-        spaceId,
-        batchId: processingBatch.batchId,
-        conversationUpdates: result.conversationUpdates.length,
-        newConversations: result.newConversations.length,
-        untrackedMessageIds: result.untrackedMessageIds.length,
-        responseNeeded: result.responseDecision.needed,
-      }
-    )}`
-  );
-
-  return {
-    ok: true,
-    result,
-    conversationsUpdated: result.conversationUpdates.length,
-    conversationsCreated: result.newConversations.length,
-  };
-}
-
+// Make handler for parsing batch processing result
 function makeProcessingResultHandler({ processingBatch, account, log }) {
   const spaceId = processingBatch.spaceId;
 
@@ -167,7 +50,7 @@ function makeProcessingResultHandler({ processingBatch, account, log }) {
 
     try {
       return handleProcessingResult({
-        result: parsed,
+        processingResult: parsed,
         processingBatch,
         account,
         log,
@@ -185,6 +68,45 @@ function makeProcessingResultHandler({ processingBatch, account, log }) {
 
       throw err;
     }
+  };
+}
+
+// Handle processing result
+async function handleProcessingResult({
+  processingResult,
+  processingBatch,
+  account,
+  log,
+}) {
+  if (!processingBatch) throw new Error('processingBatch is required');
+  if (!processingBatch.spaceId)
+    throw new Error('processingBatch.spaceId is required');
+  if (!account) throw new Error('account is required');
+
+  // Validate
+  const errors = validateProcessingResult(processingResult, {
+    processingBatch,
+  });
+
+  if (errors.length > 0) {
+    throw new Error(`invalid processing result: ${errors.join('; ')}`);
+  }
+
+  // Update conversations
+  const { touchedConversationIds } =
+    await updateConversationsFromProcessingResult({
+      processingBatch,
+      processingResult,
+      account,
+      log,
+    });
+
+  return {
+    ok: true,
+    result: processingResult,
+    conversationsUpdated: processingResult.conversationUpdates.length,
+    conversationsCreated: processingResult.newConversations.length,
+    touchedConversationIds,
   };
 }
 
