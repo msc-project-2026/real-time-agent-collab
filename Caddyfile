@@ -1,0 +1,26 @@
+# Caddy reverse proxy with automatic HTTPS (Let's Encrypt).
+# DOMAIN and ACME_EMAIL are injected from the environment by docker-compose.
+#
+# Routing:
+#   /setup*, /api/*  -> setup-ui  (onboarding web app)
+#   everything else  -> openclaw  (gateway: /openclaw, /healthz, /hooks, /webhooks/webex/*)
+#
+# Caddy reaches the app containers by their compose service names on the shared
+# `collab` network. Websockets (Control UI live updates) are proxied transparently.
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	@setupui path /setup* /api/*
+	handle @setupui {
+		reverse_proxy setup-ui:3000
+	}
+
+	handle {
+		reverse_proxy openclaw:18789
+	}
+}

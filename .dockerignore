@@ -1,0 +1,10 @@
+.git
+node_modules
+**/node_modules
+secrets
+.env
+.env.*
+!.env.example
+services/setup-ui/dist
+docs
+*.md

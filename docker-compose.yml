@@ -1,0 +1,94 @@
+# VPS deployment for the Real-Time Agent Collaboration system.
+# Replaces Railway. Three services behind a single Caddy reverse proxy that
+# terminates TLS (automatic Let's Encrypt certificates):
+#
+#   caddy      :443/:80  -> public entrypoint, auto-HTTPS for ${DOMAIN}
+#   openclaw   :18789     -> OpenClaw gateway  (/openclaw, /healthz, /hooks, /webhooks/webex/*)
+#   setup-ui   :3000      -> onboarding web app (/setup, /api/*)
+#
+# All secrets/config live in .env (gitignored). Copy .env.example -> .env first.
+
+name: real-time-agent-collab
+
+networks:
+  collab:
+    driver: bridge
+    ipam:
+      config:
+        # Fixed subnet so Caddy can hold a static IP. That IP is what the
+        # gateway sees as the proxy, so it must match `trustedProxies` in
+        # config/openclaw.json (172.28.0.10).
+        - subnet: 172.28.0.0/16
+
+volumes:
+  openclaw_state: # persistent runtime state (sessions, workspace) — replaces the Railway volume
+  caddy_data: # ACME account + issued certificates (must persist across restarts)
+  caddy_config:
+
+services:
+  openclaw:
+    build:
+      context: .
+      dockerfile: openclaw.Dockerfile
+    env_file: .env
+    # Start as root only for the entrypoint's state-volume ownership migration.
+    # The entrypoint drops to the image's `node` user before launching OpenClaw.
+    user: "0:0"
+    volumes:
+      - openclaw_state:/home/node/.openclaw
+      # GitHub App private key mounted read-only; referenced via
+      # GITHUB_APP_PRIVATE_KEY_FILE in .env. The secrets/ dir is gitignored.
+      - ./secrets/github-app-private-key.pem:/run/secrets/github-app-private-key.pem:ro
+      # Workspace skills the agent loads on demand. OpenClaw
+      # auto-discovers SKILL.md files under <workspace>/skills.
+      - ./skills:/home/node/.openclaw/workspace/skills:ro
+    expose:
+      - "18789"
+    networks:
+      - collab
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18789/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  setup-ui:
+    build:
+      context: .
+      dockerfile: services/setup-ui/Dockerfile
+    env_file: .env
+    volumes:
+      - ./secrets/github-app-private-key.pem:/run/secrets/github-app-private-key.pem:ro
+    expose:
+      - "3000"
+    networks:
+      - collab
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  caddy:
+    image: caddy:2
+    depends_on:
+      - openclaw
+      - setup-ui
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      collab:
+        ipv4_address: 172.28.0.10
+    restart: unless-stopped
