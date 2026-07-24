@@ -1,15 +1,8 @@
 // ********* PROCESSING/VALIDATE-RESULT.JS *********
 'use strict';
 
-function asArray(value) {
-  return Array.isArray(value) ? value : [];
-}
+const { asArray, cleanString } = require('../utils/normalise');
 
-function cleanString(value) {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-// *** Validate result
 function validateProcessingResult(result, { processingBatch }) {
   const errors = [];
 
@@ -96,6 +89,4 @@ function validateProcessingResult(result, { processingBatch }) {
 
 module.exports = {
   validateProcessingResult,
-  asArray,
-  cleanString,
 };
