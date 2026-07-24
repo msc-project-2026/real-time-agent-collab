@@ -3,6 +3,7 @@
 
 const { parseJsonObjectFromText } = require('../utils/parse-json');
 const { validateProcessingResult } = require('./validate-result');
+const { getConversations } = require('../context/conversations-store');
 const {
   updateConversationsFromProcessingResult,
 } = require('./conversations/update-from-processing');
@@ -11,7 +12,12 @@ const {
 } = require('./items/extract-from-processing');
 
 // Make handler for parsing batch processing result
-function makeProcessingResultHandler({ processingBatch, account, log }) {
+function makeProcessingResultHandler({
+  processingBatch,
+  existingConversations,
+  account,
+  log,
+}) {
   const spaceId = processingBatch.spaceId;
 
   return async ({ text }) => {
@@ -55,6 +61,7 @@ function makeProcessingResultHandler({ processingBatch, account, log }) {
       return handleProcessingResult({
         processingResult: parsed,
         processingBatch,
+        existingConversations,
         account,
         log,
       });
@@ -78,6 +85,7 @@ function makeProcessingResultHandler({ processingBatch, account, log }) {
 async function handleProcessingResult({
   processingResult,
   processingBatch,
+  existingConversations,
   account,
   log,
 }) {
@@ -89,6 +97,7 @@ async function handleProcessingResult({
   // Validate
   const errors = validateProcessingResult(processingResult, {
     processingBatch,
+    existingConversations,
   });
 
   if (errors.length > 0) {

@@ -3,7 +3,10 @@
 
 const { asArray, cleanString } = require('../utils/normalise');
 
-function validateProcessingResult(result, { processingBatch }) {
+function validateProcessingResult(
+  result,
+  { processingBatch, existingConversations }
+) {
   const errors = [];
 
   if (!result || typeof result !== 'object') {
@@ -37,7 +40,7 @@ function validateProcessingResult(result, { processingBatch }) {
   );
 
   const conversationIds = new Set(
-    asArray(processingBatch.conversations)
+    asArray(existingConversations)
       .map((conv) => conv.id)
       .filter(Boolean)
   );

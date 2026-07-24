@@ -1,11 +1,75 @@
 // ********* PROCESSING/ITEMS/INSTRUCTION.JS *********
 'use strict';
 
+function formatBatchMetadataForItemExtractionPrompt({ processingBatch }) {
+  return {
+    spaceId: processingBatch.spaceId,
+    batchId: processingBatch.batchId,
+    messageCount: processingBatch.messageCount,
+  };
+}
+
+function formatBatchMessagesForItemExtractionPrompt({ processingBatch }) {
+  return Array.isArray(processingBatch.messages)
+    ? processingBatch.messages.map((message) => ({
+        id: message.id,
+        text: message.text ?? '',
+        senderName:
+          message.senderName ?? message.personEmail ?? message.personId ?? null,
+        createdAt: message.created ?? null,
+        parentId: message.parentId ?? null,
+      }))
+    : [];
+}
+
+function formatConversationsForItemExtractionPrompt({ conversations }) {
+  return Array.isArray(conversations)
+    ? conversations.map((conversation) => ({
+        id: conversation.id,
+        topic: conversation.topic,
+        summary: conversation.summary,
+        status: conversation.status,
+      }))
+    : [];
+}
+
+function formatItemsForItemExtractionPrompt({ items }) {
+  return Array.isArray(items)
+    ? items.map((item) => ({
+        id: item.id,
+        type: item.type,
+        status: item.status,
+        title: item.title,
+        description: item.description,
+        owner: item.owner ?? null,
+        conversationIds: Array.isArray(item.conversationIds)
+          ? item.conversationIds
+          : [],
+      }))
+    : [];
+}
+
 function buildItemExtractionInstruction({
   processingBatch,
   touchedConversations,
   candidateItems,
 }) {
+  const batchMetadata = formatBatchMetadataForItemExtractionPrompt({
+    processingBatch,
+  });
+
+  const batchMessages = formatBatchMessagesForItemExtractionPrompt({
+    processingBatch,
+  });
+
+  const includedConversations = formatConversationsForItemExtractionPrompt({
+    conversations: touchedConversations,
+  });
+
+  const existingItems = formatItemsForItemExtractionPrompt({
+    items: candidateItems,
+  });
+
   return `
 ## Task
 
@@ -16,9 +80,10 @@ Read the batch messages, included relevant conversations, and a subset of existi
 1. Which existing item(s), if any, should be updated.
 2. Which new item(s), if any, should be created.
 
-Operational items are project-relevant tasks, issues, questions, decisions, risks, dependencies, or coordination facts.
+### Note
 
-Do not create duplicate items. Prefer updating an existing item when the batch clearly continues, resolves, blocks, or refines it.
+- Operational items are project-relevant tasks, issues, questions, decisions, risks, dependencies, or coordination facts.
+- Do not create duplicate items. Prefer updating an existing item when the batch clearly continues, resolves, blocks, or refines it.
 
 ### Output
 
@@ -62,36 +127,30 @@ Output exactly **one JSON object**:
 - Do not create an item for casual chatter, vague interest, or weak speculation.
 - Do not include text outside the JSON object.
 
-## Batch metadata
+## Batch 
+
+### Metadata
 
 \`\`\`json
-${JSON.stringify(
-  {
-    spaceId: processingBatch.spaceId,
-    batchId: processingBatch.batchId,
-    messageCount: processingBatch.messageCount,
-  },
-  null,
-  2
-)}
+${JSON.stringify(batchMetadata, null, 2)}
 \`\`\`
 
-## Batch messages
+### Messages
 
 \`\`\`json
-${JSON.stringify(processingBatch.messages, null, 2)}
+${JSON.stringify(batchMessages, null, 2)}
 \`\`\`
 
 ## Included conversations
 
 \`\`\`json
-${JSON.stringify(touchedConversations, null, 2)}
+${JSON.stringify(includedConversations, null, 2)}
 \`\`\`
 
 ## Existing items
 
 \`\`\`json
-${JSON.stringify(candidateItems, null, 2)}
+${JSON.stringify(existingItems, null, 2)}
 \`\`\`
 `.trim();
 }
