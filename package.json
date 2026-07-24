@@ -4,6 +4,14 @@
   "type": "module",
   "workspaces": [
     "lib",
+    "plugins/source-observer",
+    "plugins/webex-meeting-join",
     "services/setup-ui"
-  ]
+  ],
+  "scripts": {
+    "test": "node --test lib/*.test.cjs plugins/source-observer/*.test.js plugins/webex/*.test.cjs plugins/webex-meeting-join/*.test.cjs services/setup-ui/*.test.js"
+  },
+  "overrides": {
+    "chalk": "^5.3.0"
+  }
 }
