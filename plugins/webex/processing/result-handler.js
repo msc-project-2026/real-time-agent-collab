@@ -113,5 +113,4 @@ async function handleProcessingResult({
 module.exports = {
   makeProcessingResultHandler,
   handleProcessingResult,
-  applyConversationResult,
 };
