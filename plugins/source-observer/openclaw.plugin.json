@@ -1,0 +1,16 @@
+{
+  "id": "source-observer",
+  "name": "Source Observer Channel",
+  "description": "Periodic repository observer that updates .collab context via the OpenClaw agent",
+  "channels": ["source-observer"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "default": true
+      }
+    }
+  }
+}
