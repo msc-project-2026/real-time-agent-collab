@@ -13,7 +13,7 @@ import {
   readdir as fsReaddir,
 } from 'fs/promises';
 import { lookup } from 'node:dns/promises';
-import { resolve } from 'node:dns';
+import { buildCollabSyncSessionKey } from './openclaw-session.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -38,6 +38,37 @@ mkdir(BY_SPACE_DIR, { recursive: true }).catch((err) =>
 mkdir(BY_REPO_DIR, { recursive: true }).catch((err) =>
   console.error('mkdir by-repo:', err)
 );
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function backoffDelay(attempt) {
+  const base = 300 * 2 ** (attempt - 1);
+  return Math.min(base + Math.random() * base * 0.5, 5000);
+}
+
+async function notifyOpenClaw(openclawUrl, body, { maxAttempts = 5 } = {}) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const res = await fetch(`${openclawUrl}/hooks/agent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${OPENCLAW_WEBHOOK_SECRET}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (res.ok) return;
+
+    const text = await res.text().catch(() => '');
+    const isSessionConflict = /session initialization conflicted/i.test(text);
+    if (!isSessionConflict || attempt === maxAttempts) {
+      throw new Error(`OpenClaw hook failed (${res.status}): ${text}`);
+    }
+    await sleep(backoffDelay(attempt));
+  }
+}
 
 async function readSpaceConfig(spaceId) {
   // Try exact match first
@@ -168,41 +199,29 @@ app.post('/webhooks/github', express.raw({ type: '*/*' }), async (req, res) => {
   const { spaceIds } = repoConfig;
 
   for (const spaceId of spaceIds) {
-    // Read full space config to include in message
     let spaceConfig = null;
     try {
-      const raw = await fsReadFile(
-        join(BY_SPACE_DIR, `${spaceId}.json`),
-        'utf8'
-      );
+      const raw = await fsReadFile(join(BY_SPACE_DIR, `${spaceId}.json`), 'utf8');
       spaceConfig = JSON.parse(raw);
     } catch {
       /* config not found, pass null */
     }
 
-    //await new Promise((resolve) => setTimeout(resolve, 1500)); //  small pause
-    fetch(`${openclawUrl}/hooks/agent`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${OPENCLAW_WEBHOOK_SECRET}`,
-      },
-      body: JSON.stringify({
-        message: JSON.stringify({
-          spaceId,
-          repo: { owner, repo },
-          config: spaceConfig,
-          instructions: [
-            `Write config to /home/node/.openclaw/workspace/spaces/${spaceId}/config.json, creating directories as needed.`,
-            `Send a brief acknowledgment to Webex room ${spaceId} confirming the project config update was processed.`,
-          ],
-        }),
-        sessionKey: 'hook:collab-sync',
-        name: 'collab-sync',
-        deliver: true,
-        channel: 'webex',
-        to: spaceId,
+    notifyOpenClaw(openclawUrl, {
+      message: JSON.stringify({
+        spaceId,
+        repo: { owner, repo },
+        config: spaceConfig,
+        instructions: [
+          `Write config to /home/node/.openclaw/workspace/spaces/${spaceId}/config.json, creating directories as needed.`,
+          `Send a brief acknowledgment to Webex room ${spaceId} confirming the project config update was processed.`,
+        ],
       }),
+      sessionKey: buildCollabSyncSessionKey(),
+      name: 'collab-sync',
+      deliver: true,
+      channel: 'webex',
+      to: spaceId,
     }).catch((err) => console.error('OpenClaw forward error:', err));
   }
 
