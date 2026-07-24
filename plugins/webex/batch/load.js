@@ -1,10 +1,10 @@
 // ********* BATCH/LOAD.JS *********
+// perhaps a BATCH/store.js? and getProcessingBatch(...)?
 'use strict';
 
 const fs = require('node:fs/promises');
 
 const { processingBatchPath } = require('../storage/paths.js');
-const { getConversations } = require('../context/conversations-store.js');
 
 async function loadProcessingBatch({ spaceId, batchId, explicitRoot }) {
   if (!spaceId) throw new Error('spaceId is required');
@@ -26,13 +26,6 @@ async function loadProcessingBatch({ spaceId, batchId, explicitRoot }) {
     // Get last message
     const lastMessage = messages.at(-1);
 
-    // Get conversations
-    const conversations = await getConversations({
-      spaceId,
-      explicitRoot,
-      statuses: ['active', 'dormant'],
-    });
-
     return {
       ok: true,
       spaceId,
@@ -40,7 +33,6 @@ async function loadProcessingBatch({ spaceId, batchId, explicitRoot }) {
       messageCount: messages.length,
       messages,
       suggestedReplyToId: lastMessage?.parentId ?? null,
-      conversations,
     };
   } catch (err) {
     if (err?.code === 'ENOENT') {

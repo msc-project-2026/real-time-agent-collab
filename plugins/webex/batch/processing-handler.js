@@ -1,11 +1,13 @@
 // ********* BATCH/PROCESSING-HANDLER.JS *********
 'use strict';
 
-const { buildProcessingInstruction } = require('../instructions/processing');
 const { dispatchToAgentForSpace } = require('../dispatch');
 const { getPluginRuntime } = require('../runtime');
-const { makeProcessingResultHandler } = require('../processing/result-handler');
+
 const { loadProcessingBatch } = require('./load');
+const { getConversations } = require('../context/conversations-store.js');
+const { buildProcessingInstruction } = require('../processing/instruction');
+const { makeProcessingResultHandler } = require('../processing/result-handler');
 
 // Process staged batch
 async function handleProcessStagedBatchRequest({
@@ -23,8 +25,14 @@ async function handleProcessStagedBatchRequest({
     batchId,
   });
 
+  const existingConversations = await getConversations({
+    spaceId,
+    statuses: ['active', 'dormant'],
+  });
+
   const processingInstruction = buildProcessingInstruction({
     batch: processingBatch,
+    conversations: existingConversations,
   });
 
   const now = new Date().toISOString();
@@ -62,6 +70,7 @@ async function handleProcessStagedBatchRequest({
     buildCtxPayload: buildProcessStagedBatchCtxPayload,
     onAgentOutput: makeProcessingResultHandler({
       processingBatch,
+      existingConversations,
       account,
       log,
     }),

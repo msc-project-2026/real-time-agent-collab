@@ -4,7 +4,7 @@
 // Inbound message filtering, membership checks, and agent pipeline dispatch.
 const { webexFetch } = require('../api');
 const { getAccessToken } = require('../token');
-const { buildRoutingInstruction } = require('../instructions/routing');
+const { buildRoutingInstruction } = require('../routing/instruction');
 const { dispatchToAgentForSpace } = require('../dispatch');
 const { makeRouteResultHandler } = require('../routing/result-handler');
 const { getPluginRuntime } = require('../runtime');
@@ -105,34 +105,19 @@ async function handleInboundWebexMessage(
   };
 
   // Fetch routing instruction
-  const routingInstruction = buildRoutingInstruction();
+  const routingInstruction = buildRoutingInstruction({ message: msg, botId });
 
   // Build context payload
   function buildRealWebexCtxPayload(sessionKeySuffix) {
     return {
       Body: msg.text ?? '',
       RawBody: msg.text ?? '',
-      CommandBody: [
-        routingInstruction,
-        '',
-        '## Webex message:',
-        '',
-        '### Context:',
-        '```json',
-        JSON.stringify(contextHeader, null, 2),
-        '```',
-        '',
-        '### Content:',
-        msg.text ?? '',
-      ].join('\n'),
-
+      CommandBody: routingInstruction,
       From: `webex:${msg.personId}`,
       To: `webex:${msg.roomId}`,
-
       SessionKey: sessionKeySuffix
         ? `agent:main:webex:${msg.roomId}:${sessionKeySuffix}`
         : `agent:main:webex:${msg.roomId}`,
-
       WebexRoomId: msg.roomId,
       AccountId: account.accountId,
       ChatType: msg.roomType === 'direct' ? 'direct' : 'group',
