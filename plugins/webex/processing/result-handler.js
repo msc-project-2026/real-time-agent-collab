@@ -5,8 +5,10 @@ const { parseJsonObjectFromText } = require('../utils/parse-json');
 const { validateProcessingResult } = require('./validate-result');
 const {
   updateConversationsFromProcessingResult,
-} = require('./update-conversations');
-const { extractItemsFromProcessingResult } = require('./extract-items');
+} = require('./conversations/update-from-processing');
+const {
+  extractItemsFromProcessingResult,
+} = require('./items/extract-from-processing');
 
 // Make handler for parsing batch processing result
 function makeProcessingResultHandler({ processingBatch, account, log }) {
