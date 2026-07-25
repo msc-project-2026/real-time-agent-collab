@@ -88,6 +88,8 @@ async function extractItemsFromBatch({
     candidateItems,
   });
 
+  const baseSessionKey = `agent:main:webex:${spaceId}:item-extraction`;
+
   function buildItemExtractionCtxPayload(sessionKeySuffix) {
     return {
       Body: '',
@@ -96,8 +98,8 @@ async function extractItemsFromBatch({
       From: 'webex:internal-item-extractor',
       To: `webex:${spaceId}`,
       SessionKey: sessionKeySuffix
-        ? `agent:main:webex:${spaceId}:batch:${batchId}:items:${sessionKeySuffix}`
-        : `agent:main:webex:${spaceId}:batch:${batchId}:items`,
+        ? `${baseSessionKey}:${sessionKeySuffix}`
+        : baseSessionKey,
       WebexRoomId: spaceId,
       AccountId: account.accountId,
       ChatType: 'group',

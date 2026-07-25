@@ -40,6 +40,8 @@ async function handleProcessStagedBatchRequest({
       conversations: existingConversations,
     });
 
+  const baseSessionKey = `agent:main:webex:${spaceId}:conv-processing`;
+
   const now = new Date().toISOString();
 
   function buildProcessStagedBatchCtxPayload(sessionKeySuffix) {
@@ -50,8 +52,8 @@ async function handleProcessStagedBatchRequest({
       From: 'webex:internal-batch-processor',
       To: `webex:${spaceId}`,
       SessionKey: sessionKeySuffix
-        ? `agent:main:webex:${spaceId}:batch:${batchId}:${sessionKeySuffix}`
-        : `agent:main:webex:${spaceId}:batch:${batchId}`,
+        ? `${baseSessionKey}:${sessionKeySuffix}`
+        : baseSessionKey,
       WebexRoomId: spaceId,
       AccountId: account.accountId,
       ChatType: 'group',

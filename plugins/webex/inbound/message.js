@@ -104,8 +104,9 @@ async function handleInboundWebexMessage(
     isMentioned,
   };
 
-  // Fetch routing instruction
   const routingInstruction = buildRoutingInstruction({ message: msg, botId });
+
+  const baseSessionKey = `agent:main:webex:${msg.roomId}:msg-routing`;
 
   // Build context payload
   function buildRealWebexCtxPayload(sessionKeySuffix) {
@@ -116,8 +117,8 @@ async function handleInboundWebexMessage(
       From: `webex:${msg.personId}`,
       To: `webex:${msg.roomId}`,
       SessionKey: sessionKeySuffix
-        ? `agent:main:webex:${msg.roomId}:${sessionKeySuffix}`
-        : `agent:main:webex:${msg.roomId}`,
+        ? `${baseSessionKey}:${sessionKeySuffix}`
+        : baseSessionKey,
       WebexRoomId: msg.roomId,
       AccountId: account.accountId,
       ChatType: msg.roomType === 'direct' ? 'direct' : 'group',
