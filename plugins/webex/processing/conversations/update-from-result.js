@@ -1,4 +1,4 @@
-// ********* PROCESSING/CONVERSATIONS/UPDATE-FROM-PROCESSING.JS *********
+// ********* PROCESSING/CONVERSATIONS/UPDATE-FROM-RESULT.JS *********
 'use strict';
 
 const crypto = require('node:crypto');
@@ -71,7 +71,7 @@ function applyConversationResult({ state, result }) {
 }
 
 // Update
-async function updateConversationsFromProcessingResult({
+async function updateConversationsFromResult({
   processingBatch,
   processingResult,
   account,
@@ -111,5 +111,5 @@ async function updateConversationsFromProcessingResult({
 }
 
 module.exports = {
-  updateConversationsFromProcessingResult,
+  updateConversationsFromResult,
 };
