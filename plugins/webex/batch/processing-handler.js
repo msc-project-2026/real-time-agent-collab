@@ -46,7 +46,7 @@ async function handleProcessStagedBatchRequest({
     return {
       Body: '',
       RawBody: '',
-      CommandBody: processingInstruction,
+      CommandBody: conversationProcessingInstruction,
       From: 'webex:internal-batch-processor',
       To: `webex:${spaceId}`,
       SessionKey: sessionKeySuffix
