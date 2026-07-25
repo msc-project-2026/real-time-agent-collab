@@ -7,7 +7,7 @@ const { updateItemsFromResult } = require('./update-from-result');
 
 function makeItemExtractionResultHandler({
   processingBatch,
-  touchedConveresations,
+  touchedConversations,
   candidateItems,
   account,
   log,
@@ -59,7 +59,7 @@ function makeItemExtractionResultHandler({
       return handleItemExtractionResult({
         itemExtractionResult: parsed,
         processingBatch,
-        touchedConveresations,
+        touchedConversations,
         candidateItems,
         account,
         log,
@@ -84,7 +84,7 @@ function makeItemExtractionResultHandler({
 async function handleItemExtractionResult({
   itemExtractionResult,
   processingBatch,
-  touchedConveresations,
+  touchedConversations,
   candidateItems,
   account,
   log,
@@ -97,12 +97,12 @@ async function handleItemExtractionResult({
   // Validate
   const errors = validateItemExtractionResult(itemExtractionResult, {
     processingBatch,
-    touchedConveresations,
+    touchedConversations,
     candidateItems,
   });
 
   if (errors.length > 0) {
-    throw new Error(`invalid processing result: ${errors.join('; ')}`);
+    throw new Error(`invalid item extraction result: ${errors.join('; ')}`);
   }
 
   // Update
