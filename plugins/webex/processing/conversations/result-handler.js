@@ -5,7 +5,7 @@ const { parseJsonObjectFromText } = require('../../utils/parse-json');
 const { validateConversationProcessingResult } = require('./validate-result');
 const { getConversations } = require('../../context/conversations-store');
 const { updateConversationsFromResult } = require('./update-from-result');
-const { extractItemsFromResult } = require('../items/extract-from-result');
+const { extractItemsFromBatch } = require('../items/extract-from-batch');
 
 // Make handler for parsing batch conversation processing result
 function makeConversationProcessingResultHandler({
@@ -18,7 +18,7 @@ function makeConversationProcessingResultHandler({
 
   return async ({ text }) => {
     log?.info?.(
-      `[webex:${account.accountId}] inspecting agent processing output`,
+      `[webex:${account.accountId}] inspecting conversation processing output`,
       {
         spaceId,
         text,
@@ -30,7 +30,7 @@ function makeConversationProcessingResultHandler({
       parsed = parseJsonObjectFromText(text);
     } catch (err) {
       log?.warn?.(
-        `[webex:${account.accountId}] agent processing output was not parseable ${JSON.stringify(
+        `[webex:${account.accountId}] conversation processing output was not parseable ${JSON.stringify(
           {
             spaceId,
             error: err?.message ?? String(err),
@@ -42,7 +42,7 @@ function makeConversationProcessingResultHandler({
     }
 
     log?.info?.(
-      `[webex:${account.accountId}] parsed agent processing output ${JSON.stringify(
+      `[webex:${account.accountId}] parsed conversation processing output ${JSON.stringify(
         {
           spaceId,
           conversationUpdates: parsed.conversationUpdates?.length ?? 0,
@@ -55,7 +55,7 @@ function makeConversationProcessingResultHandler({
 
     try {
       return handleConversationProcessingResult({
-        processingResult: parsed,
+        conversationProcessingResult: parsed,
         processingBatch,
         existingConversations,
         account,
@@ -63,7 +63,7 @@ function makeConversationProcessingResultHandler({
       });
     } catch (err) {
       log?.error?.(
-        `[webex:${account.accountId}] failed to handle processing result ${JSON.stringify(
+        `[webex:${account.accountId}] failed to handle conversation processing result ${JSON.stringify(
           {
             spaceId,
             result: parsed,
@@ -79,7 +79,7 @@ function makeConversationProcessingResultHandler({
 
 // Handle result
 async function handleConversationProcessingResult({
-  processingResult,
+  conversationProcessingResult,
   processingBatch,
   existingConversations,
   account,
@@ -91,10 +91,13 @@ async function handleConversationProcessingResult({
   if (!account) throw new Error('account is required');
 
   // Validate
-  const errors = validateConversationProcessingResult(processingResult, {
-    processingBatch,
-    existingConversations,
-  });
+  const errors = validateConversationProcessingResult(
+    conversationProcessingResult,
+    {
+      processingBatch,
+      existingConversations,
+    }
+  );
 
   if (errors.length > 0) {
     throw new Error(`invalid processing result: ${errors.join('; ')}`);
@@ -103,15 +106,14 @@ async function handleConversationProcessingResult({
   // Update conversations
   const { touchedConversationIds } = await updateConversationsFromResult({
     processingBatch,
-    processingResult,
+    conversationProcessingResult,
     account,
     log,
   });
 
   // Extract items
-  const itemExtractionResult = await extractItemsFromResult({
+  const itemExtractionResult = await extractItemsFromBatch({
     processingBatch,
-    processingResult,
     touchedConversationIds,
     account,
     log,
@@ -119,9 +121,10 @@ async function handleConversationProcessingResult({
 
   return {
     ok: true,
-    result: processingResult,
-    conversationsUpdated: processingResult.conversationUpdates.length,
-    conversationsCreated: processingResult.newConversations.length,
+    result: conversationProcessingResult,
+    conversationsUpdated:
+      conversationProcessingResult.conversationUpdates.length,
+    conversationsCreated: conversationProcessingResult.newConversations.length,
     touchedConversationIds,
     itemExtraction: {
       skipped: itemExtractionResult.skipped,
@@ -131,6 +134,5 @@ async function handleConversationProcessingResult({
 }
 
 module.exports = {
-  handleConversationProcessingResult,
-  handleConversationProcessingResult,
+  makeConversationProcessingResultHandler,
 };

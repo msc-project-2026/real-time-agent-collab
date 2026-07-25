@@ -1,4 +1,4 @@
-// ********* PROCESSING/ITEMS/EXTRACT-FROM-PROCESSING.JS *********
+// ********* PROCESSING/ITEMS/EXTRACT-FROM-BATCH.JS *********
 'use strict';
 
 const { dispatchToAgentForSpace } = require('../../dispatch');
@@ -22,9 +22,8 @@ function getTouchedConversations({
   );
 }
 
-async function extractItemsFromResult({
+async function extractItemsFromBatch({
   processingBatch,
-  processingResult,
   touchedConversationIds,
   account,
   log,
@@ -36,7 +35,6 @@ async function extractItemsFromResult({
   if (!processingBatch.batchId) {
     throw new Error('processingBatch.batchId is required');
   }
-  if (!processingResult) throw new Error('processingResult is required');
   if (!account) throw new Error('account is required');
 
   const spaceId = processingBatch.spaceId;
@@ -123,6 +121,8 @@ async function extractItemsFromResult({
     buildCtxPayload: buildItemExtractionCtxPayload,
     onAgentOutput: makeItemExtractionResultHandler({
       processingBatch,
+      touchedConversations,
+      candidateItems,
       account,
       log,
     }),
@@ -139,5 +139,5 @@ async function extractItemsFromResult({
 }
 
 module.exports = {
-  extractItemsFromResult,
+  extractItemsFromBatch,
 };
