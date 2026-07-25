@@ -6,8 +6,12 @@ const { getPluginRuntime } = require('../runtime');
 
 const { loadProcessingBatch } = require('./load');
 const { getConversations } = require('../context/conversations-store.js');
-const { buildProcessingInstruction } = require('../processing/instruction');
-const { makeProcessingResultHandler } = require('../processing/result-handler');
+const {
+  buildConversationProcessingInstruction,
+} = require('../processing/conversations/instruction.js');
+const {
+  makeConversationProcessingResultHandler,
+} = require('../processing/conversations/result-handler.js');
 
 // Process staged batch
 async function handleProcessStagedBatchRequest({
@@ -30,10 +34,11 @@ async function handleProcessStagedBatchRequest({
     statuses: ['active', 'dormant'],
   });
 
-  const processingInstruction = buildProcessingInstruction({
-    batch: processingBatch,
-    conversations: existingConversations,
-  });
+  const conversationProcessingInstruction =
+    buildConversationProcessingInstruction({
+      batch: processingBatch,
+      conversations: existingConversations,
+    });
 
   const now = new Date().toISOString();
 
@@ -68,7 +73,7 @@ async function handleProcessStagedBatchRequest({
     account,
     log,
     buildCtxPayload: buildProcessStagedBatchCtxPayload,
-    onAgentOutput: makeProcessingResultHandler({
+    onAgentOutput: makeConversationProcessingResultHandler({
       processingBatch,
       existingConversations,
       account,

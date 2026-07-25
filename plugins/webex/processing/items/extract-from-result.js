@@ -22,7 +22,7 @@ function getTouchedConversations({
   );
 }
 
-async function extractItemsFromProcessingResult({
+async function extractItemsFromResult({
   processingBatch,
   processingResult,
   touchedConversationIds,
@@ -139,5 +139,5 @@ async function extractItemsFromProcessingResult({
 }
 
 module.exports = {
-  extractItemsFromProcessingResult,
+  extractItemsFromResult,
 };

@@ -1,7 +1,7 @@
-// ********* PROCESSING/INSTRUCTION.JS *********
+// ********* PROCESSING/CONVERSATIONS/INSTRUCTION.JS *********
 'use strict';
 
-function formatBatchMetadataForProcessingPrompt({ batch }) {
+function formatBatchMetadataForConversationProcessingPrompt({ batch }) {
   return {
     spaceId: batch.spaceId,
     batchId: batch.batchId,
@@ -10,7 +10,7 @@ function formatBatchMetadataForProcessingPrompt({ batch }) {
   };
 }
 
-function formatBatchMessagesForProcessingPrompt({ batch }) {
+function formatBatchMessagesForConversationProcessingPrompt({ batch }) {
   return Array.isArray(batch.messages)
     ? batch.messages.map((message) => ({
         id: message.id,
@@ -23,7 +23,7 @@ function formatBatchMessagesForProcessingPrompt({ batch }) {
     : [];
 }
 
-function formatConversationsForProcessingPrompt({ conversations }) {
+function formatConversationsForConversationProcessingPrompt({ conversations }) {
   return Array.isArray(conversations)
     ? conversations.map((conversation) => ({
         id: conversation.id,
@@ -34,17 +34,22 @@ function formatConversationsForProcessingPrompt({ conversations }) {
     : [];
 }
 
-function buildProcessingInstruction({ batch, conversations }) {
-  const batchMetadata = formatBatchMetadataForProcessingPrompt({ batch });
-  const batchMessages = formatBatchMessagesForProcessingPrompt({ batch });
-  const existingConversations = formatConversationsForProcessingPrompt({
-    conversations,
+function buildConversationProcessingInstruction({ batch, conversations }) {
+  const batchMetadata = formatBatchMetadataForConversationProcessingPrompt({
+    batch,
   });
+  const batchMessages = formatBatchMessagesForConversationProcessingPrompt({
+    batch,
+  });
+  const existingConversations =
+    formatConversationsForConversationProcessingPrompt({
+      conversations,
+    });
 
   return `
 ## Task
 
-You are processing a batch of Webex space messages.
+You are analysing a batch of Webex space messages.
 
 Read the batch and existing conversations below. Determine:
 
@@ -122,5 +127,5 @@ ${JSON.stringify(existingConversations, null, 2)}
 }
 
 module.exports = {
-  buildProcessingInstruction,
+  buildConversationProcessingInstruction,
 };

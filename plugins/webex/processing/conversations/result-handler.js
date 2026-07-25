@@ -1,18 +1,14 @@
-// ********* PROCESSING/RESULT-HANDLER.JS *********
+// ********* PROCESSING/CONVERSATIONS/RESULT-HANDLER.JS *********
 'use strict';
 
-const { parseJsonObjectFromText } = require('../utils/parse-json');
-const { validateProcessingResult } = require('./validate-result');
-const { getConversations } = require('../context/conversations-store');
-const {
-  updateConversationsFromProcessingResult,
-} = require('./conversations/update-from-processing');
-const {
-  extractItemsFromProcessingResult,
-} = require('./items/extract-from-processing');
+const { parseJsonObjectFromText } = require('../../utils/parse-json');
+const { validateConversationProcessingResult } = require('./validate-result');
+const { getConversations } = require('../../context/conversations-store');
+const { updateConversationsFromResult } = require('./update-from-result');
+const { extractItemsFromResult } = require('../items/extract-from-result');
 
-// Make handler for parsing batch processing result
-function makeProcessingResultHandler({
+// Make handler for parsing batch conversation processing result
+function makeConversationProcessingResultHandler({
   processingBatch,
   existingConversations,
   account,
@@ -58,7 +54,7 @@ function makeProcessingResultHandler({
     );
 
     try {
-      return handleProcessingResult({
+      return handleConversationProcessingResult({
         processingResult: parsed,
         processingBatch,
         existingConversations,
@@ -81,8 +77,8 @@ function makeProcessingResultHandler({
   };
 }
 
-// Handle processing result
-async function handleProcessingResult({
+// Handle result
+async function handleConversationProcessingResult({
   processingResult,
   processingBatch,
   existingConversations,
@@ -95,7 +91,7 @@ async function handleProcessingResult({
   if (!account) throw new Error('account is required');
 
   // Validate
-  const errors = validateProcessingResult(processingResult, {
+  const errors = validateConversationProcessingResult(processingResult, {
     processingBatch,
     existingConversations,
   });
@@ -105,16 +101,15 @@ async function handleProcessingResult({
   }
 
   // Update conversations
-  const { touchedConversationIds } =
-    await updateConversationsFromProcessingResult({
-      processingBatch,
-      processingResult,
-      account,
-      log,
-    });
+  const { touchedConversationIds } = await updateConversationsFromResult({
+    processingBatch,
+    processingResult,
+    account,
+    log,
+  });
 
   // Extract items
-  const itemExtractionResult = await extractItemsFromProcessingResult({
+  const itemExtractionResult = await extractItemsFromResult({
     processingBatch,
     processingResult,
     touchedConversationIds,
@@ -136,6 +131,6 @@ async function handleProcessingResult({
 }
 
 module.exports = {
-  makeProcessingResultHandler,
-  handleProcessingResult,
+  handleConversationProcessingResult,
+  handleConversationProcessingResult,
 };

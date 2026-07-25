@@ -1,9 +1,9 @@
-// ********* PROCESSING/VALIDATE-RESULT.JS *********
+// ********* PROCESSING/CONVERSATIONS/VALIDATE-RESULT.JS *********
 'use strict';
 
-const { asArray, cleanString } = require('../utils/normalise');
+const { asArray, cleanString } = require('../../utils/normalise');
 
-function validateProcessingResult(
+function validateConversationProcessingResult(
   result,
   { processingBatch, existingConversations }
 ) {
@@ -91,5 +91,5 @@ function validateProcessingResult(
 }
 
 module.exports = {
-  validateProcessingResult,
+  validateConversationProcessingResult,
 };
