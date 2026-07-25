@@ -92,6 +92,7 @@ Output exactly **one JSON object**:
 
 ### Rules
 
+- Keep conversation summaries concise and topic-level. Do not list every task, decision, or risk in detail; those will be tracked separately as items.
 - Use only message ids that appear in the batch.
 - Use only conversation ids that appear in the existing conversations.
 - If no response is needed, set message and replyToId to null.
