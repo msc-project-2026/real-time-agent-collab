@@ -1,7 +1,7 @@
 // ********* PROCESSING/ITEMS/UPDATE-FROM-RESULT.JS *********
 'use strict';
 
-const { asArray, cleanString, unique } = require('../../utils/values');
+const { asArray, cleanString, unique } = require('../../utils/normalise');
 const {
   createItemId,
   readItemsState,
