@@ -73,16 +73,25 @@ function applyConversationResult({ state, result }) {
 // Update
 async function updateConversationsFromResult({
   processingBatch,
-  processingResult,
+  conversationProcessingResult,
   account,
   log,
 }) {
+  if (!processingBatch) throw new Error('processingBatch is required');
+  if (!processingBatch.spaceId) {
+    throw new Error('processingBatch.spaceId is required');
+  }
+  if (!conversationProcessingResult) {
+    throw new Error('conversationProcessingResult is required');
+  }
+  if (!account) throw new Error('account is required');
+
   const spaceId = processingBatch.spaceId;
   const state = await readConversationsState({ spaceId });
 
   const { newState, touchedConversationIds } = applyConversationResult({
     state,
-    result: processingResult,
+    result: conversationProcessingResult,
   });
 
   await writeConversationsState({
@@ -91,16 +100,18 @@ async function updateConversationsFromResult({
   });
 
   log?.info?.(
-    `[webex:${account.accountId}] updated conversation state from processing result ${JSON.stringify(
+    `[webex:${account.accountId}] updated conversation state from conversation processing result ${JSON.stringify(
       {
         spaceId,
         batchId: processingBatch.batchId,
-        conversationUpdates: processingResult.conversationUpdates.length,
-        newConversations: processingResult.newConversations.length,
-        untrackedMessageIds: processingResult.untrackedMessageIds.length,
+        conversationUpdates:
+          conversationProcessingResult.conversationUpdates.length,
+        newConversations: conversationProcessingResult.newConversations.length,
+        untrackedMessageIds:
+          conversationProcessingResult.untrackedMessageIds.length,
         touchedConversationIds,
         touchedConversationCount: touchedConversationIds.length,
-        responseNeeded: processingResult.responseDecision.needed,
+        responseNeeded: conversationProcessingResult.responseDecision.needed,
       }
     )}`
   );

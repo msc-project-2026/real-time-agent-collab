@@ -2,8 +2,16 @@
 'use strict';
 
 const { parseJsonObjectFromText } = require('../../utils/parse-json');
+const { validateItemExtractionResult } = require('./validate-result');
+const { updateItemsFromResult } = require('./update-from-result');
 
-function makeItemExtractionResultHandler({ processingBatch, account, log }) {
+function makeItemExtractionResultHandler({
+  processingBatch,
+  touchedConveresations,
+  candidateItems,
+  account,
+  log,
+}) {
   const spaceId = processingBatch.spaceId;
   const batchId = processingBatch.batchId;
 
@@ -17,10 +25,10 @@ function makeItemExtractionResultHandler({ processingBatch, account, log }) {
       }
     );
 
-    let itemExtractionResult;
+    let parsed;
 
     try {
-      itemExtractionResult = parseJsonObjectFromText(text);
+      parsed = parseJsonObjectFromText(text);
     } catch (err) {
       log?.warn?.(
         `[webex:${account.accountId}] item extraction output was not parseable ${JSON.stringify(
@@ -40,18 +48,75 @@ function makeItemExtractionResultHandler({ processingBatch, account, log }) {
         {
           spaceId,
           batchId,
-          itemUpdates: itemExtractionResult.itemUpdates?.length ?? 0,
-          newItems: itemExtractionResult.newItems?.length ?? 0,
-          ignoredMessageIds:
-            itemExtractionResult.ignoredMessageIds?.length ?? 0,
+          itemUpdates: parsed.itemUpdates?.length ?? 0,
+          newItems: parsed.newItems?.length ?? 0,
+          ignoredMessageIds: parsed.ignoredMessageIds?.length ?? 0,
         }
       )}`
     );
 
-    return {
-      ok: true,
-      itemExtractionResult,
-    };
+    try {
+      return handleItemExtractionResult({
+        itemExtractionResult: parsed,
+        processingBatch,
+        touchedConveresations,
+        candidateItems,
+        account,
+        log,
+      });
+    } catch (err) {
+      log?.error?.(
+        `[webex:${account.accountId}] failed to handle processing result ${JSON.stringify(
+          {
+            spaceId,
+            result: parsed,
+            error: err?.message ?? String(err),
+          }
+        )}`
+      );
+
+      throw err;
+    }
+  };
+}
+
+// Handle result
+async function handleItemExtractionResult({
+  itemExtractionResult,
+  processingBatch,
+  touchedConveresations,
+  candidateItems,
+  account,
+  log,
+}) {
+  if (!processingBatch) throw new Error('processingBatch is required');
+  if (!processingBatch.spaceId)
+    throw new Error('processingBatch.spaceId is required');
+  if (!account) throw new Error('account is required');
+
+  // Validate
+  const errors = validateItemExtractionResult(itemExtractionResult, {
+    processingBatch,
+    touchedConveresations,
+    candidateItems,
+  });
+
+  if (errors.length > 0) {
+    throw new Error(`invalid processing result: ${errors.join('; ')}`);
+  }
+
+  // Update
+  const { touchedItemIds } = await updateItemsFromResult({
+    processingBatch,
+    itemExtractionResult,
+    account,
+    log,
+  });
+
+  return {
+    ok: true,
+    itemExtractionResult,
+    touchedItemIds,
   };
 }
 
