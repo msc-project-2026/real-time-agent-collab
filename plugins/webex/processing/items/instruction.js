@@ -123,7 +123,7 @@ Output exactly **one JSON object**:
 - Use batch messages as the primary evidence; use included conversations to understand context and assign conversationIds.
 - Every new item must have at least one evidenceMessageId.
 - Every item update must have at least one evidenceMessageId.
-- Do not invent owners. Use null when no owner is explicit.
+- Do not invent owners, the sender of a message is not automatically the owner. Use null when no owner is explicit.
 - Do not create an item for casual chatter, vague interest, or weak speculation.
 - Do not include text outside the JSON object.
 
