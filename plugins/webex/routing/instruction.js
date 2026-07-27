@@ -35,7 +35,7 @@ Read the message and identify all special routes that apply.
 
 ### Routes
 
-- "recall_question": use when the message asks about previous decisions, current project state, open tasks, risks, issues, or what has been discussed.
+- "recall_request": use when the message asks about previous decisions, current project state, open tasks, risks, issues, or what has been discussed.
 - "task_request": use when the message asks the agent/team to create, add, fix, test, implement, check, or follow up on something.
 - "config_request": use when the message asks to configure, view, or update this space's settings.
 

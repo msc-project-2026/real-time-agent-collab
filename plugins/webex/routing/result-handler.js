@@ -7,6 +7,7 @@ const { appendPendingMessage } = require('../batch/append');
 const { schedulePendingBatchStaging } = require('../batch/schedule');
 const { handleStagePendingBatchRequest } = require('../batch/staging-handler');
 const { handleConfigRequest } = require('../config/handle-request');
+const { handleRecallRequest } = require('../recall/handle-request');
 
 const { unique } = require('../utils/normalise');
 
@@ -43,7 +44,7 @@ async function handleRouteResult({ routeResult, message, account, log }) {
   }
 
   const supportedRoutes = new Set([
-    'recall_question',
+    'recall_request',
     'task_request',
     'config_request',
   ]);
@@ -73,11 +74,11 @@ async function handleRouteResult({ routeResult, message, account, log }) {
   }
 
   // Extra handling: recall response.
-  // TODO: call recall response flow here.
-  if (hasRoute(uniqueRoutes, 'recall_question')) {
-    log?.info?.(`[webex:${account.accountId}] recall question route detected`, {
-      spaceId,
-      messageId: message.id,
+  if (hasRoute(uniqueRoutes, 'recall_request')) {
+    await handleRecallRequest({
+      message,
+      account,
+      log,
     });
   }
 
