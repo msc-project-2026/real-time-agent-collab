@@ -106,8 +106,54 @@ async function getCandidateItems({
     .slice(0, limit);
 }
 
+// Get Items
+async function getItems({
+  spaceId,
+  conversationIds,
+  statuses,
+  types,
+  explicitRoot,
+  limit = 100,
+} = {}) {
+  if (!spaceId) throw new Error('spaceId is required');
+
+  const state = await readItemsState({ spaceId, explicitRoot });
+
+  let items = Array.isArray(state?.items) ? state.items : [];
+
+  if (Array.isArray(statuses) && statuses.length > 0) {
+    const allowedStatuses = new Set(statuses);
+    items = items.filter((item) => allowedStatuses.has(item.status));
+  }
+
+  if (Array.isArray(types) && types.length > 0) {
+    const allowedTypes = new Set(types);
+    items = items.filter((item) => allowedTypes.has(item.type));
+  }
+
+  if (Array.isArray(conversationIds) && conversationIds.length > 0) {
+    const wantedConversationIds = new Set(conversationIds);
+
+    items = items.filter(
+      (item) =>
+        Array.isArray(item.conversationIds) &&
+        item.conversationIds.some((id) => wantedConversationIds.has(id))
+    );
+  }
+
+  return items
+    .slice()
+    .sort((a, b) => {
+      const aTime = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime();
+      const bTime = new Date(b.updatedAt ?? b.createdAt ?? 0).getTime();
+      return bTime - aTime;
+    })
+    .slice(0, limit);
+}
+
 module.exports = {
   readItemsState,
   writeItemsState,
   getCandidateItems,
+  getItems,
 };
