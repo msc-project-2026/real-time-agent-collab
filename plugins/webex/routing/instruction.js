@@ -47,7 +47,7 @@ Output exactly **one JSON object**:
 {
   "routes": [
     {
-      "route": "recall_question" | "task_request" | "config_request",
+      "route": "recall_request" | "task_request" | "config_request",
       "reason": "<brief reason>"
     }
   ]
