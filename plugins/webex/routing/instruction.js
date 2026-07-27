@@ -27,15 +27,17 @@ function buildRoutingInstruction({ message, botId }) {
   return `
 ## Task
 
-You are routing an inbound Webex message.
+You are routing an inbound group space message by identifying special intents.
 
-Read the message and choose exactly one route.
+By default, messages may still be stored and processed by the normal batch pipeline; special routes only indicate extra handling.
+
+Read the message and identify all special routes that apply.
 
 ### Routes
 
-- "append_and_stage": use when the message asks the agent a clear question, request, or action.
-- "append_only": use when the message should be stored for later batch processing and does not need to be addressed immediately.
-- "config_request": use when the message asks to configure, set up, view, or update this space's collaboration agent settings.
+- "recall_question": use when the message asks about previous decisions, current project state, open tasks, risks, issues, or what has been discussed.
+- "task_request": use when the message asks the agent/team to create, add, fix, test, implement, check, or follow up on something.
+- "config_request": use when the message asks to configure, view, or update this space's settings.
 
 ### Output
 
@@ -43,12 +45,19 @@ Output exactly **one JSON object**:
 
 \`\`\`json
 {
-  "route": "append_only" | "append_and_stage" | "config_request",
-  "reason": "<brief reason>"
+  "routes": [
+    {
+      "route": "recall_question" | "task_request" | "config_request",
+      "reason": "<brief reason>"
+    }
+  ]
 }
 \`\`\`
 
 ### Rules
+- Return an empty routes array when no special route applies.
+- Return multiple routes when the message has multiple special intents.
+- Do not include the same route more than once.
 - Do not call tools.
 - Do not include any text outside the JSON object.
 

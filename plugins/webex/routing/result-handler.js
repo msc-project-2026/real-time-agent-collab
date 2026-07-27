@@ -2,10 +2,101 @@
 'use strict';
 
 const { parseJsonObjectFromText } = require('../utils/parse-json');
+
 const { appendPendingMessage } = require('../batch/append');
 const { schedulePendingBatchStaging } = require('../batch/schedule');
-const { handleConfigRequest } = require('../config/handle-request');
 const { handleStagePendingBatchRequest } = require('../batch/staging-handler');
+const { handleConfigRequest } = require('../config/handle-request');
+
+const { unique } = require('../utils/normalise');
+
+// Helpers
+function getRoutes(routeResult) {
+  return Array.isArray(routeResult?.routes)
+    ? routeResult.routes.map((entry) => entry?.route).filter(Boolean)
+    : [];
+}
+
+function hasRoute(routes, route) {
+  return routes.includes(route);
+}
+
+// Handle route result
+async function handleRouteResult({ routeResult, message, account, log }) {
+  if (!message?.roomId) throw new Error('message.roomId is required');
+  if (!account) throw new Error('account is required');
+
+  const spaceId = message.roomId;
+  const routes = getRoutes(routeResult);
+
+  // Validation: duplicate and unknown routes
+  const uniqueRoutes = unique(routes);
+
+  if (uniqueRoutes.length !== routes.length) {
+    log?.warn?.(
+      `[webex:${account.accountId}] duplicate routes in route result`,
+      {
+        spaceId,
+        routeResult,
+      }
+    );
+  }
+
+  const supportedRoutes = new Set([
+    'recall_question',
+    'task_request',
+    'config_request',
+  ]);
+
+  const unknownRoutes = uniqueRoutes.filter(
+    (route) => !supportedRoutes.has(route)
+  );
+
+  if (unknownRoutes.length > 0) {
+    log?.warn?.(`[webex:${account.accountId}] unknown or unsupported routes`, {
+      spaceId,
+      unknownRoutes,
+      routeResult,
+    });
+  }
+
+  // Baseline capture: all inbound messages enter the batch pipeline
+  await appendPendingMessage({ spaceId, message });
+
+  // Extra handling: config flow.
+  if (hasRoute(uniqueRoutes, 'config_request')) {
+    await handleConfigRequest({
+      spaceId,
+      account,
+      log,
+    });
+  }
+
+  // Extra handling: recall response.
+  // TODO: call recall response flow here.
+  if (hasRoute(uniqueRoutes, 'recall_question')) {
+    log?.info?.(`[webex:${account.accountId}] recall question route detected`, {
+      spaceId,
+      messageId: message.id,
+    });
+  }
+
+  // Extra handling: task request
+  // - task_request should stage immediately so the requested task is captured quickly.
+  // - otherwise, use normal delayed staging.
+  if (hasRoute(uniqueRoutes, 'task_request')) {
+    await handleStagePendingBatchRequest({ spaceId, account, log });
+    return;
+  }
+
+  // Default: delayed staging scheduled
+  schedulePendingBatchStaging({
+    spaceId,
+    account,
+    log,
+    batchStagingHandler: handleStagePendingBatchRequest,
+  });
+}
 
 // Make handler for parsing message routing result
 function makeRouteResultHandler({ message, account, log }) {
@@ -77,70 +168,6 @@ function makeRouteResultHandler({ message, account, log }) {
       throw err;
     }
   };
-}
-
-// Handle route result
-async function handleRouteResult({ routeResult, message, account, log }) {
-  if (!message?.roomId) throw new Error('message.roomId is required');
-  if (!account) throw new Error('account is required');
-
-  const spaceId = message.roomId;
-
-  if (!routeResult?.route) {
-    log?.warn?.(`[webex:${account.accountId}] route result missing route`, {
-      spaceId,
-      routeResult,
-    });
-
-    return;
-  }
-
-  switch (routeResult.route) {
-    case 'append_only': {
-      await appendPendingMessage({ spaceId, message });
-
-      schedulePendingBatchStaging({
-        spaceId,
-        account,
-        log,
-        batchStagingHandler: handleStagePendingBatchRequest,
-      });
-
-      return;
-    }
-
-    case 'append_and_stage': {
-      await appendPendingMessage({ spaceId, message });
-
-      await handleStagePendingBatchRequest({ spaceId, account, log });
-
-      return;
-    }
-
-    case 'config_request': {
-      await handleConfigRequest({
-        spaceId,
-        account,
-        log,
-      });
-
-      return;
-    }
-
-    default: {
-      // unknown route
-      log?.warn?.(
-        `[webex:${account.accountId}] unknown or unsupported route result`,
-        {
-          spaceId,
-          route: routeResult.route ?? null,
-          routeResult,
-        }
-      );
-
-      return;
-    }
-  }
 }
 
 module.exports = { makeRouteResultHandler };
