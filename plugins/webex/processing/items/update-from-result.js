@@ -3,11 +3,16 @@
 
 const { asArray, cleanString, unique } = require('../../utils/normalise');
 const {
-  createItemId,
   readItemsState,
   writeItemsState,
 } = require('../../context/items-store');
 
+// Helpers
+function createItemId() {
+  return `item_${crypto.randomUUID()}`;
+}
+
+// Apply
 function applyItemExtractionResult({ state, result }) {
   const now = new Date().toISOString();
 
