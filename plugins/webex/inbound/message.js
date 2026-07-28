@@ -6,6 +6,7 @@ const { webexFetch } = require('../api');
 const { getAccessToken } = require('../token');
 const {
   appendMessageToThreadContextWindow,
+  getThread,
 } = require('../context/threads-store');
 const { buildRoutingInstruction } = require('../routing/instruction');
 const { dispatchToAgentForSpace } = require('../dispatch');
@@ -76,8 +77,18 @@ async function handleInboundWebexMessage(
 
   msg.threadKey = threadKey;
 
-  // Intruction and session key
-  const routingInstruction = buildRoutingInstruction({ message: msg, botId });
+  const thread = await getThread({
+    spaceId: msg.roomId,
+    threadKey,
+    excludeMessageIds: [msg.id], // Exclude current message we just appended
+  });
+
+  // Instruction and session key
+  const routingInstruction = buildRoutingInstruction({
+    message: msg,
+    botId,
+    thread,
+  });
 
   const baseSessionKey = `agent:main:webex:${msg.roomId}:msg-routing`;
 

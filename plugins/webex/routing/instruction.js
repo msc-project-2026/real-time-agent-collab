@@ -14,15 +14,32 @@ function formatMessageMetadataForRoutingPrompt({ message, botId }) {
     spaceId: message.roomId,
     senderName: message.personEmail ?? message.personId,
     botIsMentioned,
+    threadKey: message.threadKey ?? null,
   };
 }
 
-function buildRoutingInstruction({ message, botId }) {
+function formatThreadContextForRoutingPrompt({ thread }) {
+  return {
+    key: thread?.key ?? null,
+    kind: thread?.kind ?? null,
+    rootMessageId: thread?.rootMessageId ?? null,
+    contextWindow: Array.isArray(thread?.contextWindow)
+      ? thread.contextWindow.map((message) => ({
+          text: message.text ?? '',
+          senderName: message.senderName ?? null,
+          createdAt: message.createdAt ?? null,
+        }))
+      : [],
+  };
+}
+
+function buildRoutingInstruction({ message, botId, thread }) {
   const messageContents = formatMessageContentForRoutingPrompt({ message });
   const messageMetadata = formatMessageMetadataForRoutingPrompt({
     message,
     botId,
   });
+  const threadContext = formatThreadContextForRoutingPrompt({ thread });
 
   return `
 ## Task
@@ -58,8 +75,21 @@ Output exactly **one JSON object**:
 - Return an empty routes array when no special route applies.
 - Return multiple routes when the message has multiple special intents.
 - Do not include the same route more than once.
+- Use the local thread context window below to resolve reference ambiguities in the current message.
 - Do not call tools.
 - Do not include any text outside the JSON object.
+
+## Local thread context
+
+This is the local thread record for the current message.
+
+- \`kind\` indicates whether the message is in the root/main flow or a Webex thread.
+- \`rootMessageId\` is the Webex root message id for threaded replies, or null for the root/main flow.
+- \`contextWindow\` contains recent prior messages from this same local thread.
+
+\`\`\`json
+${JSON.stringify(threadContext, null, 2)}
+\`\`\`
 
 ## Webex Message 
 
