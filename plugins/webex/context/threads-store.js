@@ -214,7 +214,7 @@ async function appendMessageToThreadContextWindow({
   };
 }
 
-// Helpers
+// Getters
 
 function getThreadFromState({ state, threadKey, excludeMessageIds = [] } = {}) {
   if (!threadKey) throw new Error('threadKey is required');
@@ -262,6 +262,31 @@ async function getThread({
   });
 }
 
+async function getThreads({ spaceId, explicitRoot, limit = 100, kinds } = {}) {
+  if (!spaceId) throw new Error('spaceId is required');
+
+  const state = await readThreadsState({
+    spaceId,
+    explicitRoot,
+  });
+
+  let threads = Object.values(state.threads ?? {});
+
+  if (Array.isArray(kinds) && kinds.length > 0) {
+    const allowedKinds = new Set(kinds);
+    threads = threads.filter((thread) => allowedKinds.has(thread.kind));
+  }
+
+  return threads
+    .slice()
+    .sort((a, b) => {
+      const aTime = new Date(a.updatedAt ?? 0).getTime();
+      const bTime = new Date(b.updatedAt ?? 0).getTime();
+      return bTime - aTime;
+    })
+    .slice(0, limit);
+}
+
 module.exports = {
   MAIN_THREAD_KEY,
   DEFAULT_CONTEXT_WINDOW_SIZE,
@@ -269,4 +294,5 @@ module.exports = {
   getThreadKey,
   appendMessageToThreadContextWindow,
   getThread,
+  getThreads,
 };
