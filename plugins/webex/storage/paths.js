@@ -90,6 +90,10 @@ function itemsPath(spaceId, explicitRoot) {
   return path.join(contextDir(spaceId, explicitRoot), 'items.json');
 }
 
+function threadsPath(spaceId, explicitRoot) {
+  return path.join(contextDir(spaceId, explicitRoot), 'threads.json');
+}
+
 module.exports = {
   getWorkspaceRoot,
   spacesRoot,
@@ -107,4 +111,5 @@ module.exports = {
   contextDir,
   conversationsPath,
   itemsPath,
+  threadsPath,
 };

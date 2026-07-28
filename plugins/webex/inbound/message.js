@@ -4,10 +4,14 @@
 // Inbound message filtering, membership checks, and agent pipeline dispatch.
 const { webexFetch } = require('../api');
 const { getAccessToken } = require('../token');
+const {
+  appendMessageToThreadContextWindow,
+} = require('../context/threads-store');
 const { buildRoutingInstruction } = require('../routing/instruction');
 const { dispatchToAgentForSpace } = require('../dispatch');
 const { makeRouteResultHandler } = require('../routing/result-handler');
 const { getPluginRuntime } = require('../runtime');
+const { spaceDir } = require('../storage/paths');
 
 // DmPolicy enforcement
 function isDmAllowed(cfg, personId, personEmail) {
@@ -64,19 +68,15 @@ async function handleInboundWebexMessage(
   }
   if (!membership?.items?.length) return;
 
-  const isMentioned =
-    Array.isArray(msg.mentionedPeople) && msg.mentionedPeople.includes(botId);
-
-  const contextHeader = {
+  // Thread handling
+  const { threadKey } = await appendMessageToThreadContextWindow({
     spaceId: msg.roomId,
-    messageId: msg.id,
-    senderId: msg.personId,
-    senderName: msg.personEmail ?? msg.personId,
-    createdAt: msg.created,
-    roomType: msg.roomType,
-    isMentioned,
-  };
+    message: msg,
+  });
 
+  msg.threadKey = threadKey;
+
+  // Intruction and session key
   const routingInstruction = buildRoutingInstruction({ message: msg, botId });
 
   const baseSessionKey = `agent:main:webex:${msg.roomId}:msg-routing`;
