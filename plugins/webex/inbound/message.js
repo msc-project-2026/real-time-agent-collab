@@ -69,6 +69,7 @@ async function handleInboundWebexMessage(
   const { threadKey } = await appendMessageToThreadContextWindow({
     spaceId: msg.roomId,
     message: msg,
+    log,
     fetchMessageById: (messageId) =>
       webexFetch(token, `/messages/${messageId}`),
   });
