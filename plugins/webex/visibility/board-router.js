@@ -1,10 +1,10 @@
-// ********* VISIBILITY/DASHBOARD-ROUTER.JS *********
+// ********* VISIBILITY/BOARD-ROUTER.JS *********
 'use strict';
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
 
-const DASHBOARD_DIST_DIR = path.join(__dirname, '..', 'dashboard', 'dist');
+const BOARD_DIST_DIR = path.join(__dirname, '..', 'board', 'dist');
 
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -37,13 +37,13 @@ async function sendFile(res, filePath) {
   res.end(body);
 }
 
-// Registered at /webex/collab/dashboard/ with prefix match.
-async function dashboardRouter(req, res) {
+// Registered at /webex/collab/board/ with prefix match.
+async function boardRouter(req, res) {
   const pathname = getPathname(req);
 
   if (
-    pathname !== '/webex/collab/dashboard' &&
-    !pathname.startsWith('/webex/collab/dashboard/')
+    pathname !== '/webex/collab/board' &&
+    !pathname.startsWith('/webex/collab/board/')
   ) {
     return false;
   }
@@ -56,15 +56,15 @@ async function dashboardRouter(req, res) {
   }
 
   const relativePath = pathname
-    .replace(/^\/webex\/collab\/dashboard\/?/, '')
+    .replace(/^\/webex\/collab\/board\/?/, '')
     .trim();
 
   const requestedFile = relativePath
-    ? path.join(DASHBOARD_DIST_DIR, relativePath)
-    : path.join(DASHBOARD_DIST_DIR, 'index.html');
+    ? path.join(BOARD_DIST_DIR, relativePath)
+    : path.join(BOARD_DIST_DIR, 'index.html');
 
   const resolvedFile = path.resolve(requestedFile);
-  const resolvedDist = path.resolve(DASHBOARD_DIST_DIR);
+  const resolvedDist = path.resolve(BOARD_DIST_DIR);
 
   if (!resolvedFile.startsWith(resolvedDist)) {
     sendText(res, 403, 'Forbidden');
@@ -77,7 +77,7 @@ async function dashboardRouter(req, res) {
   } catch (err) {
     if (err?.code === 'ENOENT') {
       // SPA fallback.
-      await sendFile(res, path.join(DASHBOARD_DIST_DIR, 'index.html'));
+      await sendFile(res, path.join(BOARD_DIST_DIR, 'index.html'));
       return true;
     }
 
@@ -86,5 +86,5 @@ async function dashboardRouter(req, res) {
 }
 
 module.exports = {
-  dashboardRouter,
+  boardRouter,
 };
