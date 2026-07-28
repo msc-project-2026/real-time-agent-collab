@@ -1,7 +1,7 @@
-// ********* VISIBILITY/ROUTER.JS *********
+// ********* VISIBILITY/CONTEXT-ROUTER.JS *********
 'use strict';
 
-const { buildVisibilitySummary } = require('./summary');
+const { buildContextSummary } = require('./summary');
 const { getConversations } = require('../context/conversations-store');
 const { getItems } = require('../context/items-store');
 const { getThreads } = require('../context/threads-store');
@@ -26,10 +26,10 @@ function matchSpaceRoute(pathname, suffix) {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
-// *** HTTP visibility router
+// *** HTTP context router
 
 // Registered at /webex/collab/ (prefix match, auth: plugin).
-async function visibilityRouter(req, res) {
+async function contextRouter(req, res) {
   const pathname = getPathname(req);
 
   const summarySpaceId = matchSpaceRoute(pathname, '/summary');
@@ -50,7 +50,7 @@ async function visibilityRouter(req, res) {
   }
 
   if (summarySpaceId) {
-    const summary = await buildVisibilitySummary({
+    const summary = await buildContextSummary({
       spaceId: summarySpaceId,
     });
 
@@ -112,5 +112,5 @@ async function visibilityRouter(req, res) {
 }
 
 module.exports = {
-  visibilityRouter,
+  contextRouter,
 };

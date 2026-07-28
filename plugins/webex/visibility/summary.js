@@ -50,7 +50,7 @@ function formatThreadForVisibility(thread) {
   };
 }
 
-async function buildVisibilitySummary({ spaceId }) {
+async function buildContextSummary({ spaceId }) {
   if (!spaceId) throw new Error('spaceId is required');
 
   const conversations = await getConversations({
@@ -99,8 +99,5 @@ async function buildVisibilitySummary({ spaceId }) {
 }
 
 module.exports = {
-  buildVisibilitySummary,
-  formatConversationForVisibility,
-  formatItemForVisibility,
-  formatThreadForVisibility,
+  buildContextSummary,
 };
