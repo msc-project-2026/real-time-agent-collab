@@ -57,7 +57,7 @@ async function handleInboundWebexMessage(
   let membership;
   try {
     membership = await webexFetch(
-      token,
+      cfg.token,
       `/memberships?roomId=${msg.roomId}&personId=${botId}`
     );
   } catch {
