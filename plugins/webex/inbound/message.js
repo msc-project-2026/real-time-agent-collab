@@ -39,29 +39,25 @@ async function handleInboundWebexMessage(
 ) {
   if (payload.resource !== 'messages' || payload.event !== 'created') return;
 
-  // Ignore messages sent by the bot itself
-  if (payload.data?.personId === botId) {
-    log?.info?.(`[webex:${account.accountId}] ignoring bot message`);
-    return;
-  }
-
-  // Apply DM policy for direct messages
-  if (payload.data?.roomType === 'direct') {
-    if (!isDmAllowed(cfg, payload.data.personId, payload.data.personEmail))
-      return;
-  }
+  // Get token
+  const token = getAccessToken() ?? cfg.token;
+  if (!token) throw new Error('Webex token is required');
 
   // Webhooks only carry IDs — fetch full message to get text + mentions
-  const msg = await webexFetch(
-    getAccessToken() ?? cfg.token,
-    `/messages/${payload.data.id}`
-  );
+  if (!payload.data?.id) return;
 
-  // Filter: only process messages from spaces where the bot is a member
+  const msg = await webexFetch(token, `/messages/${payload.data.id}`);
+
+  // Apply DM policy for direct messages
+  if (msg.roomType === 'direct') {
+    if (!isDmAllowed(cfg, msg.personId, msg.personEmail)) return;
+  }
+
+  // Filter: only handle messages from spaces where the bot is a member
   let membership;
   try {
     membership = await webexFetch(
-      cfg.token,
+      token,
       `/memberships?roomId=${msg.roomId}&personId=${botId}`
     );
   } catch {
@@ -73,6 +69,8 @@ async function handleInboundWebexMessage(
   const { threadKey } = await appendMessageToThreadContextWindow({
     spaceId: msg.roomId,
     message: msg,
+    fetchMessageById: (messageId) =>
+      webexFetch(token, `/messages/${messageId}`),
   });
 
   msg.threadKey = threadKey;
@@ -82,6 +80,12 @@ async function handleInboundWebexMessage(
     threadKey,
     excludeMessageIds: [msg.id], // Exclude current message we just appended
   });
+
+  // Skip routing bot messages
+  if (msg.personId === botId) {
+    log?.info?.(`[webex:${account.accountId}] ignoring bot message`);
+    return;
+  }
 
   // Instruction and session key
   const routingInstruction = buildRoutingInstruction({
@@ -93,7 +97,7 @@ async function handleInboundWebexMessage(
   const baseSessionKey = `agent:main:webex:${msg.roomId}:msg-routing`;
 
   // Build context payload
-  function buildRealWebexCtxPayload(sessionKeySuffix) {
+  function buildMessageRoutingWebexCtxPayload(sessionKeySuffix) {
     return {
       Body: msg.text ?? '',
       RawBody: msg.text ?? '',

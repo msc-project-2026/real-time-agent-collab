@@ -31,8 +31,9 @@ function formatMessageForContextWindow(message) {
   };
 }
 
-function createThreadRecordFromMessage(message) {
-  const key = getThreadKey(message);
+function createThreadRecordFromKey({ key }) {
+  if (!key) throw new Error('thread key is required');
+
   const isMainThread = key === MAIN_THREAD_KEY;
 
   return {
@@ -90,6 +91,7 @@ async function writeThreadsState({ spaceId, state, explicitRoot }) {
 function applyMessageToThreadContextWindow({
   state,
   message,
+  threadKeyOverride,
   contextWindowSize = DEFAULT_CONTEXT_WINDOW_SIZE,
 }) {
   if (!state || typeof state !== 'object') {
@@ -99,10 +101,10 @@ function applyMessageToThreadContextWindow({
   if (!message?.id) throw new Error('message.id is required');
 
   const now = new Date().toISOString();
-  const key = getThreadKey(message);
+  const key = threadKeyOverride ?? getThreadKey(message);
 
   const existingThread =
-    state.threads?.[key] ?? createThreadRecordFromMessage(message);
+    state.threads?.[key] ?? createThreadRecordFromKey({ key });
 
   const existingContextWindow = Array.isArray(existingThread.contextWindow)
     ? existingThread.contextWindow
@@ -129,17 +131,39 @@ function applyMessageToThreadContextWindow({
 
 async function appendMessageToThreadContextWindow({
   spaceId,
-  message,
   explicitRoot,
+  message,
+  fetchMessageById,
   contextWindowSize = DEFAULT_CONTEXT_WINDOW_SIZE,
 }) {
   if (!spaceId) throw new Error('spaceId is required');
   if (!message?.id) throw new Error('message.id is required');
 
-  const state = await readThreadsState({
+  const threadKey = getThreadKey(message);
+
+  let state = await readThreadsState({
     spaceId,
     explicitRoot,
   });
+
+  const threadExists = Boolean(state.threads?.[threadKey]);
+
+  if (threadKey !== MAIN_THREAD_KEY && !threadExists) {
+    if (typeof fetchMessageById !== 'function') {
+      throw new Error(
+        'fetchMessageById is required when seeding a Webex thread'
+      );
+    }
+
+    const rootMessage = await fetchMessageById(message.parentId);
+
+    state = applyMessageToThreadContextWindow({
+      state,
+      rootMessage,
+      threadKeyOverride: threadKey,
+      contextWindowSize,
+    });
+  }
 
   const newState = applyMessageToThreadContextWindow({
     state,
@@ -154,7 +178,7 @@ async function appendMessageToThreadContextWindow({
   });
 
   return {
-    threadKey: getThreadKey(message),
+    threadKey,
   };
 }
 
