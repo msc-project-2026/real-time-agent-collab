@@ -9,7 +9,7 @@ const {
 const { webexPlugin } = require('./channel');
 const { webhookRouter } = require('./webhook/router');
 const { contextRouter } = require('./visibility/context-router');
-const { dashboardRouter } = require('./visibility/dashboard-router');
+const { boardRouter } = require('./visibility/board-router');
 const { setPluginRuntime } = require('./runtime');
 
 function register(api) {
@@ -27,17 +27,17 @@ function register(api) {
   });
 
   api.registerHttpRoute({
+    path: '/webex/collab/board',
+    auth: 'plugin',
+    match: 'prefix',
+    handler: boardRouter,
+  });
+
+  api.registerHttpRoute({
     path: '/webex/collab/',
     auth: 'plugin',
     match: 'prefix',
     handler: contextRouter,
-  });
-
-  api.registerHttpRoute({
-    path: '/webex/dashboard/',
-    auth: 'plugin',
-    match: 'prefix',
-    handler: dashboardRouter,
   });
 
   // Tools
