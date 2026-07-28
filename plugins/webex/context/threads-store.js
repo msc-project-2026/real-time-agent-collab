@@ -158,10 +158,59 @@ async function appendMessageToThreadContextWindow({
   };
 }
 
+// Helpers
+
+function getThreadFromState({ state, threadKey, excludeMessageIds = [] } = {}) {
+  if (!threadKey) throw new Error('threadKey is required');
+
+  const excluded = new Set(excludeMessageIds);
+  const thread = state?.threads?.[threadKey];
+
+  if (!thread) {
+    const isMainThread = threadKey === MAIN_THREAD_KEY;
+
+    return {
+      key: threadKey,
+      kind: isMainThread ? 'main' : 'webex_thread',
+      rootMessageId: isMainThread ? null : threadKey,
+      contextWindow: [],
+      updatedAt: null,
+    };
+  }
+
+  return {
+    ...thread,
+    contextWindow: Array.isArray(thread.contextWindow)
+      ? thread.contextWindow.filter((entry) => !excluded.has(entry.id))
+      : [],
+  };
+}
+
+async function getThread({
+  spaceId,
+  threadKey,
+  explicitRoot,
+  excludeMessageIds = [],
+} = {}) {
+  if (!spaceId) throw new Error('spaceId is required');
+
+  const state = await readThreadsState({
+    spaceId,
+    explicitRoot,
+  });
+
+  return getThreadFromState({
+    state,
+    threadKey,
+    excludeMessageIds,
+  });
+}
+
 module.exports = {
   MAIN_THREAD_KEY,
   DEFAULT_CONTEXT_WINDOW_SIZE,
 
   getThreadKey,
   appendMessageToThreadContextWindow,
+  getThread,
 };
