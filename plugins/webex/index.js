@@ -8,6 +8,7 @@ const {
 
 const { webexPlugin } = require('./channel');
 const { webhookRouter } = require('./webhook/router');
+const { visibilityRouter } = require('./visibility/router');
 const { setPluginRuntime } = require('./runtime');
 
 function register(api) {
@@ -22,6 +23,13 @@ function register(api) {
     auth: 'plugin',
     match: 'prefix',
     handler: webhookRouter,
+  });
+
+  api.registerHttpRoute({
+    path: '/webex/collab/',
+    auth: 'plugin',
+    match: 'prefix',
+    handler: visibilityRouter,
   });
 
   // Tools
