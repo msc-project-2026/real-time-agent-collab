@@ -154,10 +154,23 @@ async function appendMessageToThreadContextWindow({
       try {
         const rootMessage = await fetchMessageById(message.parentId);
 
+        log?.info?.(
+          `[webex] fetched thread root message ${JSON.stringify({
+            spaceId,
+            parentId: message.parentId,
+            hasRootMessage: Boolean(rootMessage),
+            rootMessageKeys:
+              rootMessage && typeof rootMessage === 'object'
+                ? Object.keys(rootMessage)
+                : null,
+            rootMessageId: rootMessage?.id ?? null,
+          })}`
+        );
+
         if (rootMessage?.id) {
           state = applyMessageToThreadContextWindow({
             state,
-            rootMessage,
+            message: rootMessage,
             threadKeyOverride: threadKey,
             contextWindowSize,
           });
