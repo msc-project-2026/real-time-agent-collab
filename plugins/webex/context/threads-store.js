@@ -133,6 +133,7 @@ async function appendMessageToThreadContextWindow({
   spaceId,
   explicitRoot,
   message,
+  log,
   fetchMessageById,
   contextWindowSize = DEFAULT_CONTEXT_WINDOW_SIZE,
 }) {
@@ -149,20 +150,32 @@ async function appendMessageToThreadContextWindow({
   const threadExists = Boolean(state.threads?.[threadKey]);
 
   if (threadKey !== MAIN_THREAD_KEY && !threadExists) {
-    if (typeof fetchMessageById !== 'function') {
-      throw new Error(
-        'fetchMessageById is required when seeding a Webex thread'
-      );
+    if (typeof fetchMessageById === 'function') {
+      try {
+        const rootMessage = await fetchMessageById(message.parentId);
+
+        if (rootMessage?.id) {
+          state = applyMessageToThreadContextWindow({
+            state,
+            rootMessage,
+            threadKeyOverride: threadKey,
+            contextWindowSize,
+          });
+        } else {
+          log?.warn?.('[webex] root message fetch returned invalid message', {
+            spaceId,
+            parentId: message.parentId,
+            rootMessage,
+          });
+        }
+      } catch (err) {
+        log?.warn?.('[webex] failed to seed thread root message', {
+          spaceId,
+          parentId: message.parentId,
+          error: err?.message ?? String(err),
+        });
+      }
     }
-
-    const rootMessage = await fetchMessageById(message.parentId);
-
-    state = applyMessageToThreadContextWindow({
-      state,
-      rootMessage,
-      threadKeyOverride: threadKey,
-      contextWindowSize,
-    });
   }
 
   const newState = applyMessageToThreadContextWindow({
