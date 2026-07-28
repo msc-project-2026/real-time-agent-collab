@@ -127,7 +127,7 @@ async function handleInboundWebexMessage(
   const baseSessionKey = `agent:main:webex:${msg.roomId}:msg-routing`;
 
   // Build context payload
-  function buildMessageRoutingWebexCtxPayload(sessionKeySuffix) {
+  function buildMessageRoutingCtxPayload(sessionKeySuffix) {
     return {
       Body: msg.text ?? '',
       RawBody: msg.text ?? '',
@@ -157,7 +157,7 @@ async function handleInboundWebexMessage(
     spaceId: msg.roomId,
     account,
     log,
-    buildCtxPayload: buildRealWebexCtxPayload,
+    buildCtxPayload: buildMessageRoutingCtxPayload,
     onAgentOutput: makeRouteResultHandler({
       message: msg,
       account,
