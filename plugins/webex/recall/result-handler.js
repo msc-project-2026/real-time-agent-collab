@@ -28,17 +28,31 @@ function makeRecallResultHandler({ message, account, log }) {
     const token = account.config?.token;
     if (!token) throw new Error('Webex token is required for recall handling');
 
+    const parentId = message.parentId ?? message.id;
+
+    log?.info?.(
+      `[webex:${account.accountId}] sending recall response ${JSON.stringify({
+        spaceId,
+        messageRoomId: message.roomId,
+        messageId: message.id,
+        messageParentId: message.parentId ?? null,
+        parentId,
+      })}`
+    );
+
     await sendWebexMessage({
       token,
       to: spaceId,
       markdown: responseText,
-      parentId: message.parentId ?? message.id,
+      parentId,
     });
 
-    log?.info?.(`[webex:${account.accountId}] sent recall response`, {
-      spaceId,
-      messageId: message.id,
-    });
+    log?.info?.(
+      `[webex:${account.accountId}] sent recall response ${JSON.stringify({
+        spaceId,
+        messageId: message.id,
+      })}`
+    );
 
     return {
       ok: true,

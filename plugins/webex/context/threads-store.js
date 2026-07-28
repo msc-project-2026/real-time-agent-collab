@@ -162,18 +162,24 @@ async function appendMessageToThreadContextWindow({
             contextWindowSize,
           });
         } else {
-          log?.warn?.('[webex] root message fetch returned invalid message', {
-            spaceId,
-            parentId: message.parentId,
-            rootMessage,
-          });
+          log?.warn?.(
+            `[webex] root message fetch returned invalid message ${JSON.stringify(
+              {
+                spaceId,
+                parentId: message.parentId,
+                rootMessage,
+              }
+            )}`
+          );
         }
       } catch (err) {
-        log?.warn?.('[webex] failed to seed thread root message', {
-          spaceId,
-          parentId: message.parentId,
-          error: err?.message ?? String(err),
-        });
+        log?.warn?.(
+          `[webex] failed to seed thread root message ${JSON.stringify({
+            spaceId,
+            parentId: message.parentId,
+            error: err?.message ?? String(err),
+          })}`
+        );
       }
     }
   }
