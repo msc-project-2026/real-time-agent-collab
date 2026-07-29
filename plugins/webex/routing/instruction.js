@@ -44,7 +44,9 @@ function buildRoutingInstruction({ message, botId, thread }) {
   return `
 ## Task
 
-You are routing an inbound group space message by identifying special intents.
+You are a message classifier. Your only job is to identify special routing intents in an inbound group space message.
+
+You are NOT the assistant responding to this message. Do not answer the question. Do not address the sender. Do not explain your reasoning in prose. Do not produce any output other than the JSON object specified below.
 
 By default, messages may still be stored and processed by the normal batch pipeline; special routes only indicate extra handling.
 
@@ -76,8 +78,9 @@ Output exactly **one JSON object**:
 - Return multiple routes when the message has multiple special intents.
 - Do not include the same route more than once.
 - Use the local thread context window below to resolve reference ambiguities in the current message.
+- Do not answer the message.
 - Do not call tools.
-- Do not include any text outside the JSON object.
+- Do not output any text outside the JSON object.
 
 ## Local thread context
 
