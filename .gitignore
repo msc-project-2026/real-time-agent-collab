@@ -16,7 +16,10 @@ client-brief.md
 .memory/
 .mcp.json
 failures-docs-Asa/
+AGENTS.md
 graphify-out/
+.claude/
 .kilo/
 .codex/
-AGENTS.md
+.opencode/
+paperclip/
