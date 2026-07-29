@@ -702,6 +702,111 @@ test('/meeting join joins the in-progress meeting despite the space opt-out, wit
   }
 });
 
+// The reported bug: "/meeting never", then an *instant* meeting starts (we
+// skip it), then "/meeting join". The list sweep can't see an ad-hoc meeting
+// the way it sees a scheduled series, so the join must come from what the
+// started-webhook already told us.
+test('/meeting join finds an instant meeting the space opt-out kept us out of', async () => {
+  const originalFetch = global.fetch;
+  const posted = [];
+  global.fetch = async (url, opts = {}) => {
+    if (String(url).endsWith('/people/me')) return response({ id: 'bot-id' });
+    if (String(url).endsWith('/messages')) {
+      posted.push(JSON.parse(opts.body));
+      return response({ id: 'ack' });
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  try {
+    const spacePrefs = tempSpacePrefs();
+    spacePrefs.setNeverJoin('room-1', true);
+    const browserRuntime = fakeBrowserRuntime();
+    const listQueries = [];
+    const tokenStore = fakeTokenStore([
+      ['/people/me', { id: 'meeting-person-id' }],
+      ['/messages/msg-1', { id: 'msg-1', personId: 'human-1', roomId: 'room-1', roomType: 'group', mentionedPeople: [], text: '/meeting join' }],
+      ['/memberships?', { items: [{ id: 'm1' }] }],
+      ['/meetings/instant-1', {
+        id: 'instant-1',
+        roomId: 'room-1',
+        meetingType: 'meeting',
+        state: 'inProgress',
+        sipUrl: 'sip:instant@webex.com',
+      }],
+    ]);
+    // An instant meeting is absent from every list response, exactly as the
+    // scheduled-series-only listing behaves in production.
+    const meetingFetch = tokenStore.meetingFetch;
+    tokenStore.meetingFetch = async (path) => {
+      if (path.startsWith('/meetings?')) {
+        listQueries.push(path);
+        return { items: [] };
+      }
+      return meetingFetch(path);
+    };
+    const orchestrator = createOrchestrator({
+      cfg: baseCfg(),
+      tokenStore,
+      browserRuntime,
+      spacePrefs,
+    });
+    await orchestrator.start();
+
+    // Opted out, so the instant meeting starting does not pull us in…
+    await orchestrator.handleMeetingStarted({ data: { id: 'instant-1' } });
+    assert.equal(browserRuntime.calls.join.length, 0);
+    assert.deepEqual(orchestrator.state.liveMeetingIdsForRoom('room-1'), ['instant-1']);
+
+    // …but an explicit request still gets us in.
+    await orchestrator.handleMessageCreated({ data: { id: 'msg-1' } });
+    assert.equal(orchestrator.state.isJoined('instant-1'), true);
+    assert.deepEqual(browserRuntime.calls.join, [{ destination: 'sip:instant@webex.com', type: 'SIP_URI' }]);
+    assert.equal(spacePrefs.shouldNeverJoin('room-1'), true);
+    assert.match(posted.at(-1).markdown, /only because you asked/);
+
+    // A meeting that ended without an `ended` webhook is not offered again.
+    await orchestrator.handleMeetingEnded({ data: { id: 'instant-1' } });
+    assert.deepEqual(orchestrator.state.liveMeetingIdsForRoom('room-1'), []);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('/meeting join ignores a cached meeting that has already ended', async () => {
+  const originalFetch = global.fetch;
+  const posted = [];
+  global.fetch = async (url, opts = {}) => {
+    if (String(url).endsWith('/people/me')) return response({ id: 'bot-id' });
+    if (String(url).endsWith('/messages')) {
+      posted.push(JSON.parse(opts.body));
+      return response({ id: 'ack' });
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  try {
+    const browserRuntime = fakeBrowserRuntime();
+    const orchestrator = createOrchestrator({
+      cfg: baseCfg(),
+      tokenStore: fakeTokenStore([
+        ['/people/me', { id: 'meeting-person-id' }],
+        ['/messages/msg-1', { id: 'msg-1', personId: 'human-1', roomId: 'room-1', roomType: 'group', mentionedPeople: [], text: '/meeting join' }],
+        ['/meetings/stale-1', { id: 'stale-1', roomId: 'room-1', actualStart: '2026-01-01T00:00:00Z', actualEnd: '2026-01-01T01:00:00Z' }],
+        ['/meetings?', { items: [] }],
+      ]),
+      browserRuntime,
+    });
+    await orchestrator.start();
+    orchestrator.state.markLive('stale-1', 'room-1');
+
+    await orchestrator.handleMessageCreated({ data: { id: 'msg-1' } });
+    assert.equal(browserRuntime.calls.join.length, 0);
+    assert.match(posted.at(-1).markdown, /find a meeting in progress/);
+    assert.deepEqual(orchestrator.state.liveMeetingIdsForRoom('room-1'), []);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('an explicit join rejoins a meeting the bot was previously told to leave', async () => {
   const originalFetch = global.fetch;
   const posted = [];

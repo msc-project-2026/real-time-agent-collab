@@ -11,6 +11,7 @@ const {
   classifyMeetingKind,
   resolveDestination,
   fetchMeetingWithRetry,
+  isActiveMeeting,
   isRoomMember,
   listActiveMeetings,
 } = require('./meetings');
@@ -228,6 +229,38 @@ function createOrchestrator({
     }
   }
 
+  // Candidate meetings for an explicit `/meeting join` in this space.
+  //
+  // A `meetings/started` webhook already named the meeting, so prefer what we
+  // recorded there — it works for an instant (ad-hoc) meeting, which the
+  // scheduled-meeting list query cannot see, and for a meeting that started
+  // long enough ago to have fallen out of the list window. The list sweep
+  // stays as the fallback for a webhook we never received.
+  async function resolveJoinCandidates(roomId) {
+    const known = await Promise.all(
+      state.liveMeetingIdsForRoom(roomId).map(async (meetingId) => {
+        const meeting = await fetchMeetingWithRetry(tokenStore.meetingFetch, meetingId, { attempts: 1 })
+          .catch(() => null);
+        // A meeting that ended without an `ended` webhook must not be offered
+        // as a join target — drop it and let the list sweep have its say.
+        if (!meeting || !isActiveMeeting(meeting) || meeting.roomId !== roomId) {
+          state.forgetLive(meetingId);
+          return null;
+        }
+        return meeting;
+      })
+    );
+    const live = known.filter(Boolean);
+    if (live.length) return live;
+
+    // Widened window: unlike the poll sweep, this is a human asking about a
+    // meeting they know is running, which may have started hours ago.
+    const active = await listActiveMeetings(tokenStore.meetingFetch, Date.now(), {
+      lookbackMs: 24 * 60 * 60 * 1000,
+    });
+    return active.filter((meeting) => meeting.roomId === roomId);
+  }
+
   // resource: meetings, event: started
   async function handleMeetingStarted(payload) {
     const meetingId = payload?.data?.id;
@@ -236,6 +269,10 @@ function createOrchestrator({
       return;
     }
     const meeting = await fetchMeetingWithRetry(tokenStore.meetingFetch, meetingId);
+    // Remember it before deciding whether to join: when the space is opted
+    // out we skip the join, and this is the only record that would let a
+    // later `/meeting join` name the meeting.
+    state.markLive(meeting?.id ?? meetingId, meeting?.roomId);
     await tryJoin(meeting);
   }
 
@@ -247,6 +284,7 @@ function createOrchestrator({
     if (!meetingId) return;
     const info = state.joined.get(meetingId);
     state.joined.delete(meetingId);
+    state.forgetLive(meetingId);
     state.suppressed.delete(meetingId); // a new instance of this meeting id won't recur, so free the slot
     if (info) {
       transcription?.endSession(info.sdkMeetingId);
@@ -336,14 +374,13 @@ function createOrchestrator({
         await announce(roomId, 'I’m already in this space’s meeting. Say "leave meeting" to have me exit.');
         return;
       }
-      let active;
+      let roomMeetings;
       try {
-        active = await listActiveMeetings(tokenStore.meetingFetch);
+        roomMeetings = await resolveJoinCandidates(roomId);
       } catch (err) {
         await announce(roomId, `I couldn't look up this space's meetings (${err?.message ?? 'unknown error'}). Please try again.`);
         return;
       }
-      const roomMeetings = active.filter((meeting) => meeting.roomId === roomId);
       if (!roomMeetings.length) {
         await announce(roomId, 'I couldn’t find a meeting in progress for this space.');
         return;
@@ -391,6 +428,10 @@ function createOrchestrator({
     }
     for (const meeting of active) {
       if (!meeting.id || !meeting.roomId) continue;
+      // Recorded even when the join is skipped (opted-out space), so a later
+      // `/meeting join` can still find a meeting whose started-webhook we
+      // missed and which may since have aged out of the list window.
+      state.markLive(meeting.id, meeting.roomId);
       try {
         await tryJoin(meeting, { announceFailure: false });
       } catch (err) {

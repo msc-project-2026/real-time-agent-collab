@@ -81,9 +81,9 @@ test('isActiveMeeting recognizes started/in-progress states', () => {
 });
 
 test('listActiveMeetings filters the raw REST response down to active ones', async () => {
-  let requestedPath;
+  const requestedPaths = [];
   const fakeFetch = async (path) => {
-    requestedPath = path;
+    requestedPaths.push(path);
     return {
       items: [
         { id: 'm1', state: 'inprogress' },
@@ -95,5 +95,45 @@ test('listActiveMeetings filters the raw REST response down to active ones', asy
   const now = Date.parse('2026-01-02T12:00:00Z');
   const active = await listActiveMeetings(fakeFetch, now, { lookbackMs: 24 * 60 * 60 * 1000 });
   assert.deepEqual(active.map((m) => m.id), ['m1', 'm3']);
-  assert.match(requestedPath, /from=2026-01-01T12%3A00%3A00.000Z/);
+  assert.match(requestedPaths[0], /from=2026-01-01T12%3A00%3A00.000Z/);
+});
+
+// The regression this guards: `GET /meetings` defaults to
+// meetingType=meetingSeries, so an instant/ad-hoc meeting (which exists only
+// as an instance) was never listed and `/meeting join` could not find it.
+test('listActiveMeetings also asks for instant/ad-hoc meeting instances', async () => {
+  const requestedPaths = [];
+  const fakeFetch = async (path) => {
+    requestedPaths.push(path);
+    if (path.includes('meetingType=meeting')) {
+      return { items: [{ id: 'instant-1', meetingType: 'meeting', state: 'inProgress' }] };
+    }
+    return { items: [] }; // no scheduled series in progress
+  };
+  const active = await listActiveMeetings(fakeFetch);
+  assert.deepEqual(active.map((m) => m.id), ['instant-1']);
+  assert.equal(requestedPaths.length, 2);
+  assert.match(requestedPaths.find((p) => p.includes('meetingType=meeting')), /state=inProgress/);
+});
+
+test('listActiveMeetings collapses a scheduled series and its running instance', async () => {
+  const fakeFetch = async (path) => (path.includes('meetingType=meeting')
+    ? { items: [{ id: 'instance-1', meetingSeriesId: 'series-1', state: 'inProgress' }] }
+    : { items: [{ id: 'series-1', state: 'inProgress' }] });
+  const active = await listActiveMeetings(fakeFetch);
+  assert.deepEqual(active.map((m) => m.id), ['series-1']);
+});
+
+test('listActiveMeetings survives one query variant failing', async () => {
+  const fakeFetch = async (path) => {
+    if (path.includes('meetingType=meeting')) throw new Error('400 unsupported');
+    return { items: [{ id: 'series-1', state: 'inProgress' }] };
+  };
+  const active = await listActiveMeetings(fakeFetch);
+  assert.deepEqual(active.map((m) => m.id), ['series-1']);
+
+  await assert.rejects(
+    listActiveMeetings(async () => { throw new Error('token expired'); }),
+    /token expired/
+  );
 });

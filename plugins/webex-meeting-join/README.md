@@ -52,9 +52,23 @@ the plugin behaves exactly as before and no audio leaves the browser.
    earlier. It joins **only that one meeting**: the durable opt-out is not
    flipped, so the next meeting is still not auto-joined. Slash forms
    (`/meeting …`) work without an @mention; natural-language join requests
-   need the normal address rules.
+   need the normal address rules. Finding the meeting to join prefers what the
+   `meetings/started` webhook recorded (kept even for a meeting the opt-out
+   made us skip), because `GET /meetings` alone is an unreliable lookup for
+   instant meetings — see the note below.
 6. A startup reconciliation sweep + a periodic poll (default every 5
    minutes) catch any meeting the `started` webhook missed.
+
+### Instant vs scheduled meetings in `GET /meetings`
+
+`GET /meetings` defaults to `meetingType=meetingSeries`. A scheduled space
+meeting therefore lists fine — its series appears with state `inProgress`
+while an instance runs — but an **instant** ("Meet" in a space / ad-hoc)
+meeting has no series at all: it exists only as a meeting instance
+(`meetingType: "meeting"`), which that default query never returns. So
+`listActiveMeetings` issues both queries and merges them, collapsing a
+scheduled series and its running instance onto one candidate via
+`meetingSeriesId` so a single live meeting is never read as two.
 
 ## Required environment variables
 

@@ -12,6 +12,25 @@ class MeetingState {
     this.joined = new Map(); // meetingId -> { roomId, kind, joinedAt }
     this.suppressed = new Set(); // meetingId the user explicitly asked us to leave
     this.inFlight = new Map(); // meetingId -> Promise (join or leave in progress)
+    // Meetings we know are live because a `meetings/started` webhook told us
+    // so, whether or not we joined them. A space that is opted out of
+    // auto-join still needs this: it's how a later `/meeting join` finds the
+    // meeting without depending on it being visible to `GET /meetings`.
+    this.live = new Map(); // meetingId -> roomId
+  }
+
+  markLive(meetingId, roomId) {
+    if (meetingId && roomId) this.live.set(meetingId, roomId);
+  }
+
+  forgetLive(meetingId) {
+    this.live.delete(meetingId);
+  }
+
+  liveMeetingIdsForRoom(roomId) {
+    return Array.from(this.live)
+      .filter(([, room]) => room === roomId)
+      .map(([meetingId]) => meetingId);
   }
 
   isJoined(meetingId) {

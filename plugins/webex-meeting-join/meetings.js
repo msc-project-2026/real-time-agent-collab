@@ -62,22 +62,65 @@ function isActiveMeeting(meeting) {
     Boolean(meeting?.actualStart && !meeting?.actualEnd);
 }
 
-// Startup/poll reconciliation: list meetings visible to the meeting account
-// in a recent window, used as a fallback when a `meetings/started` webhook
-// was missed (delivery failure, webhook subscription lapsed, gateway was
-// down when the meeting started).
+// `GET /meetings` defaults to `meetingType=meetingSeries`, so the default
+// query only ever returns *scheduled* meetings — a scheduled space meeting's
+// series is listed with state `inProgress` while one of its instances runs.
+// An instant ("Meet" in a space / ad-hoc) meeting has no scheduled series: it
+// exists only as a meeting instance (`meetingType: "meeting"`), which the
+// default query never returns. Ask for both, or instant meetings are
+// invisible to every list-based lookup.
+const MEETING_LIST_QUERIES = [
+  {}, // scheduled series (the API default)
+  { meetingType: 'meeting', state: 'inProgress' }, // instant/ad-hoc + running instances
+];
+
+// A running scheduled meeting can come back twice: once as its series and
+// once as the instance, whose `meetingSeriesId` points back at the series.
+// Collapse those onto one candidate so callers don't read it as two
+// concurrent meetings in the space and refuse to guess between them. An
+// instant meeting's parent is never listed, so it survives as itself.
+function meetingGroupKey(meeting) {
+  return String(meeting?.meetingSeriesId ?? meeting?.id ?? '');
+}
+
+function dedupeMeetings(meetings) {
+  const byKey = new Map();
+  for (const meeting of meetings) {
+    const key = meetingGroupKey(meeting);
+    // First writer wins, and the series query is listed first, so the
+    // scheduled path keeps joining the same object it always has.
+    if (key && !byKey.has(key)) byKey.set(key, meeting);
+  }
+  return Array.from(byKey.values());
+}
+
+// Startup/poll reconciliation and the explicit `/meeting join` lookup: list
+// meetings visible to the meeting account in a recent window. Used as a
+// fallback when a `meetings/started` webhook was missed (delivery failure,
+// webhook subscription lapsed, gateway was down when the meeting started).
 async function listActiveMeetings(
   meetingFetch,
   now = Date.now(),
   { lookbackMs = 10 * 60 * 1000, lookaheadMs = 60 * 60 * 1000 } = {}
 ) {
-  const query = new URLSearchParams({
+  const window = {
     from: new Date(now - lookbackMs).toISOString(),
     to: new Date(now + lookaheadMs).toISOString(),
     max: '100',
-  });
-  const result = await meetingFetch(`/meetings?${query}`);
-  return (result?.items ?? []).filter(isActiveMeeting);
+  };
+  const results = await Promise.allSettled(MEETING_LIST_QUERIES.map((extra) =>
+    meetingFetch(`/meetings?${new URLSearchParams({ ...window, ...extra })}`)
+  ));
+  // A site that rejects one query variant must not blind us to the other;
+  // only a total failure is worth reporting to the caller.
+  if (results.every((result) => result.status === 'rejected')) throw results[0].reason;
+
+  const items = results.flatMap((result) =>
+    result.status === 'fulfilled' ? (result.value?.items ?? []) : []
+  );
+  // Filter before deduping: if a series looks idle but its instance is live,
+  // the live instance is the candidate we want to keep.
+  return dedupeMeetings(items.filter(isActiveMeeting));
 }
 
 module.exports = {
