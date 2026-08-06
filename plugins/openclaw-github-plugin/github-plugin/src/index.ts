@@ -9,6 +9,12 @@ import { githubListTreeTool } from "./tools/github-list-tree.js";
 import { githubOpenPullRequestTool } from "./tools/github-open-pull-request.js";
 import { githubUpsertFileTool } from "./tools/github-upsert-file.js";
 import { githubWhoamiTool } from "./tools/github-whoami.js";
+import { githubAddIssueCommentTool } from "./tools/github_issue_add_comment.js";
+import { githubCreateIssueTool } from "./tools/github_issue_create.js";
+import { githubGetIssueTool } from "./tools/github_issue_get.js";
+import { githubListIssueCommentsTool } from "./tools/github_issue_list_comments.js";
+import { githubListIssuesTool } from "./tools/github_issue_list.js";
+import { githubUpdateIssueTool } from "./tools/github_issue_update.js";
 
 
 
@@ -44,5 +50,11 @@ export default defineToolPlugin({
     githubCreateBranchTool(tool),
     githubUpsertFileTool(tool),
     githubOpenPullRequestTool(tool),
+    githubListIssuesTool(tool),
+    githubGetIssueTool(tool),
+    githubCreateIssueTool(tool),
+    githubUpdateIssueTool(tool),
+    githubListIssueCommentsTool(tool),
+    githubAddIssueCommentTool(tool),
   ],
 });
