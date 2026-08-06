@@ -94,15 +94,21 @@ dist/
 "tools": {
   "profile": "coding",
   "alsoAllow": [
-    "github_whoami"，
+    "github_whoami",
     "github_list_repos",
     "github_get_repository",
     "github_list_branches",
     "github_get_file",
     "github_create_branch",
     "github_upsert_file",
-    "github_open_pull_request"，
-    "github_list_tree"
+    "github_open_pull_request",
+    "github_list_tree",
+    "github_list_issues",
+    "github_get_issue",
+    "github_create_issue",
+    "github_update_issue",
+    "github_list_issue_comments",
+    "github_add_issue_comment"
   ]
 },
 
@@ -141,6 +147,11 @@ After installation, a new directory should appear under:
 send a user prompt e.g.
 
 `Use the github_whoami tool to verify the GitHub connection.`
+
+For issue tools, configure the GitHub App with repository **Issues: read**
+permission for listing and reading, or **Issues: read and write** permission
+for creating, updating, and commenting. Existing installations may need to
+approve the new permission.
 
 
 
