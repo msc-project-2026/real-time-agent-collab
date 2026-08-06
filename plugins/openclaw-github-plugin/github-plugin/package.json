@@ -10,6 +10,8 @@
   ],
   "scripts": {
     "build": "tsc",
+    "test": "vitest run",
+    "test:integration": "vitest run tests/issues.integration.test.ts",
     "plugin:build": "npm run build && openclaw plugins build --entry ./dist/index.js",
     "plugin:validate": "openclaw plugins validate --entry ./dist/index.js"
   },
