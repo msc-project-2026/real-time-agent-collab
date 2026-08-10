@@ -25,8 +25,7 @@ const DATA_DIR = process.env.DATA_DIR || '/data';
 const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET || '';
 const OPENCLAW_WEBHOOK_SECRET = process.env.OPENCLAW_WEBHOOK_SECRET || '';
 const OPENCLAW_INTERNAL_URL =
-  process.env.OPENCLAW_INTERNAL_URL ||
-  'http://real-time-agent-collab.railway.internal:18789';
+  process.env.OPENCLAW_INTERNAL_URL || '';
 const WEBEX_BOT_TOKEN = process.env.WEBEX_BOT_TOKEN || '';
 
 const BY_SPACE_DIR = join(DATA_DIR, 'by-space');
@@ -159,6 +158,14 @@ app.post('/webhooks/github', express.raw({ type: '*/*' }), async (req, res) => {
     return res.json({ ok: true, ignored: true });
   }
 
+  if (!OPENCLAW_INTERNAL_URL) {
+    console.error('OPENCLAW_INTERNAL_URL is not configured');
+    return res.status(503).json({
+      ok: false,
+      error: 'OpenClaw integration is not configured',
+    });
+  }
+  
   // Resolve hostname to IPv4 explicitly (OpenClaw only binds IPv4 it seems)
   const hostname = new URL(OPENCLAW_INTERNAL_URL).hostname;
   const { address } = await lookup(hostname, { family: 4 });

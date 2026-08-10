@@ -22,7 +22,7 @@ At the start of each Webex session, and as long as you have not yet confirmed th
 1. If you don't already know your `spaceId`, get your session key and extract it (format: `agent:main:webex:<spaceId>`). Remember it for the session.
 2. Check if `/home/node/.openclaw/workspace/spaces/<spaceId>/config.json` exists.
 3. If it does not exist — send the setup link to the space:
-   `https://setup-service-production.up.railway.app/setup?spaceId=<spaceId>`
+   `__SETUP_UI_PUBLIC_URL__/setup?spaceId=<spaceId>`
    Repeat step 2 on each subsequent message until the config exists.
 4. If it exists — proceed normally and do not repeat this check for the remainder of the session.
 

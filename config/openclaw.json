@@ -3,7 +3,7 @@
     "mode": "local",
     "controlUi": {
       "allowedOrigins": [
-        "https://real-time-agent-collab-production.up.railway.app"
+        "${GATEWAY_PUBLIC_URL}"
       ],
       "dangerouslyDisableDeviceAuth": true
     },
@@ -79,16 +79,11 @@
       "refreshToken": "${WEBEX_REFRESH_TOKEN}",
       "clientId": "${WEBEX_CLIENT_ID}",
       "clientSecret": "${WEBEX_CLIENT_SECRET}",
-      "botWebhookUrl": "https://real-time-agent-collab-production.up.railway.app/webhooks/webex/bot/default",
-      "oauthWebhookUrl": "https://real-time-agent-collab-production.up.railway.app/webhooks/webex/oauth/default",
+      "botWebhookUrl": "${GATEWAY_PUBLIC_URL}/webhooks/webex/bot/default",
+      "oauthWebhookUrl": "${GATEWAY_PUBLIC_URL}/webhooks/webex/oauth/default",
       "webhookSecret": "${WEBEX_WEBHOOK_SECRET}",
       "dmPolicy": "allowlisted",
       "allowFrom": [
-        "ucabtg2@ucl.ac.uk",
-        "ucab295@ucl.ac.uk",
-        "crystal.phua.25@ucl.ac.uk",
-        "davit.gevorgyan.25@ucl.ac.uk",
-        "leonardo.martin.25@ucl.ac.uk",
         "shuminwang233@outlook.com"
       ]
     }
