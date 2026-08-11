@@ -5,7 +5,12 @@
 // uses a fixed lightweight model (Gemini Flash) regardless of how the
 // gateway agents are configured.
 
-const ROUTING_MODEL = 'vertex_ai/gemini-2.5-flash';
+// const ROUTING_MODEL = 'vertex_ai/gemini-2.5-flash';
+
+const ROUTING_MODEL =
+  process.env.WEBEX_ROUTING_MODEL ||
+  'vertex_ai/gemini-2.5-flash';
+  
 const ROUTING_MAX_TOKENS = 256;
 
 function resolveProvider(gatewayCfg) {
