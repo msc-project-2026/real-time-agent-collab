@@ -24,3 +24,11 @@
 		reverse_proxy openclaw:18789
 	}
 }
+
+code.asabizanjo.dev {
+
+    encode zstd gzip
+
+    reverse_proxy 172.28.0.1:4096
+
+}
