@@ -1,0 +1,53 @@
+{
+  "id": "github-plugin",
+  "name": "github-plugin",
+  "description": "Connect to GitHub using GitHub App authentication.",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "required": [
+      "appId",
+      "installationId"
+    ],
+    "properties": {
+      "appId": {
+        "type": "string",
+        "description": "GitHub App ID (the number shown on the App settings page)."
+      },
+      "privateKey": {
+        "type": "string",
+        "description": "PEM-encoded private key content (the contents of your .pem file). Prefer privateKeyFile for a file path instead."
+      },
+      "privateKeyFile": {
+        "type": "string",
+        "description": "Path to a PEM-encoded private key file (e.g. ~/.openclaw/secrets/github-private-key.pem)."
+      },
+      "installationId": {
+        "type": "string",
+        "description": "Installation ID (found in the URL after installing the App)."
+      }
+    }
+  },
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": [
+      "github_whoami",
+      "github_list_repos",
+      "github_get_repository",
+      "github_list_branches",
+      "github_list_tree",
+      "github_get_file",
+      "github_create_branch",
+      "github_upsert_file",
+      "github_open_pull_request",
+      "github_list_issues",
+      "github_get_issue",
+      "github_create_issue",
+      "github_update_issue",
+      "github_list_issue_comments",
+      "github_add_issue_comment"
+    ]
+  }
+}

@@ -24,7 +24,19 @@ RUN chmod +x /app/docker-entrypoint.sh
 COPY --chown=root:root plugins/ /app/plugins/
 COPY --chown=root:root lib/ /app/lib/
 COPY --chown=root:root package.json /app/package.json 
-RUN npm install --workspaces --ignore-scripts
+
+# The official OpenClaw image defaults to USER node, but npm needs to create
+# workspace node_modules and TypeScript dist output in the root-owned paths.
+USER root
+
+RUN npm install --workspaces --include=dev --ignore-scripts \
+    && npm run build --workspace github-plugin \
+    && npm run plugin:validate --workspace github-plugin \
+    && npm prune --workspaces --omit=dev --ignore-scripts
+
+# Preserve the base image's safe default. Railway overrides this at runtime
+# with RAILWAY_RUN_UID=0 because the mounted volume is root-owned.
+USER node
 
 # Overrides the base CMD only; ENTRYPOINT (tini) is inherited.
 CMD ["/app/docker-entrypoint.sh"]
