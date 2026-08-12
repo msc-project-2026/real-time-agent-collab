@@ -259,6 +259,38 @@ test('handleMeetingEnded clears local state even if we never actually joined', a
   assert.equal(orchestrator.state.isJoined('meeting-1'), false);
 });
 
+test('meeting lifecycle is forwarded to the self-contained meeting-minutes manager', async () => {
+  const calls = { remembered: [], ended: [], transcripts: [] };
+  const meetingMinutes = {
+    rememberMeeting: async (value) => calls.remembered.push(value),
+    handleMeetingEnded: async (value) => calls.ended.push(value),
+    handleTranscriptCreated: async (value) => calls.transcripts.push(value),
+    dispose: () => {},
+  };
+  const browserRuntime = fakeBrowserRuntime();
+  const spacePrefs = tempSpacePrefs();
+  spacePrefs.setNeverJoin('room-1', true);
+  const orchestrator = createOrchestrator({
+    cfg: baseCfg(),
+    tokenStore: fakeTokenStore([
+      ['/memberships?', { items: [] }],
+      ['/meetings/meeting-1', { id: 'meeting-1', roomId: 'room-1', title: 'Sync' }],
+    ]),
+    browserRuntime,
+    meetingMinutes,
+    spacePrefs,
+  });
+
+  await orchestrator.handleMeetingStarted({ data: { id: 'meeting-1' } });
+  await orchestrator.handleMeetingEnded({ data: { id: 'meeting-1' } });
+  const transcriptPayload = { data: { id: 'transcript-1', meetingId: 'meeting-1' } };
+  await orchestrator.handleTranscriptCreated(transcriptPayload);
+
+  assert.equal(calls.remembered.length, 1);
+  assert.deepEqual(calls.ended, [{ meetingId: 'meeting-1', roomId: 'room-1' }]);
+  assert.deepEqual(calls.transcripts, [transcriptPayload]);
+});
+
 test('handleMessageCreated leaves the meeting when addressed and asked to leave', async () => {
   const originalFetch = global.fetch;
   const posted = [];

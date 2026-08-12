@@ -16,7 +16,7 @@
 
 const { scoreMessage } = require('./gate');
 const { mentionsName, getAddressNames } = require('./address');
-const { dispatchWithSessionRecovery } = require('../../lib/dispatch-retry.js');
+const { dispatchWithSessionRecovery } = require('./dispatch-retry');
 
 const RECENT_TURNS_MAX = 12;
 const MEETING_SENDER = 'Meeting participant';

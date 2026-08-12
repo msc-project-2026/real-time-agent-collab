@@ -11,7 +11,7 @@
 // than waiting for the clock.
 'use strict';
 
-const { WEBEX_API, WebexApiError, webexFetch } = require('./api');
+const { WEBEX_API, WebexApiError, webexFetch, webexFetchText } = require('./api');
 
 function createTokenStore(cfg, log = null) {
   let currentAccessToken = cfg.meetingAccessToken ?? null;
@@ -70,21 +70,30 @@ function createTokenStore(cfg, log = null) {
     return currentAccessToken;
   }
 
-  // Wraps webexFetch with the current meeting-account token; on a 401,
-  // refreshes once and retries once before giving up.
-  async function meetingFetch(path, opts) {
+  // Wraps an authenticated Webex request with reactive refresh-on-401. The
+  // JSON and text variants share this path so transcript downloads recover
+  // from token expiry exactly like ordinary REST calls.
+  async function withReactiveRefresh(request) {
     try {
-      return await webexFetch(currentAccessToken, path, opts);
+      return await request(currentAccessToken);
     } catch (err) {
       if (err instanceof WebexApiError && err.status === 401 && cfg.canRefreshMeetingToken) {
         await refresh();
-        return webexFetch(currentAccessToken, path, opts);
+        return request(currentAccessToken);
       }
       throw err;
     }
   }
 
-  return { getToken, refresh, meetingFetch };
+  function meetingFetch(path, opts) {
+    return withReactiveRefresh((token) => webexFetch(token, path, opts));
+  }
+
+  function meetingFetchText(path, opts) {
+    return withReactiveRefresh((token) => webexFetchText(token, path, opts));
+  }
+
+  return { getToken, refresh, meetingFetch, meetingFetchText };
 }
 
 module.exports = { createTokenStore };

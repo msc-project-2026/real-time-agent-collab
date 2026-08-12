@@ -14,9 +14,23 @@ class WebexApiError extends Error {
   }
 }
 
-async function webexFetch(token, path, opts = {}) {
+function resolveWebexUrl(pathOrUrl) {
+  const value = String(pathOrUrl ?? '');
+  if (!/^https?:\/\//i.test(value)) return `${WEBEX_API}${value}`;
+  const url = new URL(value);
+  // Transcript download links currently point back to webexapis.com. Never
+  // forward the meeting account's bearer token to a host supplied by a
+  // webhook or API response outside that trusted origin.
+  if (url.protocol !== 'https:' || url.hostname !== 'webexapis.com') {
+    throw new Error(`Refusing to send Webex credentials to ${url.origin}`);
+  }
+  return url.toString();
+}
+
+async function webexRequest(token, pathOrUrl, opts = {}) {
   const { method = 'GET', body } = opts;
-  const res = await fetch(`${WEBEX_API}${path}`, {
+  const url = resolveWebexUrl(pathOrUrl);
+  const res = await fetch(url, {
     method,
     headers: {
       Authorization: `Bearer ${token}`,
@@ -28,9 +42,19 @@ async function webexFetch(token, path, opts = {}) {
   if (method === 'DELETE' && res.status === 404) return null;
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new WebexApiError(`Webex ${method} ${path} → ${res.status}: ${text}`, res.status);
+    throw new WebexApiError(`Webex ${method} ${pathOrUrl} → ${res.status}: ${text}`, res.status);
   }
-  return method === 'DELETE' ? null : res.json();
+  return res;
 }
 
-module.exports = { WEBEX_API, WebexApiError, webexFetch };
+async function webexFetch(token, pathOrUrl, opts = {}) {
+  const res = await webexRequest(token, pathOrUrl, opts);
+  return opts.method === 'DELETE' ? null : res.json();
+}
+
+async function webexFetchText(token, pathOrUrl, opts = {}) {
+  const res = await webexRequest(token, pathOrUrl, opts);
+  return opts.method === 'DELETE' ? null : res.text();
+}
+
+module.exports = { WEBEX_API, WebexApiError, resolveWebexUrl, webexFetch, webexFetchText };

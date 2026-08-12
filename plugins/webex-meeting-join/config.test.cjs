@@ -86,3 +86,32 @@ test('transcription tunables come from env and out-of-range values fall back', (
   assert.equal(cfg.transcription.minTurnWords, 3);
   assert.equal(cfg.transcription.gateThreshold, 0.7); // default kept
 });
+
+test('post-meeting minutes are enabled by default and recovery settings are configurable', () => {
+  const defaults = getConfig({ ...baseEnv });
+  assert.equal(defaults.minutes.enabled, true);
+  assert.equal(defaults.minutes.recoveryDelayMs, 60_000);
+  assert.equal(defaults.minutes.recoveryWindowMs, 2 * 60 * 60 * 1000);
+  assert.equal(defaults.minutes.chunkChars, null);
+
+  const configured = getConfig({
+    ...baseEnv,
+    WEBEX_MEETING_MINUTES_ENABLED: 'false',
+    WEBEX_MEETING_TRANSCRIPT_RECOVERY_DELAY_MS: '15000',
+    WEBEX_MEETING_TRANSCRIPT_RECOVERY_MAX_DELAY_MS: '45000',
+    WEBEX_MEETING_TRANSCRIPT_RECOVERY_WINDOW_MS: '90000',
+    WEBEX_MEETING_MINUTES_CHUNK_CHARS: '12000',
+  });
+  assert.equal(configured.minutes.enabled, false);
+  assert.equal(configured.minutes.recoveryDelayMs, 15_000);
+  assert.equal(configured.minutes.recoveryMaxDelayMs, 45_000);
+  assert.equal(configured.minutes.recoveryWindowMs, 90_000);
+  assert.equal(configured.minutes.chunkChars, 12_000);
+});
+
+test('post-meeting transcript chunking stays disabled for empty, zero, or invalid values', () => {
+  for (const value of ['', '0', '-1', 'invalid']) {
+    const cfg = getConfig({ ...baseEnv, WEBEX_MEETING_MINUTES_CHUNK_CHARS: value });
+    assert.equal(cfg.minutes.chunkChars, null);
+  }
+});

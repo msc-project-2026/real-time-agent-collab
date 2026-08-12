@@ -5,7 +5,7 @@ The `.collab/` directory lives in the primary project repo and is the shared con
 
 ## Cross-cutting conventions
 
-These apply to all four files and exist to ensure all files are formatted in the same manner.
+These apply to the project-memory files and exist to ensure they are formatted consistently.
 
 **Timestamps.** ISO 8601, UTC, e.g. `2026-06-18T14:32:00Z`. Every file carries at least one 'last_updated' field.
 
@@ -14,6 +14,10 @@ These apply to all four files and exist to ensure all files are formatted in the
 **Concurrency.** `config.json` and `context.md` are low-frequency, whole-state files, therefore last-write-wins is acceptable but an agent should re-read file immediately before writing to minimise affecting another write. `open-questions.md` and `issues.md` are append/update logs, therefore agents should never delete existing entries, only appending new ones or flipping a `status` field for an existing entry.
 
 **Status** Nothing gets deleted from `open-questions.md` or `issues.md`. Resolved issues or questions are simply marked as resolved, to allow for all previous entries to be left as a record.
+
+**Meeting-minute idempotency.** Each entry in `meeting minutes.md` contains a
+hidden Webex meeting-ID marker. Webhook retries and recovery polling must check
+that marker before appending so one meeting cannot be recorded twice.
 
 ---
 
@@ -187,3 +191,22 @@ _No issues logged._
 - **Description:** Found while reviewing authentication, no max-retry limit results in hanging on a session
 ```
 
+---
+
+## `meeting minutes.md`
+
+**Format:** Markdown with one level-two section per completed Webex meeting
+
+**Purpose:** durable post-meeting summaries generated from Webex's completed
+meeting transcript
+
+**Sections per meeting:**
+- meeting title and start/end metadata
+- `Summary`
+- `Decisions`
+- `Action Items`
+- `Open Questions`
+
+**Update behaviour:** append a new meeting section after re-reading the current
+file. Never append a section whose hidden Webex meeting-ID marker already
+exists. The transcript itself is not stored in this file.

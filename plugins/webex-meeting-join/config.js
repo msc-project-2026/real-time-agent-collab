@@ -27,9 +27,34 @@ const DEFAULT_MEETING_GATE_THRESHOLD = 0.7;
 // noise makes false name hits more likely in meetings.
 const DEFAULT_MEETING_ADDRESSED_THRESHOLD = 0.45;
 
+// Webex transcript processing is asynchronous after a meeting ends. The
+// transcript-created webhook is primary; these values govern the bounded
+// polling recovery started by meetings/ended when that webhook is missed.
+const DEFAULT_TRANSCRIPT_RECOVERY_DELAY_MS = 60_000;
+const DEFAULT_TRANSCRIPT_RECOVERY_MAX_DELAY_MS = 5 * 60 * 1000;
+const DEFAULT_TRANSCRIPT_RECOVERY_WINDOW_MS = 2 * 60 * 60 * 1000;
+const DEFAULT_MINUTES_CHUNK_CHARS = null; // unlimited; chunking is opt-in
+
 function trimmed(v) {
   const s = v == null ? '' : String(v).trim();
   return s || undefined;
+}
+
+function enabledByDefault(v) {
+  if (v == null) return true;
+  return !['0', 'false', 'no', 'off'].includes(String(v).trim().toLowerCase());
+}
+
+function boundedNumber(value, { min, fallback }) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= min ? parsed : fallback;
+}
+
+function optionalPositiveNumber(value) {
+  const parsed = Number(value);
+  return value != null && String(value).trim() && Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : null;
 }
 
 // The dedicated human "meeting" account's credentials fall back to the same
@@ -104,9 +129,27 @@ function getConfig(env = process.env) {
         : DEFAULT_MEETING_ADDRESSED_THRESHOLD,
   };
 
+  const minutes = {
+    enabled: enabledByDefault(env.WEBEX_MEETING_MINUTES_ENABLED),
+    recoveryDelayMs: boundedNumber(env.WEBEX_MEETING_TRANSCRIPT_RECOVERY_DELAY_MS, {
+      min: 5_000,
+      fallback: DEFAULT_TRANSCRIPT_RECOVERY_DELAY_MS,
+    }),
+    recoveryMaxDelayMs: boundedNumber(env.WEBEX_MEETING_TRANSCRIPT_RECOVERY_MAX_DELAY_MS, {
+      min: 5_000,
+      fallback: DEFAULT_TRANSCRIPT_RECOVERY_MAX_DELAY_MS,
+    }),
+    recoveryWindowMs: boundedNumber(env.WEBEX_MEETING_TRANSCRIPT_RECOVERY_WINDOW_MS, {
+      min: 60_000,
+      fallback: DEFAULT_TRANSCRIPT_RECOVERY_WINDOW_MS,
+    }),
+    chunkChars: optionalPositiveNumber(env.WEBEX_MEETING_MINUTES_CHUNK_CHARS),
+  };
+
   return {
     browserExecutablePath,
     transcription,
+    minutes,
     botToken,
     meetingAccessToken,
     meetingRefreshToken,
@@ -126,4 +169,8 @@ module.exports = {
   DEFAULT_JOIN_TIMEOUT_MS,
   DEFAULT_DEEPGRAM_MODEL,
   DEEPGRAM_SAMPLE_RATE,
+  DEFAULT_TRANSCRIPT_RECOVERY_DELAY_MS,
+  DEFAULT_TRANSCRIPT_RECOVERY_MAX_DELAY_MS,
+  DEFAULT_TRANSCRIPT_RECOVERY_WINDOW_MS,
+  DEFAULT_MINUTES_CHUNK_CHARS,
 };

@@ -5,7 +5,12 @@ const test = require('node:test');
 const { createTokenStore } = require('./token');
 
 function response(status, data) {
-  return { ok: status >= 200 && status < 300, status, json: async () => data, text: async () => '' };
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => data,
+    text: async () => typeof data === 'string' ? data : '',
+  };
 }
 
 test('meetingFetch reactively refreshes once on a 401 and retries the call', async () => {
@@ -98,6 +103,33 @@ test('a renewed refresh token is used for the next refresh in this process', asy
     await store.refresh();
     assert.deepEqual(refreshTokens, ['refresh-1', 'refresh-2']);
     assert.equal(store.getToken(), 'access-2');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('meetingFetchText downloads transcript text and also refreshes once on 401', async () => {
+  const originalFetch = global.fetch;
+  let downloads = 0;
+  global.fetch = async (url) => {
+    if (String(url).endsWith('/access_token')) return response(200, { access_token: 'fresh' });
+    if (String(url).includes('/meetingTranscripts/t1/download')) {
+      downloads += 1;
+      return downloads === 1 ? response(401, '') : response(200, 'WEBVTT\n\n00:00.000 --> 00:02.000\nHello');
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  try {
+    const store = createTokenStore({
+      meetingAccessToken: 'stale',
+      meetingRefreshToken: 'refresh',
+      meetingClientId: 'id',
+      meetingClientSecret: 'secret',
+      canRefreshMeetingToken: true,
+    });
+    const text = await store.meetingFetchText('/meetingTranscripts/t1/download?meetingId=m1&format=vtt');
+    assert.match(text, /WEBVTT/);
+    assert.equal(downloads, 2);
   } finally {
     global.fetch = originalFetch;
   }

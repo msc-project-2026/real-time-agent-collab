@@ -24,6 +24,7 @@ function createOrchestrator({
   log,
   transcription = null,
   meetingAgent = null,
+  meetingMinutes = null,
   spacePrefs = null,
 }) {
   const state = new (require('./state').MeetingState)();
@@ -269,6 +270,9 @@ function createOrchestrator({
       return;
     }
     const meeting = await fetchMeetingWithRetry(tokenStore.meetingFetch, meetingId);
+    await meetingMinutes?.rememberMeeting(meeting).catch((err) =>
+      log?.warn?.(`[webex-meeting-join] failed to remember meeting=${meetingId} for minutes: ${err?.message ?? err}`)
+    );
     // Remember it before deciding whether to join: when the space is opted
     // out we skip the join, and this is the only record that would let a
     // later `/meeting join` name the meeting.
@@ -283,6 +287,7 @@ function createOrchestrator({
     const meetingId = payload?.data?.id;
     if (!meetingId) return;
     const info = state.joined.get(meetingId);
+    const roomId = info?.roomId ?? state.live.get(meetingId) ?? null;
     state.joined.delete(meetingId);
     state.forgetLive(meetingId);
     state.suppressed.delete(meetingId); // a new instance of this meeting id won't recur, so free the slot
@@ -291,6 +296,16 @@ function createOrchestrator({
       meetingAgent?.clearRoom(info.roomId);
       log?.info?.(`[webex-meeting-join] meeting=${meetingId} ended, cleared local state`);
     }
+    await meetingMinutes?.handleMeetingEnded({ meetingId, roomId }).catch((err) =>
+      log?.warn?.(`[webex-meeting-join] failed to schedule transcript recovery meeting=${meetingId}: ${err?.message ?? err}`)
+    );
+  }
+
+  // Primary meeting-minutes path: Webex emits this only after the post-meeting
+  // transcript asset has been created. The webhook router has already ACKed.
+  async function handleTranscriptCreated(payload) {
+    if (!meetingMinutes) return;
+    await meetingMinutes.handleTranscriptCreated(payload);
   }
 
   // resource: messages, event: created — leave / status / per-space join policy.
@@ -455,6 +470,7 @@ function createOrchestrator({
   async function dispose() {
     stopPolling();
     transcription?.dispose();
+    meetingMinutes?.dispose();
     await browserRuntime.dispose();
   }
 
@@ -462,6 +478,7 @@ function createOrchestrator({
     start,
     handleMeetingStarted,
     handleMeetingEnded,
+    handleTranscriptCreated,
     handleMessageCreated,
     reconcile,
     startPolling,

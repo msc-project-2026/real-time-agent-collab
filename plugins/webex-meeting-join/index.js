@@ -10,6 +10,7 @@ const { ensureWebhooks, deregisterWebhooks } = require('./webhook-subscriptions'
 const { createWebhookRouter, ROUTE_PREFIX } = require('./webhook-router');
 const { createBrowserRuntime } = require('./browser-runtime');
 const { createOrchestrator } = require('./orchestrator');
+const { createMeetingMinutesManager } = require('./meeting-minutes');
 const { webexFetch } = require('./api');
 
 const TOKEN_REFRESH_INTERVAL_MS = 12 * 24 * 60 * 60 * 1000; // Webex tokens last ~14 days
@@ -59,6 +60,17 @@ function register(api) {
     log?.info?.('[webex-meeting-join] transcription disabled (set DEEPGRAM_API_KEY to enable)');
   }
 
+  // Post-meeting minutes use Webex's own completed transcript, independently
+  // of the optional live Deepgram stream above.
+  const meetingMinutes = cfg.minutes.enabled
+    ? createMeetingMinutesManager({ runtime: api.runtime, tokenStore, config: cfg.minutes, log })
+    : null;
+  log?.info?.(
+    cfg.minutes.enabled
+      ? '[webex-meeting-join] post-meeting minutes enabled (transcript webhook + ended-meeting recovery)'
+      : '[webex-meeting-join] post-meeting minutes disabled'
+  );
+
   const browserRuntime = createBrowserRuntime({
     log,
     joinTimeoutMs: cfg.joinTimeoutMs,
@@ -72,6 +84,7 @@ function register(api) {
     log,
     transcription,
     meetingAgent,
+    meetingMinutes,
   });
 
   let refreshInterval = null;
@@ -86,6 +99,7 @@ function register(api) {
       handlers: new Map([
         ['/meetings-started', (payload) => orchestrator.handleMeetingStarted(payload)],
         ['/meetings-ended', (payload) => orchestrator.handleMeetingEnded(payload)],
+        ['/transcripts-created', (payload) => orchestrator.handleTranscriptCreated(payload)],
         ['/messages-created', (payload) => orchestrator.handleMessageCreated(payload)],
       ]),
     }),
@@ -116,8 +130,14 @@ function register(api) {
       botToken: cfg.botToken,
       webhookBaseUrl: cfg.webhookBaseUrl,
       webhookSecret: cfg.webhookSecret,
+      minutesEnabled: cfg.minutes.enabled,
+      log,
     });
     log?.info?.('[webex-meeting-join] webhooks registered');
+
+    await meetingMinutes?.resumePending().catch((err) =>
+      log?.warn?.(`[webex-meeting-join] failed to resume transcript recovery jobs: ${err?.message ?? err}`)
+    );
 
     try {
       await orchestrator.start();
@@ -137,7 +157,9 @@ function register(api) {
     );
     orchestrator.startPolling();
 
-    log?.info?.(`[webex-meeting-join] ready at ${ROUTE_PREFIX}/{meetings-started,meetings-ended,messages-created}`);
+    log?.info?.(
+      `[webex-meeting-join] ready at ${ROUTE_PREFIX}/{meetings-started,meetings-ended,transcripts-created,messages-created}`
+    );
   }, { timeoutMs: 60_000 });
 
   api.on('gateway_stop', async () => {
@@ -149,6 +171,8 @@ function register(api) {
       botToken: cfg.botToken,
       webhookBaseUrl: cfg.webhookBaseUrl,
       webhookSecret: cfg.webhookSecret,
+      minutesEnabled: cfg.minutes.enabled,
+      log,
     }).catch((err) => log?.warn?.(`[webex-meeting-join] webhook deregister failed: ${err?.message}`));
   });
 }

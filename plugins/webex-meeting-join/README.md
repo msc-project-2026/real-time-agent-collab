@@ -4,9 +4,12 @@ Self-contained OpenClaw plugin: auto-joins Webex space meetings (instant and
 scheduled) via the real Webex Browser SDK when they start, leaves on a chat
 command ("leave meeting"), and — when a Deepgram key is configured — transcribes
 the meeting in real time and posts proactive interventions into the meeting's
-Webex space.
+Webex space. After the meeting, it consumes Webex's completed transcript,
+generates structured minutes, and commits them to `.collab/meeting minutes.md`
+in the space's mapped primary GitHub repository.
 
-Scope: **join, leave, listen, and (optionally) transcribe + intervene**. On join
+Scope: **join, leave, listen, generate post-meeting minutes, and (optionally)
+transcribe + intervene in real time**. On join
 the bot subscribes to the meeting's audio (receive-only — no microphone, camera,
 or screen share is published). It always logs whether that audio is audible; and
 when `DEEPGRAM_API_KEY` is set it additionally streams the audio to Deepgram's
@@ -19,7 +22,7 @@ the plugin behaves exactly as before and no audio leaves the browser.
 ## How it works (Approach 2 from the research phase)
 
 1. This plugin registers its own Webex webhooks: `meetings/started`,
-   `meetings/ended`, and `messages/created`, all owned by the dedicated
+   `meetings/ended`, `meetingTranscripts/created`, and `messages/created`, all owned by the dedicated
    meeting account. `messages/created` deliberately does NOT use the bot
    account: Webex only delivers message webhooks to a bot when it is
    @mentioned (or in a 1:1), which would make the no-mention join-policy
@@ -58,6 +61,13 @@ the plugin behaves exactly as before and no audio leaves the browser.
    instant meetings — see the note below.
 6. A startup reconciliation sweep + a periodic poll (default every 5
    minutes) catch any meeting the `started` webhook missed.
+7. `meetingTranscripts/created` is the primary post-meeting path. It downloads
+   the completed Webex VTT/TXT transcript, sends it through an isolated
+   meeting-minutes agent session, and appends one idempotent section to the
+   project repository's `.collab/meeting minutes.md`. The existing
+   `meetings/ended` webhook also writes a durable local recovery job and polls
+   for the transcript with bounded exponential backoff. This recovers a missed
+   transcript webhook and survives gateway restarts.
 
 ### Instant vs scheduled meetings in `GET /meetings`
 
@@ -75,8 +85,30 @@ scheduled series and its running instance onto one candidate via
 | Variable | Purpose |
 |---|---|
 | `WEBEX_BOT_TOKEN` | Bot identity — posts chat messages |
-| `WEBEX_MEETING_ACCESS_TOKEN` (or falls back to `WEBEX_ACCESS_TOKEN`) | Dedicated human-user account that actually joins meetings (bot accounts cannot) and owns all three webhooks, including `messages/created` |
+| `WEBEX_MEETING_ACCESS_TOKEN` (or falls back to `WEBEX_ACCESS_TOKEN`) | Dedicated human-user account that actually joins meetings (bot accounts cannot) and owns all four webhooks, including `meetingTranscripts/created` and `messages/created` |
 | `WEBEX_MEETING_WEBHOOK_URL` | Public base URL this plugin's own webhook route is reachable at, e.g. `https://your-domain/webhooks/webex-meeting-join` |
+
+The meeting-account OAuth grant must include `meeting:transcripts_read` and
+`meeting:schedules_read` in addition to the scopes needed for join/leave. An
+existing integration must be reauthorized after adding scopes; refreshing an
+old grant does not add them. If transcript webhook registration is denied, the
+plugin logs the missing-scope problem without disabling its core join/leave
+webhooks. Creator-owned transcript webhooks only cover meetings whose
+transcripts that account may access; organization-wide coverage requires the
+appropriate Webex admin or compliance authorization.
+
+Meeting-minutes persistence needs one of these GitHub authentication choices:
+
+- `WEBEX_MEETING_MINUTES_GITHUB_TOKEN`, with Contents read/write access to the
+  mapped repository; or
+- `GITHUB_APP_ID` plus `GITHUB_APP_PRIVATE_KEY_FILE` (or
+  `GITHUB_APP_PRIVATE_KEY`), with the GitHub App installed on that repository.
+
+The primary repository is resolved from
+`$OPENCLAW_WORKSPACE_DIR/spaces/<spaceId>/config.json`, as created by this
+project's onboarding flow. `COLLAB_GITHUB_OWNER` and `COLLAB_GITHUB_REPO` are
+supported as a single-repository fallback when porting the plugin without that
+flow.
 
 Optional (enable proactive + reactive OAuth token refresh for the meeting
 account — falls back to `WEBEX_REFRESH_TOKEN`/`WEBEX_CLIENT_ID`/
@@ -104,6 +136,16 @@ Optional transcription (all no-ops unless `DEEPGRAM_API_KEY` is set):
 | `WEBEX_MEETING_GATE_THRESHOLD` | Gate score (0–1) a turn must clear to intervene. | `0.7` |
 | `WEBEX_MEETING_ADDRESSED_GATE_THRESHOLD` | Lower gate score for turns the gate classifies as `ADDRESSED` (a participant spoke to the assistant by name). | `0.45` |
 
+Optional post-meeting minutes settings:
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `WEBEX_MEETING_MINUTES_ENABLED` | Enables the transcript webhook and ended-meeting recovery. | `true` |
+| `WEBEX_MEETING_TRANSCRIPT_RECOVERY_DELAY_MS` | Initial delay after meeting end before checking for a missed transcript event. | `60000` |
+| `WEBEX_MEETING_TRANSCRIPT_RECOVERY_MAX_DELAY_MS` | Maximum exponential-backoff delay. | `300000` |
+| `WEBEX_MEETING_TRANSCRIPT_RECOVERY_WINDOW_MS` | Stop recovery attempts after this period. | `7200000` |
+| `WEBEX_MEETING_MINUTES_CHUNK_CHARS` | Optional maximum transcript characters per evidence-extraction turn. Any positive value enables chunking. | unset (no limit) |
+
 The gate LLM itself reuses the webex chat plugin's proactivity gate and its
 `CISCO_LLM_API_KEY` / `channels.webex.proactivity.gate` config — no extra key is
 needed for the intervention decision.
@@ -124,6 +166,33 @@ needed for the intervention decision.
    the shared `PLAYWRIGHT_BROWSERS_PATH` cache if another workspace already
    installed it (this repo's `lib` does), otherwise run
    `npx playwright install --with-deps chromium` once.
+
+All runtime code used by the meeting plugin, including session-conflict retry,
+transcript retrieval, durable recovery state, summarization, project mapping,
+and GitHub persistence, is contained in this folder. Porting does not require
+copying this repository's `lib/` or other plugin directories.
+
+## Post-meeting minutes
+
+The transcript-created webhook is the readiness signal and therefore the
+normal path. Its payload supplies the transcript and meeting IDs; the plugin
+downloads VTT first (which best preserves timestamps/speaker cues), falling
+back to TXT. The transcript is explicitly treated as untrusted evidence in the
+agent prompt so spoken instructions cannot control the agent. The complete
+transcript is sent in one request by default. Set
+`WEBEX_MEETING_MINUTES_CHUNK_CHARS` to a positive value only when chunking is
+desired for the configured model.
+
+Generated minutes use `### Summary`, `### Decisions`, `### Action Items`, and
+`### Open Questions`. The writer owns the document heading and meeting
+metadata, and embeds a meeting-ID marker before each section. A retried webhook
+or overlapping recovery poll therefore cannot append the same meeting twice.
+
+Recovery jobs live under
+`$OPENCLAW_WORKSPACE_DIR/.collab/webex-meeting-minutes/jobs/`. They contain
+only Webex identifiers, project-routing metadata, timestamps, and error state;
+the transcript itself is not persisted locally. Jobs are marked processed only
+after the GitHub commit succeeds.
 
 ## Known limitations / verification
 
