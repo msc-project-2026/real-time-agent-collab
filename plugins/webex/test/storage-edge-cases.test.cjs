@@ -13,31 +13,31 @@ const {
   itemsPath,
   threadsPath,
   activeConfigPath,
-} = require('./storage/paths');
-const { readPendingBatchState } = require('./batch/state');
-const { appendPendingMessage } = require('./batch/append');
-const { stagePendingBatch } = require('./batch/stage');
-const { loadProcessingBatch } = require('./batch/load');
-const { completeProcessingBatch } = require('./batch/complete');
+} = require('../storage/paths');
+const { readPendingBatchState } = require('../batch/state');
+const { appendPendingMessage } = require('../batch/append');
+const { stagePendingBatch } = require('../batch/stage');
+const { loadProcessingBatch } = require('../batch/load');
+const { completeProcessingBatch } = require('../batch/complete');
 const {
   MAIN_THREAD_KEY,
   appendMessageToThreadContextWindow,
   getThread,
   getThreads,
-} = require('./context/threads-store');
+} = require('../context/threads-store');
 const {
   readConversationsState,
   writeConversationsState,
   getConversations,
-} = require('./context/conversations-store');
+} = require('../context/conversations-store');
 const {
   readItemsState,
   writeItemsState,
   getCandidateItems,
   getItems,
-} = require('./context/items-store');
-const { readActiveConfig, writeActiveConfig } = require('./config/store');
-const { makeLog, makeTempWorkspace, mockCalls } = require('./test/helpers.cjs');
+} = require('../context/items-store');
+const { readActiveConfig, writeActiveConfig } = require('../config/store');
+const { makeLog, makeTempWorkspace, mockCalls } = require('./helpers.cjs');
 
 async function writeMalformed(filePath) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });

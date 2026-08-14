@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const { describe, test } = require('node:test');
 
-const { loadWithMocks, makeLog } = require('./test/helpers.cjs');
+const { loadWithMocks, makeLog } = require('./helpers.cjs');
 
 const account = { accountId: 'default', config: { token: 'bot-token' } };
 const batch = {
@@ -21,9 +21,9 @@ describe('staged-batch control flow', () => {
   test('validates required identifiers before staging', async (t) => {
     const stagePendingBatch = t.mock.fn();
     const handleProcessStagedBatchRequest = t.mock.fn();
-    const loaded = loadWithMocks(require.resolve('./batch/staging-handler'), {
-      [require.resolve('./batch/stage')]: { stagePendingBatch },
-      [require.resolve('./batch/processing-handler')]: {
+    const loaded = loadWithMocks(require.resolve('../batch/staging-handler'), {
+      [require.resolve('../batch/stage')]: { stagePendingBatch },
+      [require.resolve('../batch/processing-handler')]: {
         handleProcessStagedBatchRequest,
       },
     });
@@ -49,9 +49,9 @@ describe('staged-batch control flow', () => {
       messageCount: 0,
     }));
     const handleProcessStagedBatchRequest = t.mock.fn();
-    const loaded = loadWithMocks(require.resolve('./batch/staging-handler'), {
-      [require.resolve('./batch/stage')]: { stagePendingBatch },
-      [require.resolve('./batch/processing-handler')]: {
+    const loaded = loadWithMocks(require.resolve('../batch/staging-handler'), {
+      [require.resolve('../batch/stage')]: { stagePendingBatch },
+      [require.resolve('../batch/processing-handler')]: {
         handleProcessStagedBatchRequest,
       },
     });
@@ -76,9 +76,9 @@ describe('staged-batch control flow', () => {
     };
     const stagePendingBatch = t.mock.fn(async () => staged);
     const handleProcessStagedBatchRequest = t.mock.fn();
-    const loaded = loadWithMocks(require.resolve('./batch/staging-handler'), {
-      [require.resolve('./batch/stage')]: { stagePendingBatch },
-      [require.resolve('./batch/processing-handler')]: {
+    const loaded = loadWithMocks(require.resolve('../batch/staging-handler'), {
+      [require.resolve('../batch/stage')]: { stagePendingBatch },
+      [require.resolve('../batch/processing-handler')]: {
         handleProcessStagedBatchRequest,
       },
     });
@@ -97,9 +97,9 @@ describe('staged-batch control flow', () => {
     const staged = { ok: true, staged: true, batchId: 'batch-1', messageCount: 2 };
     const stagePendingBatch = t.mock.fn(async () => staged);
     const handleProcessStagedBatchRequest = t.mock.fn(async () => undefined);
-    const loaded = loadWithMocks(require.resolve('./batch/staging-handler'), {
-      [require.resolve('./batch/stage')]: { stagePendingBatch },
-      [require.resolve('./batch/processing-handler')]: {
+    const loaded = loadWithMocks(require.resolve('../batch/staging-handler'), {
+      [require.resolve('../batch/stage')]: { stagePendingBatch },
+      [require.resolve('../batch/processing-handler')]: {
         handleProcessStagedBatchRequest,
       },
     });
@@ -139,15 +139,15 @@ describe('conversation-processing dispatch construction', () => {
       dispatched = options;
     });
     const runtime = { channel: { reply: {} } };
-    const loaded = loadWithMocks(require.resolve('./batch/processing-handler'), {
-      [require.resolve('./dispatch')]: { dispatchToAgentForSpace },
-      [require.resolve('./runtime')]: { getPluginRuntime: () => runtime },
-      [require.resolve('./batch/load')]: { loadProcessingBatch },
-      [require.resolve('./context/conversations-store')]: { getConversations },
-      [require.resolve('./processing/conversations/instruction')]: {
+    const loaded = loadWithMocks(require.resolve('../batch/processing-handler'), {
+      [require.resolve('../dispatch')]: { dispatchToAgentForSpace },
+      [require.resolve('../runtime')]: { getPluginRuntime: () => runtime },
+      [require.resolve('../batch/load')]: { loadProcessingBatch },
+      [require.resolve('../context/conversations-store')]: { getConversations },
+      [require.resolve('../processing/conversations/instruction')]: {
         buildConversationProcessingInstruction,
       },
-      [require.resolve('./processing/conversations/result-handler')]: {
+      [require.resolve('../processing/conversations/result-handler')]: {
         makeConversationProcessingResultHandler,
       },
     });
@@ -188,15 +188,15 @@ describe('conversation-processing dispatch construction', () => {
   });
 
   test('validates required orchestration identifiers before reading storage', async (t) => {
-    const loaded = loadWithMocks(require.resolve('./batch/processing-handler'), {
-      [require.resolve('./dispatch')]: { dispatchToAgentForSpace: t.mock.fn() },
-      [require.resolve('./runtime')]: { getPluginRuntime: t.mock.fn() },
-      [require.resolve('./batch/load')]: { loadProcessingBatch: t.mock.fn() },
-      [require.resolve('./context/conversations-store')]: { getConversations: t.mock.fn() },
-      [require.resolve('./processing/conversations/instruction')]: {
+    const loaded = loadWithMocks(require.resolve('../batch/processing-handler'), {
+      [require.resolve('../dispatch')]: { dispatchToAgentForSpace: t.mock.fn() },
+      [require.resolve('../runtime')]: { getPluginRuntime: t.mock.fn() },
+      [require.resolve('../batch/load')]: { loadProcessingBatch: t.mock.fn() },
+      [require.resolve('../context/conversations-store')]: { getConversations: t.mock.fn() },
+      [require.resolve('../processing/conversations/instruction')]: {
         buildConversationProcessingInstruction: t.mock.fn(),
       },
-      [require.resolve('./processing/conversations/result-handler')]: {
+      [require.resolve('../processing/conversations/result-handler')]: {
         makeConversationProcessingResultHandler: t.mock.fn(),
       },
     });
@@ -236,19 +236,19 @@ describe('conversation model-result handling', () => {
       ...overrides,
     };
     const loaded = loadWithMocks(
-      require.resolve('./processing/conversations/result-handler'),
+      require.resolve('../processing/conversations/result-handler'),
       {
-        [require.resolve('./processing/conversations/validate-result')]: {
+        [require.resolve('../processing/conversations/validate-result')]: {
           validateConversationProcessingResult:
             collaborators.validateConversationProcessingResult,
         },
-        [require.resolve('./processing/conversations/update-from-result')]: {
+        [require.resolve('../processing/conversations/update-from-result')]: {
           updateConversationsFromResult: collaborators.updateConversationsFromResult,
         },
-        [require.resolve('./processing/items/extract-from-batch')]: {
+        [require.resolve('../processing/items/extract-from-batch')]: {
           extractItemsFromBatch: collaborators.extractItemsFromBatch,
         },
-        [require.resolve('./context/conversations-store')]: {
+        [require.resolve('../context/conversations-store')]: {
           getConversations: t.mock.fn(),
         },
       }
@@ -407,22 +407,22 @@ describe('item-extraction dispatch selection', () => {
       resultHandler: t.mock.fn(),
     };
     const loaded = loadWithMocks(
-      require.resolve('./processing/items/extract-from-batch'),
+      require.resolve('../processing/items/extract-from-batch'),
       {
-        [require.resolve('./dispatch')]: {
+        [require.resolve('../dispatch')]: {
           dispatchToAgentForSpace: collaborators.dispatchToAgentForSpace,
         },
-        [require.resolve('./runtime')]: { getPluginRuntime: () => ({ runtime: true }) },
-        [require.resolve('./context/conversations-store')]: {
+        [require.resolve('../runtime')]: { getPluginRuntime: () => ({ runtime: true }) },
+        [require.resolve('../context/conversations-store')]: {
           readConversationsState: collaborators.readConversationsState,
         },
-        [require.resolve('./context/items-store')]: {
+        [require.resolve('../context/items-store')]: {
           getCandidateItems: collaborators.getCandidateItems,
         },
-        [require.resolve('./processing/items/instruction')]: {
+        [require.resolve('../processing/items/instruction')]: {
           buildItemExtractionInstruction: collaborators.buildItemExtractionInstruction,
         },
-        [require.resolve('./processing/items/result-handler')]: {
+        [require.resolve('../processing/items/result-handler')]: {
           makeItemExtractionResultHandler: t.mock.fn(() => collaborators.resultHandler),
         },
       }
@@ -503,11 +503,11 @@ describe('item model-result handling', () => {
       t.mock.fn(async () => ({
         touchedItemIds: ['item-1'],
       }));
-    const loaded = loadWithMocks(require.resolve('./processing/items/result-handler'), {
-      [require.resolve('./processing/items/validate-result')]: {
+    const loaded = loadWithMocks(require.resolve('../processing/items/result-handler'), {
+      [require.resolve('../processing/items/validate-result')]: {
         validateItemExtractionResult,
       },
-      [require.resolve('./processing/items/update-from-result')]: {
+      [require.resolve('../processing/items/update-from-result')]: {
         updateItemsFromResult,
       },
     });

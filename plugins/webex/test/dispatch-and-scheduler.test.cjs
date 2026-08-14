@@ -10,7 +10,7 @@ const {
   makeLog,
   makeTempWorkspace,
   mockCalls,
-} = require('./test/helpers.cjs');
+} = require('./helpers.cjs');
 
 async function flushMicrotasks(rounds = 8) {
   for (let index = 0; index < rounds; index += 1) await Promise.resolve();
@@ -20,7 +20,7 @@ async function flushMicrotasks(rounds = 8) {
 // These tests verify per-space debouncing, successful timer execution, and asynchronous handler failures without real waiting.
 describe('delayed batch scheduling', () => {
   test('requires a space identifier before creating a timer', () => {
-    const { schedulePendingBatchStaging } = require('./batch/schedule');
+    const { schedulePendingBatchStaging } = require('../batch/schedule');
     assert.throws(
       () =>
         schedulePendingBatchStaging({
@@ -33,7 +33,7 @@ describe('delayed batch scheduling', () => {
 
   test('replaces a prior timer and invokes only the latest handler', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
-    const { schedulePendingBatchStaging } = require('./batch/schedule');
+    const { schedulePendingBatchStaging } = require('../batch/schedule');
     const firstHandler = t.mock.fn(async () => undefined);
     const secondHandler = t.mock.fn(async () => undefined);
     const log = makeLog(t);
@@ -68,7 +68,7 @@ describe('delayed batch scheduling', () => {
 
   test('logs a rejected timer handler and keeps the scheduler usable', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
-    const loaded = loadWithMocks(require.resolve('./batch/schedule'));
+    const loaded = loadWithMocks(require.resolve('../batch/schedule'));
     t.after(loaded.restore);
     const log = makeLog(t);
     const failure = t.mock.fn(async () => {
@@ -127,7 +127,7 @@ describe('restart recovery scanning', () => {
     );
     await fs.writeFile(path.join(spacesRoot, 'not-a-dir'), 'ignored');
 
-    const loaded = loadWithMocks(require.resolve('./batch/schedule'));
+    const loaded = loadWithMocks(require.resolve('../batch/schedule'));
     t.after(loaded.restore);
     const batchStagingHandler = t.mock.fn(async () => undefined);
     const log = makeLog(t);
@@ -151,7 +151,7 @@ describe('restart recovery scanning', () => {
       if (previousRoot === undefined) delete process.env.OPENCLAW_WORKSPACE_DIR;
       else process.env.OPENCLAW_WORKSPACE_DIR = previousRoot;
     });
-    const loaded = loadWithMocks(require.resolve('./batch/schedule'));
+    const loaded = loadWithMocks(require.resolve('../batch/schedule'));
     t.after(loaded.restore);
     const batchStagingHandler = t.mock.fn();
     const log = makeLog(t);
@@ -186,7 +186,7 @@ describe('restart recovery scanning', () => {
         })
       );
     }
-    const loaded = loadWithMocks(require.resolve('./batch/schedule'));
+    const loaded = loadWithMocks(require.resolve('../batch/schedule'));
     t.after(loaded.restore);
     const batchStagingHandler = t.mock.fn(async ({ spaceId }) => {
       if (spaceId === 'fails') throw new Error('cannot recover batch');
@@ -223,7 +223,7 @@ describe('restart recovery scanning', () => {
     });
     await fs.mkdir(path.join(root, '.collab'), { recursive: true });
     await fs.writeFile(path.join(root, '.collab', 'spaces'), 'not a directory');
-    const loaded = loadWithMocks(require.resolve('./batch/schedule'));
+    const loaded = loadWithMocks(require.resolve('../batch/schedule'));
     t.after(loaded.restore);
     const log = makeLog(t);
 
@@ -241,7 +241,7 @@ describe('restart recovery scanning', () => {
 });
 
 function loadDispatch(t) {
-  const loaded = loadWithMocks(require.resolve('./dispatch'));
+  const loaded = loadWithMocks(require.resolve('../dispatch'));
   t.after(loaded.restore);
   return loaded.subject;
 }

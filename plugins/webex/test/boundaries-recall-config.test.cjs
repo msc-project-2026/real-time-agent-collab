@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const { describe, test } = require('node:test');
 
-const { loadWithMocks, makeLog, mockCalls } = require('./test/helpers.cjs');
+const { loadWithMocks, makeLog, mockCalls } = require('./helpers.cjs');
 
 // Category: Webex REST boundary.
 // These tests verify authentication, request serialisation, successful JSON decoding, harmless DELETE 404s, and informative HTTP failures.
@@ -14,7 +14,7 @@ describe('Webex REST boundary', () => {
       status: 200,
       json: async () => ({ id: 'message-1' }),
     }));
-    const { webexFetch } = require('./api');
+    const { webexFetch } = require('../api');
 
     const response = await webexFetch('token-1', '/messages', {
       method: 'POST',
@@ -35,7 +35,7 @@ describe('Webex REST boundary', () => {
       status: 404,
       text: async () => 'missing',
     }));
-    const { webexFetch } = require('./api');
+    const { webexFetch } = require('../api');
 
     assert.equal(
       await webexFetch('token-1', '/webhooks/missing', { method: 'DELETE' }),
@@ -58,7 +58,7 @@ describe('Webex REST boundary', () => {
       ok: true,
       status: 204,
     }));
-    const { webexFetch } = require('./api');
+    const { webexFetch } = require('../api');
 
     assert.equal(
       await webexFetch('token-1', '/webhooks/hook-1', { method: 'DELETE' }),
@@ -82,7 +82,7 @@ describe('Webex REST boundary', () => {
 // These tests verify destination inference, optional content fields, parent threading, validation, and delegation to the REST boundary.
 describe('Webex message construction and sending', () => {
   test('builds email, person, and room destinations with supported content', () => {
-    const { buildMsgBody } = require('./send');
+    const { buildMsgBody } = require('../send');
     const personId = Buffer.from('ciscospark://us/PEOPLE/person-1').toString('base64');
 
     assert.deepEqual(buildMsgBody('person@example.com', { text: 'Hello' }), {
@@ -112,8 +112,8 @@ describe('Webex message construction and sending', () => {
 
   test('validates required fields and posts the constructed body', async (t) => {
     const webexFetch = t.mock.fn(async () => ({ id: 'message-1', roomId: 'space-1' }));
-    const loaded = loadWithMocks(require.resolve('./send'), {
-      [require.resolve('./api')]: { webexFetch },
+    const loaded = loadWithMocks(require.resolve('../send'), {
+      [require.resolve('../api')]: { webexFetch },
     });
     t.after(loaded.restore);
 
@@ -162,9 +162,9 @@ describe('recall context assembly', () => {
         evidenceMessageIds: ['message-0'],
       },
     ]);
-    const loaded = loadWithMocks(require.resolve('./recall/context'), {
-      [require.resolve('./context/conversations-store')]: { getConversations },
-      [require.resolve('./context/items-store')]: { getItems },
+    const loaded = loadWithMocks(require.resolve('../recall/context'), {
+      [require.resolve('../context/conversations-store')]: { getConversations },
+      [require.resolve('../context/items-store')]: { getItems },
     });
     t.after(loaded.restore);
 
@@ -208,9 +208,9 @@ describe('recall context assembly', () => {
         evidenceMessageIds: null,
       },
     ]);
-    const loaded = loadWithMocks(require.resolve('./recall/context'), {
-      [require.resolve('./context/conversations-store')]: { getConversations },
-      [require.resolve('./context/items-store')]: { getItems },
+    const loaded = loadWithMocks(require.resolve('../recall/context'), {
+      [require.resolve('../context/conversations-store')]: { getConversations },
+      [require.resolve('../context/items-store')]: { getItems },
     });
     t.after(loaded.restore);
     await assert.rejects(
@@ -254,12 +254,12 @@ describe('recall-agent dispatch and response delivery', () => {
     const dispatchToAgentForSpace = t.mock.fn(async (options) => {
       dispatchOptions = options;
     });
-    const loaded = loadWithMocks(require.resolve('./recall/handle-request'), {
-      [require.resolve('./dispatch')]: { dispatchToAgentForSpace },
-      [require.resolve('./runtime')]: { getPluginRuntime: () => ({ runtime: true }) },
-      [require.resolve('./recall/context')]: { buildRecallContext },
-      [require.resolve('./recall/instruction')]: { buildRecallInstruction },
-      [require.resolve('./recall/result-handler')]: { makeRecallResultHandler },
+    const loaded = loadWithMocks(require.resolve('../recall/handle-request'), {
+      [require.resolve('../dispatch')]: { dispatchToAgentForSpace },
+      [require.resolve('../runtime')]: { getPluginRuntime: () => ({ runtime: true }) },
+      [require.resolve('../recall/context')]: { buildRecallContext },
+      [require.resolve('../recall/instruction')]: { buildRecallInstruction },
+      [require.resolve('../recall/result-handler')]: { makeRecallResultHandler },
     });
     t.after(loaded.restore);
     const message = {
@@ -294,20 +294,20 @@ describe('recall-agent dispatch and response delivery', () => {
 
   test('validates recall dispatch inputs and builds direct-message defaults', async (t) => {
     let dispatchOptions;
-    const loaded = loadWithMocks(require.resolve('./recall/handle-request'), {
-      [require.resolve('./dispatch')]: {
+    const loaded = loadWithMocks(require.resolve('../recall/handle-request'), {
+      [require.resolve('../dispatch')]: {
         dispatchToAgentForSpace: t.mock.fn(async (options) => {
           dispatchOptions = options;
         }),
       },
-      [require.resolve('./runtime')]: { getPluginRuntime: () => ({}) },
-      [require.resolve('./recall/context')]: {
+      [require.resolve('../runtime')]: { getPluginRuntime: () => ({}) },
+      [require.resolve('../recall/context')]: {
         buildRecallContext: t.mock.fn(async () => ({})),
       },
-      [require.resolve('./recall/instruction')]: {
+      [require.resolve('../recall/instruction')]: {
         buildRecallInstruction: t.mock.fn(() => 'prompt'),
       },
-      [require.resolve('./recall/result-handler')]: {
+      [require.resolve('../recall/result-handler')]: {
         makeRecallResultHandler: t.mock.fn(() => t.mock.fn()),
       },
     });
@@ -342,8 +342,8 @@ describe('recall-agent dispatch and response delivery', () => {
 
   test('skips empty output, requires a token, and sends a trimmed threaded reply', async (t) => {
     const sendWebexMessage = t.mock.fn(async () => ({ id: 'reply-1' }));
-    const loaded = loadWithMocks(require.resolve('./recall/result-handler'), {
-      [require.resolve('./send')]: { sendWebexMessage },
+    const loaded = loadWithMocks(require.resolve('../recall/result-handler'), {
+      [require.resolve('../send')]: { sendWebexMessage },
     });
     t.after(loaded.restore);
     const message = { id: 'message-1', roomId: 'space-1', parentId: 'root-1' };
@@ -394,9 +394,9 @@ describe('configuration submission and card flow', () => {
   test('rejects invalid fields without writing configuration', async (t) => {
     const writeActiveConfig = t.mock.fn();
     const sendWebexMessage = t.mock.fn(async () => ({ id: 'message-1' }));
-    const loaded = loadWithMocks(require.resolve('./config/handle-submission'), {
-      [require.resolve('./config/store')]: { writeActiveConfig },
-      [require.resolve('./send')]: { sendWebexMessage },
+    const loaded = loadWithMocks(require.resolve('../config/handle-submission'), {
+      [require.resolve('../config/store')]: { writeActiveConfig },
+      [require.resolve('../send')]: { sendWebexMessage },
     });
     t.after(loaded.restore);
 
@@ -419,9 +419,9 @@ describe('configuration submission and card flow', () => {
   test('validates submission ownership and reports an absent repository', async (t) => {
     const writeActiveConfig = t.mock.fn();
     const sendWebexMessage = t.mock.fn(async () => ({}));
-    const loaded = loadWithMocks(require.resolve('./config/handle-submission'), {
-      [require.resolve('./config/store')]: { writeActiveConfig },
-      [require.resolve('./send')]: { sendWebexMessage },
+    const loaded = loadWithMocks(require.resolve('../config/handle-submission'), {
+      [require.resolve('../config/store')]: { writeActiveConfig },
+      [require.resolve('../send')]: { sendWebexMessage },
     });
     t.after(loaded.restore);
     await assert.rejects(
@@ -452,9 +452,9 @@ describe('configuration submission and card flow', () => {
   test('persists normalised valid input and sends confirmation', async (t) => {
     const writeActiveConfig = t.mock.fn(async () => ({ revision: 1 }));
     const sendWebexMessage = t.mock.fn(async () => ({ id: 'message-1' }));
-    const loaded = loadWithMocks(require.resolve('./config/handle-submission'), {
-      [require.resolve('./config/store')]: { writeActiveConfig },
-      [require.resolve('./send')]: { sendWebexMessage },
+    const loaded = loadWithMocks(require.resolve('../config/handle-submission'), {
+      [require.resolve('../config/store')]: { writeActiveConfig },
+      [require.resolve('../send')]: { sendWebexMessage },
     });
     t.after(loaded.restore);
     const action = {
@@ -493,9 +493,9 @@ describe('configuration submission and card flow', () => {
     const active = { config: { projectName: 'Project' } };
     const readActiveConfig = t.mock.fn(async () => active);
     const sendConfigCard = t.mock.fn(async () => ({ ok: true }));
-    const loaded = loadWithMocks(require.resolve('./config/handle-request'), {
-      [require.resolve('./config/store')]: { readActiveConfig },
-      [require.resolve('./config/card')]: { sendConfigCard },
+    const loaded = loadWithMocks(require.resolve('../config/handle-request'), {
+      [require.resolve('../config/store')]: { readActiveConfig },
+      [require.resolve('../config/card')]: { sendConfigCard },
     });
     t.after(loaded.restore);
     const log = makeLog(t);
@@ -518,9 +518,9 @@ describe('configuration submission and card flow', () => {
   test('validates config requests and presents an empty card for a new space', async (t) => {
     const readActiveConfig = t.mock.fn(async () => null);
     const sendConfigCard = t.mock.fn(async () => ({ ok: true }));
-    const loaded = loadWithMocks(require.resolve('./config/handle-request'), {
-      [require.resolve('./config/store')]: { readActiveConfig },
-      [require.resolve('./config/card')]: { sendConfigCard },
+    const loaded = loadWithMocks(require.resolve('../config/handle-request'), {
+      [require.resolve('../config/store')]: { readActiveConfig },
+      [require.resolve('../config/card')]: { sendConfigCard },
     });
     t.after(loaded.restore);
     await assert.rejects(
@@ -542,9 +542,9 @@ describe('configuration submission and card flow', () => {
 
   test('builds and sends the adaptive configuration card', async (t) => {
     const sendWebexMessage = t.mock.fn(async () => ({ id: 'card-1' }));
-    const loaded = loadWithMocks(require.resolve('./config/card'), {
-      [require.resolve('./api')]: { webexFetch: t.mock.fn() },
-      [require.resolve('./send')]: { sendWebexMessage },
+    const loaded = loadWithMocks(require.resolve('../config/card'), {
+      [require.resolve('../api')]: { webexFetch: t.mock.fn() },
+      [require.resolve('../send')]: { sendWebexMessage },
     });
     t.after(loaded.restore);
 
@@ -572,9 +572,9 @@ describe('configuration submission and card flow', () => {
 
   test('validates card delivery inputs before sending', async (t) => {
     const sendWebexMessage = t.mock.fn();
-    const loaded = loadWithMocks(require.resolve('./config/card'), {
-      [require.resolve('./api')]: { webexFetch: t.mock.fn() },
-      [require.resolve('./send')]: { sendWebexMessage },
+    const loaded = loadWithMocks(require.resolve('../config/card'), {
+      [require.resolve('../api')]: { webexFetch: t.mock.fn() },
+      [require.resolve('../send')]: { sendWebexMessage },
     });
     t.after(loaded.restore);
     await assert.rejects(
@@ -617,10 +617,10 @@ describe('attachment-action ingress', () => {
       actions.get(apiPath.split('/').at(-1))
     );
     const handleConfigSubmission = t.mock.fn(async () => ({ ok: true }));
-    const loaded = loadWithMocks(require.resolve('./inbound/attachment-actions'), {
-      [require.resolve('./api')]: { webexFetch },
-      [require.resolve('./token')]: { getAccessToken: t.mock.fn() },
-      [require.resolve('./config/handle-submission')]: { handleConfigSubmission },
+    const loaded = loadWithMocks(require.resolve('../inbound/attachment-actions'), {
+      [require.resolve('../api')]: { webexFetch },
+      [require.resolve('../token')]: { getAccessToken: t.mock.fn() },
+      [require.resolve('../config/handle-submission')]: { handleConfigSubmission },
     });
     t.after(loaded.restore);
     const log = makeLog(t);

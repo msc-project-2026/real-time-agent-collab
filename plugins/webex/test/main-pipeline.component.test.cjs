@@ -3,11 +3,11 @@
 const assert = require('node:assert/strict');
 const { describe, test } = require('node:test');
 
-const { makeTempWorkspace } = require('./test/helpers.cjs');
-const { setPluginRuntime } = require('./runtime');
-const { makeRouteResultHandler } = require('./routing/result-handler');
-const { getConversations } = require('./context/conversations-store');
-const { getItems } = require('./context/items-store');
+const { makeTempWorkspace } = require('./helpers.cjs');
+const { setPluginRuntime } = require('../runtime');
+const { makeRouteResultHandler } = require('../routing/result-handler');
+const { getConversations } = require('../context/conversations-store');
+const { getItems } = require('../context/items-store');
 
 async function waitFor(predicate, timeoutMs = 4_000) {
   const deadline = Date.now() + timeoutMs;

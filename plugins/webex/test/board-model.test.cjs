@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { describe, test } = require('node:test');
 
 async function loadModel() {
-  return import('./board/src/model.js');
+  return import('../board/src/model.js');
 }
 
 // Category: Collaboration board domain model.

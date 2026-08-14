@@ -5,18 +5,18 @@ const { describe, test } = require('node:test');
 
 const {
   validateConversationProcessingResult,
-} = require('./processing/conversations/validate-result');
+} = require('../processing/conversations/validate-result');
 const {
   validateItemExtractionResult,
-} = require('./processing/items/validate-result');
+} = require('../processing/items/validate-result');
 const {
   applyItemExtractionResult,
   updateItemsFromResult,
-} = require('./processing/items/update-from-result');
+} = require('../processing/items/update-from-result');
 const {
   updateConversationsFromResult,
-} = require('./processing/conversations/update-from-result');
-const { loadWithMocks } = require('./test/helpers.cjs');
+} = require('../processing/conversations/update-from-result');
+const { loadWithMocks } = require('./helpers.cjs');
 
 const processingBatch = {
   spaceId: 'space-1',
@@ -301,9 +301,9 @@ describe('conversation-state persistence orchestration', () => {
       ],
     }));
     const writeConversationsState = t.mock.fn(async ({ state }) => state);
-    const storeId = require.resolve('./context/conversations-store');
+    const storeId = require.resolve('../context/conversations-store');
     const loaded = loadWithMocks(
-      require.resolve('./processing/conversations/update-from-result'),
+      require.resolve('../processing/conversations/update-from-result'),
       {
         [storeId]: { readConversationsState, writeConversationsState },
       }

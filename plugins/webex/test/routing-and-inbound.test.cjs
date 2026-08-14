@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const { describe, test } = require('node:test');
 
-const { loadWithMocks, makeLog, mockCalls } = require('./test/helpers.cjs');
+const { loadWithMocks, makeLog, mockCalls } = require('./helpers.cjs');
 
 function loadRouteHandler(t) {
   const collaborators = {
@@ -14,20 +14,20 @@ function loadRouteHandler(t) {
     handleRecallRequest: t.mock.fn(async () => undefined),
   };
 
-  const loaded = loadWithMocks(require.resolve('./routing/result-handler'), {
-    [require.resolve('./batch/append')]: {
+  const loaded = loadWithMocks(require.resolve('../routing/result-handler'), {
+    [require.resolve('../batch/append')]: {
       appendPendingMessage: collaborators.appendPendingMessage,
     },
-    [require.resolve('./batch/schedule')]: {
+    [require.resolve('../batch/schedule')]: {
       schedulePendingBatchStaging: collaborators.schedulePendingBatchStaging,
     },
-    [require.resolve('./batch/staging-handler')]: {
+    [require.resolve('../batch/staging-handler')]: {
       handleStagePendingBatchRequest: collaborators.handleStagePendingBatchRequest,
     },
-    [require.resolve('./config/handle-request')]: {
+    [require.resolve('../config/handle-request')]: {
       handleConfigRequest: collaborators.handleConfigRequest,
     },
-    [require.resolve('./recall/handle-request')]: {
+    [require.resolve('../recall/handle-request')]: {
       handleRecallRequest: collaborators.handleRecallRequest,
     },
   });
@@ -146,9 +146,9 @@ describe('inbound webhook identity dispatch', () => {
   test('routes only the supported identity/resource combinations', async (t) => {
     const handleInboundWebexMessage = t.mock.fn(async () => 'message-result');
     const handleInboundWebexAttachmentAction = t.mock.fn(async () => 'action-result');
-    const loaded = loadWithMocks(require.resolve('./inbound/index'), {
-      [require.resolve('./inbound/message')]: { handleInboundWebexMessage },
-      [require.resolve('./inbound/attachment-actions')]: {
+    const loaded = loadWithMocks(require.resolve('../inbound/index'), {
+      [require.resolve('../inbound/message')]: { handleInboundWebexMessage },
+      [require.resolve('../inbound/attachment-actions')]: {
         handleInboundWebexAttachmentAction,
       },
     });
@@ -209,22 +209,22 @@ function loadMessageHandler(t, overrides = {}) {
   };
   const makeRouteResultHandler = t.mock.fn(() => collaborators.routeOutputHandler);
 
-  const loaded = loadWithMocks(require.resolve('./inbound/message'), {
-    [require.resolve('./api')]: { webexFetch: collaborators.webexFetch },
-    [require.resolve('./token')]: { getAccessToken: collaborators.getAccessToken },
-    [require.resolve('./context/threads-store')]: {
+  const loaded = loadWithMocks(require.resolve('../inbound/message'), {
+    [require.resolve('../api')]: { webexFetch: collaborators.webexFetch },
+    [require.resolve('../token')]: { getAccessToken: collaborators.getAccessToken },
+    [require.resolve('../context/threads-store')]: {
       appendMessageToThreadContextWindow:
         collaborators.appendMessageToThreadContextWindow,
       getThread: collaborators.getThread,
     },
-    [require.resolve('./routing/instruction')]: {
+    [require.resolve('../routing/instruction')]: {
       buildRoutingInstruction: collaborators.buildRoutingInstruction,
     },
-    [require.resolve('./dispatch')]: {
+    [require.resolve('../dispatch')]: {
       dispatchToAgentForSpace: collaborators.dispatchToAgentForSpace,
     },
-    [require.resolve('./routing/result-handler')]: { makeRouteResultHandler },
-    [require.resolve('./runtime')]: {
+    [require.resolve('../routing/result-handler')]: { makeRouteResultHandler },
+    [require.resolve('../runtime')]: {
       getPluginRuntime: collaborators.getPluginRuntime,
       getRoutingAgentId: collaborators.getRoutingAgentId,
     },
@@ -248,7 +248,7 @@ function inboundContext(t, overrides = {}) {
 // These tests verify allow, deny, allowlist, and safe-default behavior without invoking external services.
 describe('direct-message policy', () => {
   test('supports allow, deny, allowlisted IDs/emails, and safe defaults', () => {
-    const { isDmAllowed } = require('./inbound/message');
+    const { isDmAllowed } = require('../inbound/message');
 
     assert.equal(isDmAllowed({ dmPolicy: 'allow' }, 'p1', 'p@example.com'), true);
     assert.equal(isDmAllowed({ dmPolicy: 'deny' }, 'p1', 'p@example.com'), false);

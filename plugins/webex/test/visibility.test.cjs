@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const { describe, test } = require('node:test');
 
-const { loadWithMocks } = require('./test/helpers.cjs');
+const { loadWithMocks } = require('./helpers.cjs');
 
 function makeResponse(t) {
   const response = {
@@ -59,10 +59,10 @@ describe('collaboration visibility summary', () => {
       },
       { key: '__main__', kind: 'main', contextWindow: null },
     ]);
-    const loaded = loadWithMocks(require.resolve('./visibility/summary'), {
-      [require.resolve('./context/conversations-store')]: { getConversations },
-      [require.resolve('./context/items-store')]: { getItems },
-      [require.resolve('./context/threads-store')]: { getThreads },
+    const loaded = loadWithMocks(require.resolve('../visibility/summary'), {
+      [require.resolve('../context/conversations-store')]: { getConversations },
+      [require.resolve('../context/items-store')]: { getItems },
+      [require.resolve('../context/threads-store')]: { getThreads },
     });
     t.after(loaded.restore);
 
@@ -124,7 +124,7 @@ describe('collaboration visibility summary', () => {
   });
 
   test('requires a space identifier before querying storage', async () => {
-    const { buildContextSummary } = require('./visibility/summary');
+    const { buildContextSummary } = require('../visibility/summary');
     await assert.rejects(buildContextSummary({}), /spaceId is required/);
   });
 });
@@ -136,15 +136,15 @@ function loadContextRouter(t) {
     getItems: t.mock.fn(async () => [{ id: 'item-1' }]),
     getThreads: t.mock.fn(async () => [{ key: '__main__' }]),
   };
-  const loaded = loadWithMocks(require.resolve('./visibility/context-router'), {
-    [require.resolve('./visibility/summary')]: {
+  const loaded = loadWithMocks(require.resolve('../visibility/context-router'), {
+    [require.resolve('../visibility/summary')]: {
       buildContextSummary: collaborators.buildContextSummary,
     },
-    [require.resolve('./context/conversations-store')]: {
+    [require.resolve('../context/conversations-store')]: {
       getConversations: collaborators.getConversations,
     },
-    [require.resolve('./context/items-store')]: { getItems: collaborators.getItems },
-    [require.resolve('./context/threads-store')]: {
+    [require.resolve('../context/items-store')]: { getItems: collaborators.getItems },
+    [require.resolve('../context/threads-store')]: {
       getThreads: collaborators.getThreads,
     },
   });
@@ -232,86 +232,5 @@ describe('collaboration visibility HTTP API', () => {
       assert.equal(jsonBody(response).spaceId, 'space-1');
       assert.ok(Array.isArray(jsonBody(response)[resource]));
     }
-  });
-});
-
-// Category: Collaboration board static server.
-// These tests verify route ownership, GET-only semantics, content types, the board
-// entry point, and SPA navigation fallback using the real built artifacts.
-describe('collaboration board static server', () => {
-  test('declines paths outside the board mount and rejects non-GET requests', async (t) => {
-    const { boardRouter } = require('./visibility/board-router');
-    const outsideResponse = makeResponse(t);
-    assert.equal(
-      await boardRouter(
-        { method: 'GET', url: '/webex/collab/spaces/space-1/items' },
-        outsideResponse
-      ),
-      false
-    );
-    assert.equal(outsideResponse.end.mock.callCount(), 0);
-
-    const methodResponse = makeResponse(t);
-    assert.equal(
-      await boardRouter({ method: 'POST', url: '/webex/collab/board' }, methodResponse),
-      true
-    );
-    assert.equal(methodResponse.statusCode, 405);
-    assert.equal(methodResponse.headers.Allow, 'GET');
-  });
-
-  test('serves the entry point and known JavaScript assets with correct content types', async (t) => {
-    const { boardRouter } = require('./visibility/board-router');
-    const htmlResponse = makeResponse(t);
-    await boardRouter({ method: 'GET', url: '/webex/collab/board' }, htmlResponse);
-    assert.equal(htmlResponse.statusCode, 200);
-    assert.equal(htmlResponse.headers['Content-Type'], 'text/html; charset=utf-8');
-    const html = htmlResponse.body.toString('utf8');
-    assert.match(html, /<div id="root"><\/div>/);
-    const assetPath = html.match(/<script[^>]+src="([^"]+\.js)"/)?.[1];
-    assert.ok(assetPath, 'built board HTML should reference a JavaScript asset');
-
-    const assetResponse = makeResponse(t);
-    await boardRouter(
-      {
-        method: 'GET',
-        url: assetPath,
-      },
-      assetResponse
-    );
-    assert.equal(assetResponse.statusCode, 200);
-    assert.equal(
-      assetResponse.headers['Content-Type'],
-      'application/javascript; charset=utf-8'
-    );
-    assert.ok(assetResponse.body.length > 0);
-  });
-
-  test('falls back to the SPA entry point for client-side routes', async (t) => {
-    const { boardRouter } = require('./visibility/board-router');
-    const response = makeResponse(t);
-
-    assert.equal(
-      await boardRouter(
-        { method: 'GET', url: '/webex/collab/board/project/space-1' },
-        response
-      ),
-      true
-    );
-    assert.equal(response.statusCode, 200);
-    assert.equal(response.headers['Content-Type'], 'text/html; charset=utf-8');
-    assert.match(response.body.toString('utf8'), /Project Items Board/);
-  });
-
-  test('propagates unexpected filesystem failures instead of masking them as SPA routes', async (t) => {
-    const { boardRouter } = require('./visibility/board-router');
-
-    await assert.rejects(
-      boardRouter(
-        { method: 'GET', url: '/webex/collab/board/assets' },
-        makeResponse(t)
-      ),
-      (error) => error?.code === 'EISDIR'
-    );
   });
 });

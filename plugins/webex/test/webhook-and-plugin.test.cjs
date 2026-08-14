@@ -5,7 +5,7 @@ const { createHmac } = require('node:crypto');
 const { Readable } = require('node:stream');
 const { describe, test } = require('node:test');
 
-const { loadWithMocks, makeLog, mockCalls } = require('./test/helpers.cjs');
+const { loadWithMocks, makeLog, mockCalls } = require('./helpers.cjs');
 
 function makeResponse(t) {
   const response = {
@@ -40,7 +40,7 @@ async function flushMicrotasks(rounds = 12) {
 // These tests verify normalised target lookup, unclaimed paths, and POST-only enforcement before request bodies are processed.
 describe('webhook path and HTTP-method handling', () => {
   test('normalises paths and declines requests without a registered target', async (t) => {
-    const { normPath, webhookRouter, targets } = require('./webhook/router');
+    const { normPath, webhookRouter, targets } = require('../webhook/router');
     targets.clear();
     t.after(() => targets.clear());
 
@@ -57,7 +57,7 @@ describe('webhook path and HTTP-method handling', () => {
   });
 
   test('returns 405 for a registered target using a non-POST method', async (t) => {
-    const { webhookRouter, targets } = require('./webhook/router');
+    const { webhookRouter, targets } = require('../webhook/router');
     targets.clear();
     t.after(() => targets.clear());
     targets.set('/webhooks/webex/oauth/default', {
@@ -82,7 +82,7 @@ describe('webhook path and HTTP-method handling', () => {
 // These tests verify payload-size limits, HMAC validation over raw bytes, malformed JSON rejection, immediate acknowledgement, and asynchronous target dispatch.
 describe('webhook body security and parsing', () => {
   test('rejects oversized, unsigned, and malformed payloads', async (t) => {
-    const { webhookRouter, targets } = require('./webhook/router');
+    const { webhookRouter, targets } = require('../webhook/router');
     targets.clear();
     t.after(() => targets.clear());
     targets.set('/webhooks/webex/oauth/default', {
@@ -125,7 +125,7 @@ describe('webhook body security and parsing', () => {
   });
 
   test('acknowledges valid signed JSON and dispatches the parsed payload', async (t) => {
-    const { webhookRouter, targets } = require('./webhook/router');
+    const { webhookRouter, targets } = require('../webhook/router');
     targets.clear();
     t.after(() => targets.clear());
     const handle = t.mock.fn(async () => undefined);
@@ -161,7 +161,7 @@ describe('webhook body security and parsing', () => {
   });
 
   test('accepts unsigned bodies only when verification is disabled', async (t) => {
-    const { webhookRouter, targets } = require('./webhook/router');
+    const { webhookRouter, targets } = require('../webhook/router');
     targets.clear();
     t.after(() => targets.clear());
     const handle = t.mock.fn(async () => undefined);
@@ -185,7 +185,7 @@ describe('webhook body security and parsing', () => {
   });
 
   test('rejects malformed signatures without dispatching', async (t) => {
-    const { webhookRouter, targets } = require('./webhook/router');
+    const { webhookRouter, targets } = require('../webhook/router');
     targets.clear();
     t.after(() => targets.clear());
     const handle = t.mock.fn();
@@ -210,7 +210,7 @@ describe('webhook body security and parsing', () => {
   });
 
   test('turns request-stream failures into a 400 response', async (t) => {
-    const { webhookRouter, targets } = require('./webhook/router');
+    const { webhookRouter, targets } = require('../webhook/router');
     targets.clear();
     t.after(() => targets.clear());
     targets.set('/webhooks/webex/oauth/default', {
@@ -233,7 +233,7 @@ describe('webhook body security and parsing', () => {
   });
 
   test('keeps the acknowledgement successful when async target handling fails', async (t) => {
-    const { webhookRouter, targets } = require('./webhook/router');
+    const { webhookRouter, targets } = require('../webhook/router');
     targets.clear();
     t.after(() => targets.clear());
     const error = t.mock.method(console, 'error', () => undefined);
@@ -264,7 +264,7 @@ describe('webhook body security and parsing', () => {
 // These tests verify in-memory token updates and the refresh-token form exchange for success and error responses.
 describe('OAuth token state and refresh', () => {
   test('stores the active token and refreshes it through the Webex OAuth endpoint', async (t) => {
-    const tokenModule = require('./token');
+    const tokenModule = require('../token');
     t.after(() => tokenModule.setAccessToken(null));
     tokenModule.setAccessToken('cached-token');
     assert.equal(tokenModule.getAccessToken(), 'cached-token');
@@ -293,7 +293,7 @@ describe('OAuth token state and refresh', () => {
       status: 401,
       text: async () => 'invalid refresh token',
     }));
-    const { refreshAccessToken } = require('./token');
+    const { refreshAccessToken } = require('../token');
 
     await assert.rejects(
       refreshAccessToken({
@@ -347,9 +347,9 @@ describe('webhook registration lifecycle', () => {
       }
       throw new Error(`unexpected call ${token} ${apiPath}`);
     });
-    const loaded = loadWithMocks(require.resolve('./webhook/registration'), {
-      [require.resolve('./api')]: { webexFetch },
-      [require.resolve('./token')]: { getAccessToken: () => 'oauth-token' },
+    const loaded = loadWithMocks(require.resolve('../webhook/registration'), {
+      [require.resolve('../api')]: { webexFetch },
+      [require.resolve('../token')]: { getAccessToken: () => 'oauth-token' },
     });
     t.after(loaded.restore);
 
@@ -382,9 +382,9 @@ describe('webhook registration lifecycle', () => {
       }
       throw new Error('unexpected Webex request');
     });
-    const loaded = loadWithMocks(require.resolve('./webhook/registration'), {
-      [require.resolve('./api')]: { webexFetch },
-      [require.resolve('./token')]: { getAccessToken: () => 'oauth-token' },
+    const loaded = loadWithMocks(require.resolve('../webhook/registration'), {
+      [require.resolve('../api')]: { webexFetch },
+      [require.resolve('../token')]: { getAccessToken: () => 'oauth-token' },
     });
     t.after(loaded.restore);
 
@@ -405,9 +405,9 @@ describe('webhook registration lifecycle', () => {
   });
 
   test('requires both ownership tokens and both target URLs', async (t) => {
-    const loaded = loadWithMocks(require.resolve('./webhook/registration'), {
-      [require.resolve('./api')]: { webexFetch: t.mock.fn() },
-      [require.resolve('./token')]: { getAccessToken: () => null },
+    const loaded = loadWithMocks(require.resolve('../webhook/registration'), {
+      [require.resolve('../api')]: { webexFetch: t.mock.fn() },
+      [require.resolve('../token')]: { getAccessToken: () => null },
     });
     t.after(loaded.restore);
 
@@ -431,9 +431,9 @@ describe('webhook registration lifecycle', () => {
     ];
 
     for (const [cfg, oauthToken, expected] of cases) {
-      const loaded = loadWithMocks(require.resolve('./webhook/registration'), {
-        [require.resolve('./api')]: { webexFetch },
-        [require.resolve('./token')]: { getAccessToken: () => oauthToken },
+      const loaded = loadWithMocks(require.resolve('../webhook/registration'), {
+        [require.resolve('../api')]: { webexFetch },
+        [require.resolve('../token')]: { getAccessToken: () => oauthToken },
       });
       await assert.rejects(
         loaded.subject.ensureWebhooks({
@@ -465,9 +465,9 @@ describe('webhook registration lifecycle', () => {
       }
       throw new Error('unexpected call');
     });
-    const loaded = loadWithMocks(require.resolve('./webhook/registration'), {
-      [require.resolve('./api')]: { webexFetch },
-      [require.resolve('./token')]: { getAccessToken: () => 'oauth-token' },
+    const loaded = loadWithMocks(require.resolve('../webhook/registration'), {
+      [require.resolve('../api')]: { webexFetch },
+      [require.resolve('../token')]: { getAccessToken: () => 'oauth-token' },
     });
     t.after(loaded.restore);
 
@@ -489,9 +489,9 @@ describe('webhook registration lifecycle', () => {
 
   test('requires a deregistration target and skips owners without tokens', async (t) => {
     const webexFetch = t.mock.fn(async () => ({ items: [] }));
-    const loaded = loadWithMocks(require.resolve('./webhook/registration'), {
-      [require.resolve('./api')]: { webexFetch },
-      [require.resolve('./token')]: { getAccessToken: () => null },
+    const loaded = loadWithMocks(require.resolve('../webhook/registration'), {
+      [require.resolve('../api')]: { webexFetch },
+      [require.resolve('../token')]: { getAccessToken: () => null },
     });
     t.after(loaded.restore);
 
@@ -521,35 +521,35 @@ function loadChannel(t) {
     runPendingBatchStagingRecovery: t.mock.fn(async () => undefined),
     handleStagePendingBatchRequest: t.mock.fn(async () => undefined),
   };
-  const loaded = loadWithMocks(require.resolve('./channel'), {
-    [require.resolve('./api')]: {
+  const loaded = loadWithMocks(require.resolve('../channel'), {
+    [require.resolve('../api')]: {
       WEBEX_API: 'https://webexapis.com/v1',
       webexFetch: collaborators.webexFetch,
     },
-    [require.resolve('./webhook/registration')]: {
+    [require.resolve('../webhook/registration')]: {
       ensureWebhooks: collaborators.ensureWebhooks,
       deregisterWebhooks: collaborators.deregisterWebhooks,
     },
-    [require.resolve('./token')]: {
+    [require.resolve('../token')]: {
       getAccessToken: collaborators.getAccessToken,
       setAccessToken: collaborators.setAccessToken,
       refreshAccessToken: collaborators.refreshAccessToken,
     },
-    [require.resolve('./webhook/router')]: {
+    [require.resolve('../webhook/router')]: {
       targets: collaborators.targets,
       normPath: (value) => value.replace(/\/$/, ''),
     },
-    [require.resolve('./inbound')]: {
+    [require.resolve('../inbound')]: {
       handleInboundWebexWebhook: collaborators.handleInboundWebexWebhook,
     },
-    [require.resolve('./send')]: {
+    [require.resolve('../send')]: {
       sendWebexMessage: collaborators.sendWebexMessage,
     },
-    [require.resolve('./batch/schedule')]: {
+    [require.resolve('../batch/schedule')]: {
       runPendingBatchStagingRecovery:
         collaborators.runPendingBatchStagingRecovery,
     },
-    [require.resolve('./batch/staging-handler')]: {
+    [require.resolve('../batch/staging-handler')]: {
       handleStagePendingBatchRequest:
         collaborators.handleStagePendingBatchRequest,
     },
@@ -991,7 +991,7 @@ describe('channel startup wiring', () => {
 // These tests verify the entry point installs the runtime, channel, three HTTP routes, and both batch-management tools with OpenClaw.
 describe('plugin registration and tool exposure', () => {
   test('requires runtime registration before runtime-dependent handlers execute', () => {
-    const runtimeModule = require('./runtime');
+    const runtimeModule = require('../runtime');
     runtimeModule.setPluginRuntime(null);
     assert.throws(
       () => runtimeModule.getPluginRuntime(),
@@ -1011,16 +1011,16 @@ describe('plugin registration and tool exposure', () => {
     const setPluginRuntime = t.mock.fn();
     const loadTool = { name: 'load' };
     const completeTool = { name: 'complete' };
-    const loaded = loadWithMocks(require.resolve('./index'), {
-      [require.resolve('./channel')]: { webexPlugin },
-      [require.resolve('./webhook/router')]: { webhookRouter },
-      [require.resolve('./visibility/context-router')]: { contextRouter },
-      [require.resolve('./visibility/board-router')]: { boardRouter },
-      [require.resolve('./runtime')]: { setPluginRuntime },
-      [require.resolve('./tools/load-processing-batch')]: {
+    const loaded = loadWithMocks(require.resolve('../index'), {
+      [require.resolve('../channel')]: { webexPlugin },
+      [require.resolve('../webhook/router')]: { webhookRouter },
+      [require.resolve('../visibility/context-router')]: { contextRouter },
+      [require.resolve('../visibility/board-router')]: { boardRouter },
+      [require.resolve('../runtime')]: { setPluginRuntime, setPluginConfig: t.mock.fn() },
+      [require.resolve('../tools/load-processing-batch')]: {
         loadProcessingBatchTool: () => loadTool,
       },
-      [require.resolve('./tools/complete-processing-batch')]: {
+      [require.resolve('../tools/complete-processing-batch')]: {
         completeProcessingBatchTool: () => completeTool,
       },
     });
@@ -1059,15 +1059,15 @@ describe('plugin registration and tool exposure', () => {
       completedAt: '2026-01-01T00:00:00Z',
     }));
     const loadModule = loadWithMocks(
-      require.resolve('./tools/load-processing-batch'),
+      require.resolve('../tools/load-processing-batch'),
       {
-        [require.resolve('./batch/load')]: { loadProcessingBatch },
+        [require.resolve('../batch/load')]: { loadProcessingBatch },
       }
     );
     const completeModule = loadWithMocks(
-      require.resolve('./tools/complete-processing-batch'),
+      require.resolve('../tools/complete-processing-batch'),
       {
-        [require.resolve('./batch/complete')]: { completeProcessingBatch },
+        [require.resolve('../batch/complete')]: { completeProcessingBatch },
       }
     );
     t.after(loadModule.restore);

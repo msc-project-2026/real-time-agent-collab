@@ -3,16 +3,16 @@
 const assert = require('node:assert/strict');
 const { describe, test } = require('node:test');
 
-const { asArray, cleanString, unique } = require('./utils/normalise');
-const { parseJsonObjectFromText } = require('./utils/parse-json');
-const { buildRoutingInstruction } = require('./routing/instruction');
+const { asArray, cleanString, unique } = require('../utils/normalise');
+const { parseJsonObjectFromText } = require('../utils/parse-json');
+const { buildRoutingInstruction } = require('../routing/instruction');
 const {
   buildConversationProcessingInstruction,
-} = require('./processing/conversations/instruction');
+} = require('../processing/conversations/instruction');
 const {
   buildItemExtractionInstruction,
-} = require('./processing/items/instruction');
-const { buildRecallInstruction } = require('./recall/instruction');
+} = require('../processing/items/instruction');
+const { buildRecallInstruction } = require('../recall/instruction');
 
 // Category: Normalisation helpers.
 // These tests verify defensive handling of arrays, strings, duplicates, and falsey values used throughout the pipeline.
