@@ -10,10 +10,11 @@ const { webexPlugin } = require('./channel');
 const { webhookRouter } = require('./webhook/router');
 const { contextRouter } = require('./visibility/context-router');
 const { boardRouter } = require('./visibility/board-router');
-const { setPluginRuntime } = require('./runtime');
+const { setPluginRuntime, setPluginConfig } = require('./runtime');
 
 function register(api) {
   setPluginRuntime(api.runtime);
+  setPluginConfig(api.pluginConfig);
 
   // Channel
   api.registerChannel({ plugin: webexPlugin });

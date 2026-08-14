@@ -201,9 +201,10 @@ function loadMessageHandler(t, overrides = {}) {
       contextWindow: [],
     })),
     buildRoutingInstruction: t.mock.fn(() => 'routing prompt'),
-    callRoutingLlm: t.mock.fn(async () => '{"routes":[]}'),
+    dispatchToAgentForSpace: t.mock.fn(async () => undefined),
     routeOutputHandler: t.mock.fn(async () => undefined),
     getPluginRuntime: t.mock.fn(() => ({ runtime: true })),
+    getRoutingAgentId: t.mock.fn(() => 'router'),
     ...overrides,
   };
   const makeRouteResultHandler = t.mock.fn(() => collaborators.routeOutputHandler);
@@ -219,12 +220,13 @@ function loadMessageHandler(t, overrides = {}) {
     [require.resolve('./routing/instruction')]: {
       buildRoutingInstruction: collaborators.buildRoutingInstruction,
     },
-    [require.resolve('./routing/direct-llm')]: {
-      callRoutingLlm: collaborators.callRoutingLlm,
+    [require.resolve('./dispatch')]: {
+      dispatchToAgentForSpace: collaborators.dispatchToAgentForSpace,
     },
     [require.resolve('./routing/result-handler')]: { makeRouteResultHandler },
     [require.resolve('./runtime')]: {
       getPluginRuntime: collaborators.getPluginRuntime,
+      getRoutingAgentId: collaborators.getRoutingAgentId,
     },
   });
   t.after(loaded.restore);
@@ -366,9 +368,9 @@ describe('early inbound rejection', () => {
 });
 
 // Category: Accepted inbound routing.
-// These tests verify an eligible message is contextualised, classified with the configured runtime, and handed to the route-result processor.
+// These tests verify an eligible message is contextualised, dispatched to the configured routing agent, and wired to the route-result processor.
 describe('accepted inbound routing', () => {
-  test('builds thread context and processes non-empty routing output', async (t) => {
+  test('builds thread context and dispatches to the routing agent', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const { handleInboundWebexMessage, collaborators, makeRouteResultHandler } =
       loadMessageHandler(t);
@@ -386,29 +388,31 @@ describe('accepted inbound routing', () => {
       excludeMessageIds: ['message-1'],
     });
     assert.equal(collaborators.buildRoutingInstruction.mock.callCount(), 1);
-    assert.deepEqual(collaborators.callRoutingLlm.mock.calls[0].arguments[0], {
-      instruction: 'routing prompt',
-      pluginRuntime: { runtime: true },
-      log: context.log,
-    });
+    assert.equal(collaborators.dispatchToAgentForSpace.mock.callCount(), 1);
+    const dispatchArgs = collaborators.dispatchToAgentForSpace.mock.calls[0].arguments[0];
+    assert.equal(dispatchArgs.spaceId, 'space-1');
+    assert.deepEqual(dispatchArgs.pluginRuntime, { runtime: true });
+    assert.equal(dispatchArgs.buildCtxPayload().CommandBody, 'routing prompt');
+    assert.equal(dispatchArgs.buildCtxPayload().SessionKey, 'agent:router:webex:space-1:msg-routing');
+    assert.equal(dispatchArgs.buildCtxPayload('recovery').SessionKey, 'agent:router:webex:space-1:msg-routing:recovery');
     assert.equal(makeRouteResultHandler.mock.callCount(), 1);
-    assert.deepEqual(collaborators.routeOutputHandler.mock.calls[0].arguments[0], {
-      text: '{"routes":[]}',
-    });
+    assert.equal(dispatchArgs.onAgentOutput, collaborators.routeOutputHandler);
   });
 
-  test('does not invoke route handling when the routing provider returns no text', async (t) => {
+  test('uses the configured routingAgentId for the session key', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
-    const { handleInboundWebexMessage, collaborators, makeRouteResultHandler } =
-      loadMessageHandler(t, { callRoutingLlm: t.mock.fn(async () => null) });
+    const { handleInboundWebexMessage, collaborators } = loadMessageHandler(t, {
+      getRoutingAgentId: t.mock.fn(() => 'fast-router'),
+    });
 
     await handleInboundWebexMessage(
-      { resource: 'messages', event: 'created', data: { id: 'message-no-route' } },
+      { resource: 'messages', event: 'created', data: { id: 'message-custom-agent' } },
       inboundContext(t)
     );
 
-    assert.equal(collaborators.callRoutingLlm.mock.callCount(), 1);
-    assert.equal(makeRouteResultHandler.mock.callCount(), 0);
+    assert.equal(collaborators.dispatchToAgentForSpace.mock.callCount(), 1);
+    const { buildCtxPayload } = collaborators.dispatchToAgentForSpace.mock.calls[0].arguments[0];
+    assert.equal(buildCtxPayload().SessionKey, 'agent:fast-router:webex:space-1:msg-routing');
   });
 
   test('stops before routing a bot-authored message after recording thread context', async (t) => {
@@ -433,6 +437,6 @@ describe('accepted inbound routing', () => {
     );
 
     assert.equal(collaborators.appendMessageToThreadContextWindow.mock.callCount(), 1);
-    assert.equal(collaborators.callRoutingLlm.mock.callCount(), 0);
+    assert.equal(collaborators.dispatchToAgentForSpace.mock.callCount(), 0);
   });
 });

@@ -16,7 +16,20 @@ function getPluginRuntime() {
   return pluginRuntime;
 }
 
+// Holds plugin-specific config (set via setPluginConfig() by register() in index.js).
+let pluginConfig = null;
+
+function setPluginConfig(config) {
+  pluginConfig = config ?? {};
+}
+
+function getRoutingAgentId() {
+  return pluginConfig?.routingAgentId ?? 'main';
+}
+
 module.exports = {
   setPluginRuntime,
   getPluginRuntime,
+  setPluginConfig,
+  getRoutingAgentId,
 };

@@ -9,9 +9,9 @@ const {
   getThread,
 } = require('../context/threads-store');
 const { buildRoutingInstruction } = require('../routing/instruction');
-const { callRoutingLlm } = require('../routing/direct-llm');
+const { dispatchToAgentForSpace } = require('../dispatch');
 const { makeRouteResultHandler } = require('../routing/result-handler');
-const { getPluginRuntime } = require('../runtime');
+const { getPluginRuntime, getRoutingAgentId } = require('../runtime');
 
 // 30-second deduplication window — Webex may deliver the same webhook event twice.
 const seenMessageIds = new Set();
@@ -49,7 +49,9 @@ async function handleInboundWebexMessage(
 
   // Drop duplicates before any API calls — Webex may redeliver the same event.
   if (isDuplicate(payload.data?.id)) {
-    log?.info?.(`[webex:${account.accountId}] ignoring duplicate message`, { messageId: payload.data?.id });
+    log?.info?.(`[webex:${account.accountId}] ignoring duplicate message`, {
+      messageId: payload.data?.id,
+    });
     return;
   }
 
@@ -102,22 +104,52 @@ async function handleInboundWebexMessage(
     return;
   }
 
-  // Routing: direct LLM call (Gemini Flash) — self-contained, no agent config required.
+  // Routing: dispatch to the configured routing agent for classification.
   const routingInstruction = buildRoutingInstruction({
     message: msg,
     botId,
     thread,
   });
 
-  const routeText = await callRoutingLlm({
-    instruction: routingInstruction,
-    pluginRuntime: getPluginRuntime(),
-    log,
-  });
+  const baseSessionKey = `agent:${getRoutingAgentId()}:webex:${msg.roomId}:msg-routing`;
 
-  if (routeText) {
-    await makeRouteResultHandler({ message: msg, account, log })({ text: routeText });
+  function buildMessageRoutingCtxPayload(sessionKeySuffix) {
+    return {
+      Body: msg.text ?? '',
+      RawBody: msg.text ?? '',
+      CommandBody: routingInstruction,
+      From: `webex:${msg.personId}`,
+      To: `webex:${msg.roomId}`,
+      SessionKey: sessionKeySuffix
+        ? `${baseSessionKey}:${sessionKeySuffix}`
+        : baseSessionKey,
+      WebexRoomId: msg.roomId,
+      AccountId: account.accountId,
+      ChatType: msg.roomType === 'direct' ? 'direct' : 'group',
+      SenderName: msg.personEmail ?? msg.personId,
+      SenderId: msg.personId,
+      Provider: 'webex',
+      Surface: 'webex',
+      MessageSid: msg.id,
+      Timestamp: msg.created,
+      OriginatingChannel: 'webex',
+      OriginatingTo: `webex:${msg.roomId}`,
+      MessageThreadId: msg.parentId,
+    };
   }
+
+  await dispatchToAgentForSpace({
+    pluginRuntime: getPluginRuntime(),
+    spaceId: msg.roomId,
+    account,
+    log,
+    buildCtxPayload: buildMessageRoutingCtxPayload,
+    onAgentOutput: makeRouteResultHandler({
+      message: msg,
+      account,
+      log,
+    }),
+  });
 }
 
 module.exports = {

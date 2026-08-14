@@ -44,6 +44,10 @@
         "items": { "type": "string" },
         "description": "Allowed sender emails or person IDs (dmPolicy: allowlisted)"
       },
+      "routingAgentId": {
+        "type": "string",
+        "description": "Agent ID used for message routing classification. Configure this agent with a lightweight model in the host openclaw.json. Defaults to 'main'."
+      },
       "accessToken": {
         "type": "string",
         "description": "OAuth access token for receiving all space messages"
