@@ -12,8 +12,8 @@ function makeItemExtractionResultHandler({
   account,
   log,
 }) {
-  const spaceId = processingBatch.spaceId;
-  const batchId = processingBatch.batchId;
+  const spaceId = processingBatch?.spaceId;
+  const batchId = processingBatch?.batchId;
 
   return async ({ text }) => {
     log?.info?.(
@@ -56,7 +56,7 @@ function makeItemExtractionResultHandler({
     );
 
     try {
-      return handleItemExtractionResult({
+      return await handleItemExtractionResult({
         itemExtractionResult: parsed,
         processingBatch,
         touchedConversations,

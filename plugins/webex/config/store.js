@@ -28,7 +28,7 @@ async function writeActiveConfig({ spaceId, config, source, explicitRoot }) {
     throw new Error('config object is required');
   }
 
-  const previous = readActiveConfig({ spaceId, explicitRoot });
+  const previous = await readActiveConfig({ spaceId, explicitRoot });
 
   const record = {
     schemaVersion: 1,

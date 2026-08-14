@@ -14,7 +14,7 @@ function makeConversationProcessingResultHandler({
   account,
   log,
 }) {
-  const spaceId = processingBatch.spaceId;
+  const spaceId = processingBatch?.spaceId;
 
   return async ({ text }) => {
     log?.info?.(
@@ -54,7 +54,7 @@ function makeConversationProcessingResultHandler({
     );
 
     try {
-      return handleConversationProcessingResult({
+      return await handleConversationProcessingResult({
         conversationProcessingResult: parsed,
         processingBatch,
         existingConversations,

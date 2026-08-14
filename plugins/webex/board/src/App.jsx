@@ -1,40 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
+import {
+  buildBoardCounts,
+  filterProjectItems,
+  formatDate,
+  isWorkItem,
+  normalizeItem,
+  shortId,
+} from './model.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function shortId(id) {
-  if (!id) return '—';
-  return String(id).slice(0, 8);
-}
-
-function formatDate(ts) {
-  if (!ts) return '—';
-  try {
-    return new Date(ts).toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return String(ts);
-  }
-}
-
-function isWorkItem(item) {
-  return item.type === 'task' || item.type === 'issue';
-}
-
-function normalizeItem(item) {
-  return {
-    ...item,
-    title: item.title ?? '(untitled)',
-    approvalStatus: item.approvalStatus ?? 'proposed',
-    assignee: item.assignee ?? item.owner ?? '',
-    assigneeType: item.assigneeType ?? null,
-    delegationStatus: item.delegationStatus ?? 'not_delegated',
-  };
-}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -340,25 +314,11 @@ function ProjectRecord({ items, editingId, onEdit, onEditSave, onEditCancel }) {
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
-  const filtered = items
-    .filter((item) => {
-      if (typeFilter && item.type !== typeFilter) return false;
-      if (statusFilter && item.status !== statusFilter) return false;
-      if (search) {
-        const q = search.toLowerCase();
-        return (
-          item.title?.toLowerCase().includes(q) ||
-          item.description?.toLowerCase().includes(q) ||
-          item.owner?.toLowerCase().includes(q)
-        );
-      }
-      return true;
-    })
-    .sort((a, b) => {
-      const da = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
-      const db = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
-      return db - da;
-    });
+  const filtered = filterProjectItems(items, {
+    search,
+    typeFilter,
+    statusFilter,
+  });
 
   return (
     <div>
@@ -533,17 +493,7 @@ export default function App() {
   const boardItems = workItems.filter((i) => i.approvalStatus === 'approved');
   const recordItems = items.filter((i) => !isWorkItem(i));
 
-  const counts = {
-    total: items.length,
-    proposed: items.filter((i) => i.approvalStatus === 'proposed').length,
-    approved: items.filter((i) => i.approvalStatus === 'approved').length,
-    open: items.filter((i) => i.status === 'open').length,
-    in_progress: items.filter((i) => i.status === 'in_progress').length,
-    blocked: items.filter((i) => i.status === 'blocked').length,
-    resolved: items.filter((i) => i.status === 'resolved').length,
-    risks: items.filter((i) => i.type === 'risk').length,
-    decisions: items.filter((i) => i.type === 'decision').length,
-  };
+  const counts = buildBoardCounts(items);
 
   return (
     <div className="app">

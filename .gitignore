@@ -4,3 +4,11 @@ secrets/
 ralph/
 CLAUDE.md
 client-brief.md
+failures-docs-Asa/
+node_modules/
+.env
+.env.bak
+.mcp.json
+AGENTS.md
+deploy-cli.pem
+graphify-out/

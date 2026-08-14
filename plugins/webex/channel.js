@@ -114,6 +114,26 @@ function resolveAccount(cfg, accountId = DEFAULT_ACCOUNT) {
   };
 }
 
+async function cleanupAccountResources({
+  account,
+  cfg,
+  log,
+  refreshInterval,
+  botWebhookPath,
+  oauthWebhookPath,
+}) {
+  if (refreshInterval) clearInterval(refreshInterval);
+  log?.info?.(`[webex:${account.accountId}] stopping`);
+  targets.delete(botWebhookPath);
+  targets.delete(oauthWebhookPath);
+
+  await deregisterWebhooks(cfg, { log }).catch((err) =>
+    log?.warn?.(
+      `[webex:${account.accountId}] webhook deregister failed: ${err?.message}`
+    )
+  );
+}
+
 const webexPlugin = {
   id: 'webex',
   meta: {
@@ -161,7 +181,7 @@ const webexPlugin = {
     buildToolContext: ({ context, hasRepliedRef }) => ({
       currentChannelId: context.To?.trim() || undefined,
       currentThreadTs:
-        context.MessathreadId != null
+        context.MessageThreadId != null
           ? String(context.MessageThreadId)
           : context.ReplyToId,
       hasRepliedRef,
@@ -430,18 +450,17 @@ const webexPlugin = {
       try {
         await new Promise(() => {}); // never resolves
       } finally {
-        if (refreshInterval) clearInterval(refreshInterval);
-        log?.info?.(`[webex:${account.accountId}] stopping`);
-        targets.delete(botWebhookPath);
-
-        await deregisterWebhooks(cfg, { log }).catch((err) =>
-          log?.warn?.(
-            `[webex:${account.accountId}] webhook deregister failed: ${err?.message}`
-          )
-        );
+        await cleanupAccountResources({
+          account,
+          cfg,
+          log,
+          refreshInterval,
+          botWebhookPath,
+          oauthWebhookPath,
+        });
       }
     },
   },
 };
 
-module.exports = { webexPlugin, DEFAULT_ACCOUNT };
+module.exports = { webexPlugin, DEFAULT_ACCOUNT, cleanupAccountResources };
