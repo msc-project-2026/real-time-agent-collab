@@ -3,7 +3,7 @@
 
 const { sendWebexMessage } = require('../send');
 
-function makeRecallResultHandler({ message, account, log }) {
+function makeRecallResultHandler({ message, account, log, sendFn = sendWebexMessage }) {
   const spaceId = message.roomId;
 
   return async ({ text }) => {
@@ -40,7 +40,7 @@ function makeRecallResultHandler({ message, account, log }) {
       })}`
     );
 
-    await sendWebexMessage({
+    await sendFn({
       token,
       to: spaceId,
       markdown: responseText,

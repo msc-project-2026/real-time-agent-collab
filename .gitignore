@@ -12,3 +12,7 @@ node_modules/
 AGENTS.md
 deploy-cli.pem
 graphify-out/
+
+# Evaluation outputs/results
+plugins/webex/evaluation/outputs/
+plugins/webex/evaluation/**/*.local.json

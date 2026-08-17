@@ -1,0 +1,393 @@
+{
+  "id": "scenario-01-release-readiness",
+  "title": "Release readiness for reporting dashboard",
+  "type": "release_readiness",
+  "spaceId": "scenario-01-release-readiness",
+  "participants": [
+    {
+      "name": "Maya",
+      "personId": "eval-maya",
+      "email": "maya@example.test"
+    },
+    {
+      "name": "Ben",
+      "personId": "eval-ben",
+      "email": "ben@example.test"
+    },
+    {
+      "name": "Aisha",
+      "personId": "eval-aisha",
+      "email": "aisha@example.test"
+    },
+    {
+      "name": "Noah",
+      "personId": "eval-noah",
+      "email": "noah@example.test"
+    }
+  ],
+  "metadata": {
+    "project": "Internal reporting dashboard for customer success teams",
+    "mainEvaluationFocus": "End-to-end extraction of release tasks, decisions, risks, dependencies, updates, and recall answers.",
+    "expectedDifficulty": "medium",
+    "notes": "Includes threaded replies, tentative/noisy ideas, clear updates, and two recall checks."
+  },
+  "messages": [
+    {
+      "number": 1,
+      "round": 1,
+      "sender": "Maya",
+      "where": "top-level",
+      "text": "Can we use this thread to check what still has to happen before we show the reporting dashboard to the customer success leads next week?",
+      "expectedRoute": "task_request"
+    },
+    {
+      "number": 2,
+      "round": 1,
+      "sender": "Ben",
+      "where": "top-level",
+      "text": "The main report view is mostly there. Filters for date range and account owner work, but the empty state still looks rough.",
+      "expectedRoute": "no special route"
+    },
+    {
+      "number": 3,
+      "round": 1,
+      "sender": "Aisha",
+      "where": "reply to 2",
+      "replyTo": 2,
+      "text": "Agree. We should clean up the empty state before the walkthrough because some teams will not have enough historical data yet.",
+      "expectedRoute": "task_request"
+    },
+    {
+      "number": 4,
+      "round": 1,
+      "sender": "Noah",
+      "where": "top-level",
+      "text": "The export button is still confusing. It says download everything, but it actually only exports the filtered rows.",
+      "expectedRoute": "no special route"
+    },
+    {
+      "number": 5,
+      "round": 1,
+      "sender": "Maya",
+      "where": "reply to 4",
+      "replyTo": 4,
+      "text": "Let\u2019s rename that to export filtered results. We do not need full-account export for this release.",
+      "expectedRoute": "task_request"
+    },
+    {
+      "number": 6,
+      "round": 1,
+      "sender": "Ben",
+      "where": "top-level",
+      "text": "There is also the question of permissions. Right now any customer success manager can see all accounts in the demo environment.",
+      "expectedRoute": "no special route"
+    },
+    {
+      "number": 7,
+      "round": 1,
+      "sender": "Aisha",
+      "where": "reply to 6",
+      "replyTo": 6,
+      "text": "For the pilot, I think we should restrict the dashboard to the accounts owned by the signed-in manager. Otherwise the demo sends the wrong message.",
+      "expectedRoute": "task_request"
+    },
+    {
+      "number": 8,
+      "round": 1,
+      "sender": "Noah",
+      "where": "top-level",
+      "text": "Dark mode would be nice eventually, but I would not touch it now.",
+      "expectedRoute": "no special route"
+    },
+    {
+      "number": 9,
+      "round": 2,
+      "sender": "Maya",
+      "where": "top-level",
+      "text": "I checked the pilot notes again. The customer success leads mainly care about account health, recent usage, and the owner filter. They did not ask for dark mode or full export.",
+      "expectedRoute": "no special route"
+    },
+    {
+      "number": 10,
+      "round": 2,
+      "sender": "Ben",
+      "where": "reply to 9",
+      "replyTo": 9,
+      "text": "Then we can explicitly leave dark mode and full-account export out of the pilot scope.",
+      "expectedRoute": "no special route"
+    },
+    {
+      "number": 11,
+      "round": 2,
+      "sender": "Aisha",
+      "where": "top-level",
+      "text": "One risk: the account health score is still using last week\u2019s mock calculation. It looks plausible but it is not the final formula.",
+      "expectedRoute": "no special route"
+    },
+    {
+      "number": 12,
+      "round": 2,
+      "sender": "Noah",
+      "where": "reply to 11",
+      "replyTo": 11,
+      "text": "We should label the score as preview data in the walkthrough unless the analytics service is ready before then.",
+      "expectedRoute": "task_request"
+    },
+    {
+      "number": 13,
+      "round": 2,
+      "sender": "Ben",
+      "where": "top-level",
+      "text": "The analytics service is meant to expose the real score endpoint tomorrow, but I have not seen the contract yet.",
+      "expectedRoute": "no special route"
+    },
+    {
+      "number": 14,
+      "round": 2,
+      "sender": "Maya",
+      "where": "reply to 13",
+      "replyTo": 13,
+      "text": "Can someone check with analytics whether the score endpoint and response shape are confirmed?",
+      "expectedRoute": "task_request"
+    },
+    {
+      "number": 15,
+      "round": 2,
+      "sender": "Noah",
+      "where": "top-level",
+      "text": "I can do that after standup. If they do not have the contract, we should keep the preview label and avoid presenting the score as final.",
+      "expectedRoute": "task_request"
+    },
+    {
+      "number": 16,
+      "round": 3,
+      "sender": "Aisha",
+      "where": "top-level",
+      "text": "Quick update: I cleaned up the empty state copy and added the illustration. It now says there is not enough activity for the selected filters.",
+      "expectedRoute": "task_request"
+    },
+    {
+      "number": 17,
+      "round": 3,
+      "sender": "Ben",
+      "where": "reply to 16",
+      "replyTo": 16,
+      "text": "Nice. That means the empty-state work is done from my side.",
+      "expectedRoute": "no special route"
+    },
+    {
+      "number": 18,
+      "round": 3,
+      "sender": "Noah",
+      "where": "top-level",
+      "text": "I spoke to analytics. The endpoint will exist, but the response shape is not stable until Friday.",
+      "expectedRoute": "no special route"
+    },
+    {
+      "number": 19,
+      "round": 3,
+      "sender": "Maya",
+      "where": "reply to 18",
+      "replyTo": 18,
+      "text": "Okay, then for next week we keep the preview label on the score and do not depend on the final endpoint.",
+      "expectedRoute": "task_request"
+    },
+    {
+      "number": 20,
+      "round": 3,
+      "sender": "Ben",
+      "where": "top-level",
+      "text": "I can rename the export button today. It is just copy and one snapshot update.",
+      "expectedRoute": "task_request"
+    },
+    {
+      "number": 21,
+      "round": 3,
+      "sender": "Aisha",
+      "where": "top-level",
+      "text": "Permissions are probably the only non-trivial bit left. We need to make sure managers only see their own accounts before the walkthrough.",
+      "expectedRoute": "task_request"
+    },
+    {
+      "number": 22,
+      "round": 3,
+      "sender": "Maya",
+      "where": "top-level",
+      "text": "@Collaboration, what are the main things still left before the pilot walkthrough?",
+      "expectedRoute": "recall_request"
+    },
+    {
+      "number": 23,
+      "round": 4,
+      "sender": "Ben",
+      "where": "top-level",
+      "text": "Update from me: the export button now says export filtered results, and the snapshot is updated.",
+      "expectedRoute": "task_request"
+    },
+    {
+      "number": 24,
+      "round": 4,
+      "sender": "Noah",
+      "where": "top-level",
+      "text": "I also added the preview data label next to the account health score. It is visible in the report header.",
+      "expectedRoute": "task_request"
+    },
+    {
+      "number": 25,
+      "round": 4,
+      "sender": "Maya",
+      "where": "top-level",
+      "text": "@Collaboration, what did we decide to leave out of the pilot scope?",
+      "expectedRoute": "recall_request"
+    }
+  ],
+  "contextNotes": [
+    "The team is preparing an internal reporting dashboard for a pilot walkthrough.",
+    "Several concrete release tasks are identified: empty state, export label, account permissions, preview label, analytics endpoint check.",
+    "Dark mode and full-account export are explicitly left out of pilot scope.",
+    "Later updates resolve or narrow several earlier items."
+  ],
+  "expectedItems": [
+    {
+      "id": "expected-01",
+      "title": "Clean up the empty state for accounts without enough historical data",
+      "type": "task",
+      "mustExtract": true,
+      "evidenceMessages": [2, 3, 16, 17],
+      "expectedStatus": "resolved",
+      "notes": "Initially open after messages 2-3; should be updated/resolved after messages 16-17."
+    },
+    {
+      "id": "expected-02",
+      "title": "Rename export button to clarify that it exports filtered results",
+      "type": "task",
+      "mustExtract": true,
+      "evidenceMessages": [4, 5, 20, 23],
+      "expectedStatus": "resolved",
+      "notes": "Should not become a full-account export task."
+    },
+    {
+      "id": "expected-03",
+      "title": "Restrict dashboard visibility to accounts owned by the signed-in manager",
+      "type": "task",
+      "mustExtract": true,
+      "evidenceMessages": [6, 7, 21],
+      "expectedStatus": "open",
+      "notes": "Main unresolved implementation task by the end."
+    },
+    {
+      "id": "expected-04",
+      "title": "Leave dark mode and full-account export out of the pilot scope",
+      "type": "decision",
+      "mustExtract": true,
+      "evidenceMessages": [8, 9, 10],
+      "expectedStatus": "n/a",
+      "notes": "Dark mode and full-account export should not be active tasks."
+    },
+    {
+      "id": "expected-05",
+      "title": "Account health score is not final because it uses a mock calculation",
+      "type": "risk",
+      "mustExtract": true,
+      "evidenceMessages": [11, 12, 13, 18, 19, 24],
+      "expectedStatus": "open",
+      "notes": "Risk is mitigated by preview labelling but final formula/contract remains unstable."
+    },
+    {
+      "id": "expected-06",
+      "title": "Check whether analytics score endpoint and response shape are confirmed",
+      "type": "task",
+      "mustExtract": true,
+      "evidenceMessages": [13, 14, 15, 18],
+      "expectedStatus": "resolved",
+      "notes": "Noah checks with analytics; endpoint exists but response shape is unstable until Friday."
+    },
+    {
+      "id": "expected-07",
+      "title": "Keep preview data label on the account health score for the walkthrough",
+      "type": "task",
+      "mustExtract": true,
+      "evidenceMessages": [12, 19, 24],
+      "expectedStatus": "resolved",
+      "notes": "Completed when label is added."
+    },
+    {
+      "id": "expected-08",
+      "title": "Analytics score response shape is not stable until Friday",
+      "type": "dependency",
+      "mustExtract": true,
+      "evidenceMessages": [13, 18, 19],
+      "expectedStatus": "open",
+      "notes": "Dashboard should not depend on final analytics endpoint for the pilot walkthrough."
+    },
+    {
+      "id": "expected-09",
+      "title": "Build dark mode",
+      "type": "task",
+      "mustExtract": false,
+      "evidenceMessages": [8, 9, 10],
+      "expectedStatus": "n/a",
+      "notes": "Should not be extracted as an active task."
+    },
+    {
+      "id": "expected-10",
+      "title": "Build full-account export",
+      "type": "task",
+      "mustExtract": false,
+      "evidenceMessages": [4, 5, 9, 10],
+      "expectedStatus": "n/a",
+      "notes": "Should not be extracted as an active task; only filtered-results export is in scope."
+    }
+  ],
+  "updates": [
+    {
+      "messageNumber": 16,
+      "earlierItemAffected": "Clean up the empty state for accounts without enough historical data",
+      "expectedChange": "Mark as resolved or no longer open.",
+      "notes": "Message 17 reinforces that the empty-state work is done."
+    },
+    {
+      "messageNumber": 18,
+      "earlierItemAffected": "Check whether analytics score endpoint and response shape are confirmed",
+      "expectedChange": "Mark the check as resolved, but maintain the dependency/risk that response shape is unstable until Friday.",
+      "notes": "Noah got the answer, but the answer means the release should not depend on the final endpoint."
+    },
+    {
+      "messageNumber": 23,
+      "earlierItemAffected": "Rename export button to clarify that it exports filtered results",
+      "expectedChange": "Mark as resolved or no longer open.",
+      "notes": "The button text and snapshot update are completed."
+    },
+    {
+      "messageNumber": 24,
+      "earlierItemAffected": "Keep preview data label on the account health score for the walkthrough",
+      "expectedChange": "Mark as resolved or no longer open.",
+      "notes": "Preview label has been added."
+    }
+  ],
+  "recallChecks": [
+    {
+      "questionMessageNumber": 22,
+      "question": "@Collaboration, what are the main things still left before the pilot walkthrough?",
+      "expectedAnswerPoints": [
+        "Permissions/account visibility still need work.",
+        "The export button rename may still be pending at that point.",
+        "The account health score should keep a preview label because analytics response shape is not stable.",
+        "The empty state has already been cleaned up."
+      ],
+      "evidenceMessages": [16, 18, 19, 20, 21],
+      "notes": "Asked before messages 23 and 24, so export rename and preview label may still be pending."
+    },
+    {
+      "questionMessageNumber": 25,
+      "question": "@Collaboration, what did we decide to leave out of the pilot scope?",
+      "expectedAnswerPoints": [
+        "Dark mode is out of pilot scope.",
+        "Full-account export is out of pilot scope.",
+        "Only filtered-results export is in scope."
+      ],
+      "evidenceMessages": [5, 8, 9, 10],
+      "notes": "Should not claim export is entirely out of scope; only full-account export is out."
+    }
+  ]
+}

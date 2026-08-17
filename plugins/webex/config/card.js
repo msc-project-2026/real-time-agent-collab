@@ -77,7 +77,7 @@ function buildConfigCard({ config }) {
   };
 }
 
-async function sendConfigCard({ spaceId, account, log, config }) {
+async function sendConfigCard({ spaceId, account, log, config, sendFn = sendWebexMessage }) {
   if (!spaceId) throw new Error('spaceId is required');
   if (!account) throw new Error('account is required');
 
@@ -86,7 +86,7 @@ async function sendConfigCard({ spaceId, account, log, config }) {
 
   const card = buildConfigCard({ config: config ?? {} });
 
-  const msg = await sendWebexMessage({
+  const msg = await sendFn({
     token,
     to: spaceId,
     markdown: 'Please review this collaboration space configuration.',

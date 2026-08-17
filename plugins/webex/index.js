@@ -11,6 +11,7 @@ const { webhookRouter } = require('./webhook/router');
 const { contextRouter } = require('./visibility/context-router');
 const { boardRouter } = require('./visibility/board-router');
 const { setPluginRuntime, setPluginConfig } = require('./runtime');
+const { evalRouter } = require('./eval/router');
 
 function register(api) {
   setPluginRuntime(api.runtime);
@@ -33,6 +34,15 @@ function register(api) {
     match: 'prefix',
     handler: boardRouter,
   });
+
+  if (process.env.WEBEX_EVAL_ROUTES_ENABLED === 'true') {
+    api.registerHttpRoute({
+      path: '/webex/collab/eval/',
+      auth: 'plugin',
+      match: 'prefix',
+      handler: evalRouter,
+    });
+  }
 
   api.registerHttpRoute({
     path: '/webex/collab/',

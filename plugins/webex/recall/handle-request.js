@@ -7,7 +7,7 @@ const { buildRecallContext } = require('./context');
 const { buildRecallInstruction } = require('./instruction');
 const { makeRecallResultHandler } = require('./result-handler');
 
-async function handleRecallRequest({ message, account, log }) {
+async function handleRecallRequest({ message, account, log, sendFn }) {
   if (!message?.roomId) throw new Error('message.roomId is required');
   if (!account) throw new Error('account is required');
 
@@ -60,6 +60,7 @@ async function handleRecallRequest({ message, account, log }) {
       message,
       account,
       log,
+      sendFn,
     }),
   });
 

@@ -5,7 +5,7 @@ const { readActiveConfig } = require('./store');
 const { sendConfigCard } = require('./card');
 
 // Handler
-async function handleConfigRequest({ spaceId, account, log }) {
+async function handleConfigRequest({ spaceId, account, log, sendFn }) {
   if (!spaceId) throw new Error('spaceId is required');
   if (!account) throw new Error('account is required');
 
@@ -21,6 +21,7 @@ async function handleConfigRequest({ spaceId, account, log }) {
     account,
     log,
     config: activeConfig?.config ?? {},
+    sendFn,
   });
 }
 

@@ -23,7 +23,13 @@ function hasRoute(routes, route) {
 }
 
 // Handle route result
-async function handleRouteResult({ routeResult, message, account, log }) {
+async function handleRouteResult({
+  routeResult,
+  message,
+  account,
+  log,
+  sendFn,
+}) {
   if (!message?.roomId) throw new Error('message.roomId is required');
   if (!account) throw new Error('account is required');
 
@@ -70,6 +76,7 @@ async function handleRouteResult({ routeResult, message, account, log }) {
       spaceId,
       account,
       log,
+      sendFn,
     });
   }
 
@@ -79,6 +86,7 @@ async function handleRouteResult({ routeResult, message, account, log }) {
       message,
       account,
       log,
+      sendFn,
     });
   }
 
@@ -100,7 +108,7 @@ async function handleRouteResult({ routeResult, message, account, log }) {
 }
 
 // Make handler for parsing message routing result
-function makeRouteResultHandler({ message, account, log }) {
+function makeRouteResultHandler({ message, account, log, sendFn }) {
   const spaceId = message.roomId;
 
   return async ({ text }) => {
@@ -153,6 +161,7 @@ function makeRouteResultHandler({ message, account, log }) {
         message,
         account,
         log,
+        sendFn,
       });
     } catch (err) {
       log?.error?.(

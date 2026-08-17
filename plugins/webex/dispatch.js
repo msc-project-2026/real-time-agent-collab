@@ -139,4 +139,5 @@ async function dispatchToAgentForSpace({
 
 module.exports = {
   dispatchToAgentForSpace,
+  dispatchQueues,
 };

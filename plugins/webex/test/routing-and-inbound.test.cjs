@@ -96,6 +96,7 @@ describe('special routing branches', () => {
       spaceId: 'space-1',
       account: context.account,
       log: context.log,
+      sendFn: undefined,
     });
     assert.equal(collaborators.handleRecallRequest.mock.callCount(), 1);
     assert.equal(collaborators.handleStagePendingBatchRequest.mock.callCount(), 1);

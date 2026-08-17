@@ -1,0 +1,115 @@
+{
+  "id": "scenario-01-brainstorming",
+  "title": "Notification feature brainstorm",
+  "spaceId": "scenario-01-brainstorming",
+  "participants": [
+    {
+      "name": "Tom",
+      "personId": "tom",
+      "email": "tom@example.test"
+    },
+    {
+      "name": "Aisha",
+      "personId": "aisha",
+      "email": "aisha@example.test"
+    },
+    {
+      "name": "Luis",
+      "personId": "luis",
+      "email": "luis@example.test"
+    }
+  ],
+  "messages": [
+    {
+      "number": 1,
+      "round": 1,
+      "sender": "Tom",
+      "where": "top-level",
+      "text": "Hey team, we need to decide on our notification strategy for the new dashboard. Should we go with email, push, or both?",
+      "expectedRoute": "no special route"
+    },
+    {
+      "number": 2,
+      "round": 1,
+      "sender": "Aisha",
+      "where": "top-level",
+      "text": "I think push notifications make sense for urgent alerts and email for digests. We should probably support both.",
+      "expectedRoute": "no special route"
+    },
+    {
+      "number": 3,
+      "round": 1,
+      "sender": "Luis",
+      "where": "top-level",
+      "text": "Agreed on both. One question — do we have a preference for the notification library? I was looking at web-push vs Firebase.",
+      "expectedRoute": "no special route"
+    },
+    {
+      "number": 4,
+      "round": 2,
+      "sender": "Tom",
+      "where": "reply to 3",
+      "replyTo": 3,
+      "text": "Firebase is probably easier to set up and we already have a Google Cloud account.",
+      "expectedRoute": "no special route"
+    },
+    {
+      "number": 5,
+      "round": 2,
+      "sender": "Aisha",
+      "where": "reply to 3",
+      "replyTo": 3,
+      "text": "I prefer web-push to avoid the Firebase dependency. It works with any VAPID-compatible server.",
+      "expectedRoute": "no special route"
+    },
+    {
+      "number": 6,
+      "round": 2,
+      "sender": "Tom",
+      "where": "top-level",
+      "text": "@Collaboration can you add a task to spike both options and compare implementation complexity?",
+      "expectedRoute": "task_request"
+    },
+    {
+      "number": 7,
+      "round": 3,
+      "sender": "Luis",
+      "where": "top-level",
+      "text": "While we're at it, we should also decide on the notification frequency settings — per-user preferences or global defaults?",
+      "expectedRoute": "no special route"
+    },
+    {
+      "number": 8,
+      "round": 3,
+      "sender": "Aisha",
+      "where": "top-level",
+      "text": "Per-user for sure. We learned from the last release that global defaults frustrate power users.",
+      "expectedRoute": "no special route"
+    },
+    {
+      "number": 9,
+      "round": 3,
+      "sender": "Tom",
+      "where": "top-level",
+      "text": "@Collaboration what decisions have we made so far in this project?",
+      "expectedRoute": "recall_request"
+    },
+    {
+      "number": 10,
+      "round": 4,
+      "sender": "Luis",
+      "where": "reply to 9",
+      "replyTo": 9,
+      "text": "Let's also make sure we capture the per-user preference decision as a formal decision item.",
+      "expectedRoute": "no special route"
+    },
+    {
+      "number": 11,
+      "round": 4,
+      "sender": "Tom",
+      "where": "top-level",
+      "text": "@Collaboration add an issue: we need to design the notification preferences schema before implementation can begin.",
+      "expectedRoute": "task_request"
+    }
+  ]
+}

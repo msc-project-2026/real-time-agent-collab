@@ -38,6 +38,90 @@ function isDmAllowed(cfg, personId, personEmail) {
   }
 }
 
+// *** Hydrated Webex Message Handler
+// Called with a fully-hydrated Webex message object (id, roomId, text, personId, etc.).
+// Runs the shared pipeline: thread context → bot filter → routing → batch append/staging.
+// Used by both the real inbound handler (after fetching from /messages/:id) and the
+// synthetic evaluation runner (which builds hydrated message objects from scenario JSON).
+async function handleHydratedWebexMessage({
+  message,
+  botId,
+  account,
+  log,
+  fetchMessageById,
+  sendFn,
+}) {
+  // Thread handling
+  const { threadKey } = await appendMessageToThreadContextWindow({
+    spaceId: message.roomId,
+    message,
+    log,
+    fetchMessageById,
+  });
+
+  message.threadKey = threadKey;
+
+  const thread = await getThread({
+    spaceId: message.roomId,
+    threadKey,
+    excludeMessageIds: [message.id], // Exclude current message we just appended
+  });
+
+  // Skip routing bot messages
+  if (message.personId === botId) {
+    log?.info?.(`[webex] ignoring bot message`);
+    return;
+  }
+
+  // Routing: dispatch to the configured routing agent for classification.
+  const routingInstruction = buildRoutingInstruction({
+    message,
+    botId,
+    thread,
+  });
+
+  const baseSessionKey = `agent:${getRoutingAgentId()}:webex:${message.roomId}:msg-routing`;
+
+  function buildMessageRoutingCtxPayload(sessionKeySuffix) {
+    return {
+      Body: message.text ?? '',
+      RawBody: message.text ?? '',
+      CommandBody: routingInstruction,
+      From: `webex:${message.personId}`,
+      To: `webex:${message.roomId}`,
+      SessionKey: sessionKeySuffix
+        ? `${baseSessionKey}:${sessionKeySuffix}`
+        : baseSessionKey,
+      WebexRoomId: message.roomId,
+      AccountId: account.accountId,
+      ChatType: message.roomType === 'direct' ? 'direct' : 'group',
+      SenderName: message.personEmail ?? message.personId,
+      SenderId: message.personId,
+      Provider: 'webex',
+      Surface: 'webex',
+      MessageSid: message.id,
+      Timestamp: message.created,
+      OriginatingChannel: 'webex',
+      OriginatingTo: `webex:${message.roomId}`,
+      MessageThreadId: message.parentId,
+    };
+  }
+
+  await dispatchToAgentForSpace({
+    pluginRuntime: getPluginRuntime(),
+    spaceId: message.roomId,
+    account,
+    log,
+    buildCtxPayload: buildMessageRoutingCtxPayload,
+    onAgentOutput: makeRouteResultHandler({
+      message,
+      account,
+      log,
+      sendFn,
+    }),
+  });
+}
+
 // *** Inbound Webex Message Handler
 // Called asynchronously after the webhook POST is acknowledged.  Filters,
 // fetches full message details, then dispatches to the OpenClaw agent pipeline.
@@ -81,78 +165,17 @@ async function handleInboundWebexMessage(
   }
   if (!membership?.items?.length) return;
 
-  // Thread handling
-  const { threadKey } = await appendMessageToThreadContextWindow({
-    spaceId: msg.roomId,
-    message: msg,
-    log,
-    fetchMessageById: (messageId) =>
-      webexFetch(token, `/messages/${messageId}`),
-  });
-
-  msg.threadKey = threadKey;
-
-  const thread = await getThread({
-    spaceId: msg.roomId,
-    threadKey,
-    excludeMessageIds: [msg.id], // Exclude current message we just appended
-  });
-
-  // Skip routing bot messages
-  if (msg.personId === botId) {
-    log?.info?.(`[webex:${account.accountId}] ignoring bot message`);
-    return;
-  }
-
-  // Routing: dispatch to the configured routing agent for classification.
-  const routingInstruction = buildRoutingInstruction({
+  await handleHydratedWebexMessage({
     message: msg,
     botId,
-    thread,
-  });
-
-  const baseSessionKey = `agent:${getRoutingAgentId()}:webex:${msg.roomId}:msg-routing`;
-
-  function buildMessageRoutingCtxPayload(sessionKeySuffix) {
-    return {
-      Body: msg.text ?? '',
-      RawBody: msg.text ?? '',
-      CommandBody: routingInstruction,
-      From: `webex:${msg.personId}`,
-      To: `webex:${msg.roomId}`,
-      SessionKey: sessionKeySuffix
-        ? `${baseSessionKey}:${sessionKeySuffix}`
-        : baseSessionKey,
-      WebexRoomId: msg.roomId,
-      AccountId: account.accountId,
-      ChatType: msg.roomType === 'direct' ? 'direct' : 'group',
-      SenderName: msg.personEmail ?? msg.personId,
-      SenderId: msg.personId,
-      Provider: 'webex',
-      Surface: 'webex',
-      MessageSid: msg.id,
-      Timestamp: msg.created,
-      OriginatingChannel: 'webex',
-      OriginatingTo: `webex:${msg.roomId}`,
-      MessageThreadId: msg.parentId,
-    };
-  }
-
-  await dispatchToAgentForSpace({
-    pluginRuntime: getPluginRuntime(),
-    spaceId: msg.roomId,
     account,
     log,
-    buildCtxPayload: buildMessageRoutingCtxPayload,
-    onAgentOutput: makeRouteResultHandler({
-      message: msg,
-      account,
-      log,
-    }),
+    fetchMessageById: (messageId) => webexFetch(token, `/messages/${messageId}`),
   });
 }
 
 module.exports = {
   isDmAllowed,
   handleInboundWebexMessage,
+  handleHydratedWebexMessage,
 };

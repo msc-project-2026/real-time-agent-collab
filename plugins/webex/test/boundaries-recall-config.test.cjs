@@ -512,6 +512,7 @@ describe('configuration submission and card flow', () => {
       account: requestAccount,
       log,
       config: active.config,
+      sendFn: undefined,
     });
   });
 
