@@ -1,8 +1,6 @@
 // ********* ROUTING/RESULT-HANDLER.JS *********
 'use strict';
 
-const { parseJsonObjectFromText } = require('../utils/parse-json');
-
 const { appendPendingMessage } = require('../batch/append');
 const { schedulePendingBatchStaging } = require('../batch/schedule');
 const { handleStagePendingBatchRequest } = require('../batch/staging-handler');
@@ -10,6 +8,7 @@ const { handleConfigRequest } = require('../config/handle-request');
 const { handleRecallRequest } = require('../recall/handle-request');
 
 const { unique } = require('../utils/normalise');
+const { takePendingRouteResult } = require('./tool');
 
 // Helpers
 function getRoutes(routeResult) {
@@ -22,7 +21,9 @@ function hasRoute(routes, route) {
   return routes.includes(route);
 }
 
-// Handle route result
+// Handle validated route result — downstream dispatch only.
+// routeResult is expected to come from a validated tool call; duplicate/unknown
+// route checks are still applied defensively but should not occur in the normal path.
 async function handleRouteResult({
   routeResult,
   message,
@@ -36,16 +37,12 @@ async function handleRouteResult({
   const spaceId = message.roomId;
   const routes = getRoutes(routeResult);
 
-  // Validation: duplicate and unknown routes
   const uniqueRoutes = unique(routes);
 
   if (uniqueRoutes.length !== routes.length) {
     log?.warn?.(
       `[webex:${account.accountId}] duplicate routes in route result`,
-      {
-        spaceId,
-        routeResult,
-      }
+      { spaceId, routeResult }
     );
   }
 
@@ -72,22 +69,12 @@ async function handleRouteResult({
 
   // Extra handling: config flow.
   if (hasRoute(uniqueRoutes, 'config_request')) {
-    await handleConfigRequest({
-      spaceId,
-      account,
-      log,
-      sendFn,
-    });
+    await handleConfigRequest({ spaceId, account, log, sendFn });
   }
 
   // Extra handling: recall response.
   if (hasRoute(uniqueRoutes, 'recall_request')) {
-    await handleRecallRequest({
-      message,
-      account,
-      log,
-      sendFn,
-    });
+    await handleRecallRequest({ message, account, log, sendFn });
   }
 
   // Extra handling: task request
@@ -107,57 +94,27 @@ async function handleRouteResult({
   });
 }
 
-// Make handler for parsing message routing result
-function makeRouteResultHandler({ message, account, log, sendFn }) {
-  const spaceId = message.roomId;
+// Called after the routing dispatch completes (tool call expected during dispatch).
+// Reads the pending tool result and triggers handleRouteResult.
+// Falls back to append-only if the routing agent did not call route_message.
+async function handleRoutingDispatchResult({
+  spaceId,
+  message,
+  account,
+  log,
+  sendFn,
+}) {
+  const routeResult = takePendingRouteResult(spaceId);
 
-  return async ({ text }) => {
-    log?.info?.(`[webex:${account.accountId}] inspecting agent route output`, {
-      spaceId,
-      text,
-    });
-
-    let parsed;
-    try {
-      parsed = parseJsonObjectFromText(text);
-    } catch (err) {
-      log?.warn?.(
-        `[webex:${account.accountId}] agent route output was not parseable ${JSON.stringify(
-          {
-            spaceId,
-            error: err?.message ?? String(err),
-            text,
-          }
-        )}`
-      );
-
-      // Safely append message to batch if sesion output not parseable.
-      parsed = {
-        route: 'append_only',
-        reason: 'Fallback: route output was not parseable.',
-      };
-
-      log?.info?.(
-        `[webex:${account.accountId}] falling back to append_only route ${JSON.stringify(
-          {
-            spaceId,
-            route: parsed.route,
-            reason: parsed.reason,
-          }
-        )}`
-      );
-    }
-
-    log?.info?.(
-      `[webex:${account.accountId}] parsed agent route output ${JSON.stringify({
-        spaceId,
-        route: parsed.route,
-      })}`
+  if (!routeResult) {
+    log?.error?.(
+      `[webex:${account.accountId}] routing agent did not call route_message — falling back to append-only`,
+      { spaceId }
     );
 
     try {
       await handleRouteResult({
-        routeResult: parsed,
+        routeResult: { routes: [] },
         message,
         account,
         log,
@@ -165,19 +122,29 @@ function makeRouteResultHandler({ message, account, log, sendFn }) {
       });
     } catch (err) {
       log?.error?.(
-        `[webex:${account.accountId}] failed to handle route result ${JSON.stringify(
-          {
-            spaceId,
-            route: parsed.route,
-            error: err?.message ?? String(err),
-            stack: err?.stack ?? null,
-          }
-        )}`
+        `[webex:${account.accountId}] failed to handle fallback route result`,
+        { spaceId, error: err?.message ?? String(err) }
       );
-
       throw err;
     }
-  };
+    return;
+  }
+
+  log?.info?.(`[webex:${account.accountId}] consumed routing tool result`, {
+    spaceId,
+    routeCount: routeResult.routes.length,
+  });
+
+  try {
+    await handleRouteResult({ routeResult, message, account, log, sendFn });
+  } catch (err) {
+    log?.error?.(`[webex:${account.accountId}] failed to handle route result`, {
+      spaceId,
+      error: err?.message ?? String(err),
+      stack: err?.stack ?? null,
+    });
+    throw err;
+  }
 }
 
-module.exports = { makeRouteResultHandler };
+module.exports = { handleRouteResult, handleRoutingDispatchResult };

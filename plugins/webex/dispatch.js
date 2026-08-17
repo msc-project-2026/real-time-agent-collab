@@ -83,6 +83,7 @@ async function dispatchToAgentForSpace({
   log,
   buildCtxPayload,
   onAgentOutput,
+  onSessionComplete,
 }) {
   const dispatch =
     pluginRuntime?.channel?.reply?.dispatchReplyWithBufferedBlockDispatcher;
@@ -96,44 +97,46 @@ async function dispatchToAgentForSpace({
   const loadedCfg = pluginRuntime.config?.current?.() ?? {};
 
   await enqueueSpaceDispatch(spaceId, () =>
-    dispatchWithSessionConflictRetry((sessionKeySuffix) =>
-      dispatch({
+    dispatchWithSessionConflictRetry((sessionKeySuffix) => {
+      function deliver(out) {
+        if (!out.text) return;
+
+        log?.info?.(
+          `[webex:${account.accountId}] dispatched agent output: ${out.text}`
+        );
+
+        void Promise.resolve(
+          onAgentOutput?.({ text: out.text, spaceId, account, log })
+        ).catch((err) => {
+          log?.error?.(
+            `[webex:${account.accountId}] onAgentOutput handler failed: ${err?.message ?? err}`,
+            { spaceId, error: err?.message ?? String(err) }
+          );
+        });
+      }
+
+      function onError(err) {
+        log?.error?.(
+          `[webex:${account.accountId}] reply dispatch error: ${err?.message ?? err}`
+        );
+      }
+
+      const p = dispatch({
         ctx: buildCtxPayload(sessionKeySuffix),
         cfg: loadedCfg,
-        dispatcherOptions: {
-          deliver: async (out) => {
-            if (!out.text) return;
-
-            log?.info?.(
-              `[webex:${account.accountId}] dispatched agent output: ${out.text}`
-            );
-
-            void Promise.resolve(
-              onAgentOutput?.({
-                text: out.text,
-                spaceId,
-                account,
-                log,
-              })
-            ).catch((err) => {
-              log?.error?.(
-                `[webex:${account.accountId}] onAgentOutput handler failed: ${err?.message ?? err}`,
-                {
-                  spaceId,
-                  error: err?.message ?? String(err),
-                }
-              );
-            });
-          },
-          onError: (err) => {
-            log?.error?.(
-              `[webex:${account.accountId}] reply dispatch error: ${err?.message ?? err}`
-            );
-          },
-        },
+        dispatcherOptions: { deliver, onError },
         replyOptions: {},
-      })
-    )
+      });
+
+      // onSessionComplete chains on the dispatch promise itself.
+      // dispatch() resolves once when the session ends, making this the
+      // natural session-complete signal regardless of whether text was produced.
+      void Promise.resolve(p)
+        .then(() => onSessionComplete?.())
+        .catch((err) => onError(err));
+
+      return p;
+    })
   );
 }
 

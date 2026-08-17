@@ -77,7 +77,7 @@ describe('routing instruction', () => {
     assert.match(instruction, /"botIsMentioned": true/);
     assert.match(instruction, /"rootMessageId": "root-1"/);
     assert.match(instruction, /Earlier context/);
-    assert.match(instruction, /Return multiple routes/);
+    assert.match(instruction, /Include multiple routes/);
   });
 
   test('uses stable empty defaults when optional message and thread data is absent', () => {

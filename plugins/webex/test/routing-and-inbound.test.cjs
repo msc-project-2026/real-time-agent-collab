@@ -5,7 +5,150 @@ const { describe, test } = require('node:test');
 
 const { loadWithMocks, makeLog, mockCalls } = require('./helpers.cjs');
 
-function loadRouteHandler(t) {
+// ---------------------------------------------------------------------------
+// Category: route_message tool validation.
+// The tool is the contract boundary; invalid inputs return structured errors
+// so the model can retry without the gateway throwing.
+// ---------------------------------------------------------------------------
+
+describe('route_message tool validation', () => {
+  // Reload the tool fresh each test so pendingRouteResults state doesn't leak.
+  function loadTool() {
+    const resolved = require.resolve('../routing/tool');
+    delete require.cache[resolved];
+    return require(resolved);
+  }
+
+  test('empty routes array stores result and returns ok', async () => {
+    const { routeMessageTool, takePendingRouteResult } = loadTool();
+    const tool = routeMessageTool();
+
+    const result = await tool.execute('id-1', { spaceId: 'space-1', routes: [] });
+
+    assert.deepEqual(result, { ok: true, routeCount: 0 });
+    assert.deepEqual(takePendingRouteResult('space-1'), { routes: [] });
+  });
+
+  test('single valid recall_request route stores result', async () => {
+    const { routeMessageTool, takePendingRouteResult } = loadTool();
+    const tool = routeMessageTool();
+
+    const result = await tool.execute('id-2', {
+      spaceId: 'space-1',
+      routes: [{ route: 'recall_request', reason: 'Asking about prior decisions' }],
+    });
+
+    assert.deepEqual(result, { ok: true, routeCount: 1 });
+    assert.deepEqual(takePendingRouteResult('space-1'), {
+      routes: [{ route: 'recall_request', reason: 'Asking about prior decisions' }],
+    });
+  });
+
+  test('multiple valid routes stores result', async () => {
+    const { routeMessageTool, takePendingRouteResult } = loadTool();
+    const tool = routeMessageTool();
+
+    const result = await tool.execute('id-3', {
+      spaceId: 'space-1',
+      routes: [
+        { route: 'recall_request', reason: 'Status check' },
+        { route: 'task_request', reason: 'Add a feature' },
+      ],
+    });
+
+    assert.deepEqual(result, { ok: true, routeCount: 2 });
+    const stored = takePendingRouteResult('space-1');
+    assert.equal(stored.routes.length, 2);
+  });
+
+  test('duplicate route value returns validation error and does not store', async () => {
+    const { routeMessageTool, takePendingRouteResult } = loadTool();
+    const tool = routeMessageTool();
+
+    const result = await tool.execute('id-4', {
+      spaceId: 'space-1',
+      routes: [
+        { route: 'recall_request', reason: 'First' },
+        { route: 'recall_request', reason: 'Second' },
+      ],
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(Array.isArray(result.errors));
+    assert.ok(result.errors.some((e) => e.includes('duplicated')));
+    assert.equal(takePendingRouteResult('space-1'), null);
+  });
+
+  test('unknown route value returns validation error and does not store', async () => {
+    const { routeMessageTool, takePendingRouteResult } = loadTool();
+    const tool = routeMessageTool();
+
+    const result = await tool.execute('id-5', {
+      spaceId: 'space-1',
+      routes: [{ route: 'unsupported_route', reason: 'Testing' }],
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(Array.isArray(result.errors));
+    assert.ok(result.errors.some((e) => e.includes('not a valid route value')));
+    assert.equal(takePendingRouteResult('space-1'), null);
+  });
+
+  test('empty reason string returns validation error and does not store', async () => {
+    const { routeMessageTool, takePendingRouteResult } = loadTool();
+    const tool = routeMessageTool();
+
+    const result = await tool.execute('id-6', {
+      spaceId: 'space-1',
+      routes: [{ route: 'task_request', reason: '   ' }],
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(Array.isArray(result.errors));
+    assert.ok(result.errors.some((e) => e.includes('reason')));
+    assert.equal(takePendingRouteResult('space-1'), null);
+  });
+
+  test('missing spaceId returns error without storing', async () => {
+    const { routeMessageTool, takePendingRouteResult } = loadTool();
+    const tool = routeMessageTool();
+
+    const result = await tool.execute('id-7', { spaceId: '', routes: [] });
+
+    assert.equal(result.ok, false);
+    assert.ok(result.error);
+  });
+
+  test('missing routes array returns error without storing', async () => {
+    const { routeMessageTool, takePendingRouteResult } = loadTool();
+    const tool = routeMessageTool();
+
+    const result = await tool.execute('id-8', { spaceId: 'space-1' });
+
+    assert.equal(result.ok, false);
+    assert.ok(result.error);
+    assert.equal(takePendingRouteResult('space-1'), null);
+  });
+
+  test('takePendingRouteResult clears the entry after reading', async () => {
+    const { routeMessageTool, takePendingRouteResult } = loadTool();
+    const tool = routeMessageTool();
+
+    await tool.execute('id-9', { spaceId: 'space-1', routes: [] });
+
+    const first = takePendingRouteResult('space-1');
+    const second = takePendingRouteResult('space-1');
+
+    assert.deepEqual(first, { routes: [] });
+    assert.equal(second, null);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Category: handleRoutingDispatchResult — post-dispatch result consumption.
+// ---------------------------------------------------------------------------
+
+function loadResultHandler(t) {
   const collaborators = {
     appendPendingMessage: t.mock.fn(async () => ({ ok: true })),
     schedulePendingBatchStaging: t.mock.fn(),
@@ -13,6 +156,12 @@ function loadRouteHandler(t) {
     handleConfigRequest: t.mock.fn(async () => undefined),
     handleRecallRequest: t.mock.fn(async () => undefined),
   };
+
+  // Reload tool module fresh so state is isolated
+  const toolResolved = require.resolve('../routing/tool');
+  const savedTool = require.cache[toolResolved];
+  delete require.cache[toolResolved];
+  const freshTool = require(toolResolved);
 
   const loaded = loadWithMocks(require.resolve('../routing/result-handler'), {
     [require.resolve('../batch/append')]: {
@@ -30,72 +179,63 @@ function loadRouteHandler(t) {
     [require.resolve('../recall/handle-request')]: {
       handleRecallRequest: collaborators.handleRecallRequest,
     },
+    [require.resolve('../routing/tool')]: freshTool,
   });
-  t.after(loaded.restore);
 
-  return { ...loaded.subject, collaborators };
+  t.after(() => {
+    loaded.restore();
+    if (savedTool) require.cache[toolResolved] = savedTool;
+    else delete require.cache[toolResolved];
+  });
+
+  return { ...loaded.subject, collaborators, tool: freshTool };
 }
 
 function routeContext(t) {
   return {
+    spaceId: 'space-1',
     message: { id: 'message-1', roomId: 'space-1', text: 'Please help' },
     account: { accountId: 'default', config: { token: 'bot-token' } },
     log: makeLog(t),
   };
 }
 
-// Category: Default route and parse fallback.
-// These tests verify every inbound message is durably appended and receives delayed staging when no immediate task route is selected.
-describe('default routing behavior', () => {
-  test('appends and schedules a normally parsed empty route result', async (t) => {
-    const { makeRouteResultHandler, collaborators } = loadRouteHandler(t);
-    const context = routeContext(t);
+describe('handleRoutingDispatchResult — downstream behaviour', () => {
+  test('appends and schedules when tool deposits empty routes', async (t) => {
+    const { handleRoutingDispatchResult, collaborators, tool } = loadResultHandler(t);
+    const ctx = routeContext(t);
 
-    await makeRouteResultHandler(context)({ text: '{"routes":[]}' });
+    tool.setPendingRouteResult('space-1', { routes: [] });
+    await handleRoutingDispatchResult(ctx);
 
     assert.equal(collaborators.appendPendingMessage.mock.callCount(), 1);
     assert.deepEqual(
       collaborators.appendPendingMessage.mock.calls[0].arguments[0],
-      { spaceId: 'space-1', message: context.message }
+      { spaceId: 'space-1', message: ctx.message }
     );
     assert.equal(collaborators.schedulePendingBatchStaging.mock.callCount(), 1);
     assert.equal(collaborators.handleStagePendingBatchRequest.mock.callCount(), 0);
   });
 
-  test('falls back to append and delayed staging for unparseable model output', async (t) => {
-    const { makeRouteResultHandler, collaborators } = loadRouteHandler(t);
-    const context = routeContext(t);
+  test('runs config, recall, and immediate task staging in declared order', async (t) => {
+    const { handleRoutingDispatchResult, collaborators, tool } = loadResultHandler(t);
+    const ctx = routeContext(t);
 
-    await makeRouteResultHandler(context)({ text: 'not json' });
-
-    assert.equal(context.log.warn.mock.callCount(), 1);
-    assert.equal(collaborators.appendPendingMessage.mock.callCount(), 1);
-    assert.equal(collaborators.schedulePendingBatchStaging.mock.callCount(), 1);
-  });
-});
-
-// Category: Special routing branches.
-// These tests verify config and recall can run together while task requests force immediate staging and suppress the delayed timer.
-describe('special routing branches', () => {
-  test('runs config, recall, and immediate task handling in declared order', async (t) => {
-    const { makeRouteResultHandler, collaborators } = loadRouteHandler(t);
-    const context = routeContext(t);
-
-    await makeRouteResultHandler(context)({
-      text: JSON.stringify({
-        routes: [
-          { route: 'config_request' },
-          { route: 'recall_request' },
-          { route: 'task_request' },
-        ],
-      }),
+    tool.setPendingRouteResult('space-1', {
+      routes: [
+        { route: 'config_request', reason: 'User asked for settings' },
+        { route: 'recall_request', reason: 'User asked about state' },
+        { route: 'task_request', reason: 'User requested a task' },
+      ],
     });
+    await handleRoutingDispatchResult(ctx);
 
     assert.equal(collaborators.appendPendingMessage.mock.callCount(), 1);
+    assert.equal(collaborators.handleConfigRequest.mock.callCount(), 1);
     assert.deepEqual(collaborators.handleConfigRequest.mock.calls[0].arguments[0], {
       spaceId: 'space-1',
-      account: context.account,
-      log: context.log,
+      account: ctx.account,
+      log: ctx.log,
       sendFn: undefined,
     });
     assert.equal(collaborators.handleRecallRequest.mock.callCount(), 1);
@@ -103,46 +243,64 @@ describe('special routing branches', () => {
     assert.equal(collaborators.schedulePendingBatchStaging.mock.callCount(), 0);
   });
 
+  test('falls back to append-only and logs error when no tool call was made (free-text path)', async (t) => {
+    const { handleRoutingDispatchResult, collaborators } = loadResultHandler(t);
+    const ctx = routeContext(t);
+
+    // No tool.setPendingRouteResult — simulates model answering in text instead of calling tool
+    await handleRoutingDispatchResult(ctx);
+
+    assert.equal(ctx.log.error.mock.callCount(), 1);
+    assert.ok(
+      mockCalls(ctx.log.error)[0][0].includes('did not call route_message')
+    );
+    assert.equal(collaborators.appendPendingMessage.mock.callCount(), 1);
+    assert.equal(collaborators.schedulePendingBatchStaging.mock.callCount(), 1);
+    assert.equal(collaborators.handleStagePendingBatchRequest.mock.callCount(), 0);
+  });
+
   test('warns about duplicate and unknown routes without running them', async (t) => {
-    const { makeRouteResultHandler, collaborators } = loadRouteHandler(t);
-    const context = routeContext(t);
+    const { handleRoutingDispatchResult, collaborators, tool } = loadResultHandler(t);
+    const ctx = routeContext(t);
 
-    await makeRouteResultHandler(context)({
-      text: JSON.stringify({
-        routes: [
-          { route: 'recall_request' },
-          { route: 'recall_request' },
-          { route: 'unsupported' },
-        ],
-      }),
+    // Bypass tool validation by seeding directly — tests handleRouteResult defensive check
+    tool.setPendingRouteResult('space-1', {
+      routes: [
+        { route: 'recall_request', reason: 'State' },
+        { route: 'recall_request', reason: 'Duplicate' },
+        { route: 'unsupported', reason: 'Unknown' },
+      ],
     });
+    await handleRoutingDispatchResult(ctx);
 
-    assert.equal(context.log.warn.mock.callCount(), 2);
+    assert.equal(ctx.log.warn.mock.callCount(), 2); // duplicate + unknown
     assert.equal(collaborators.handleRecallRequest.mock.callCount(), 1);
     assert.equal(collaborators.schedulePendingBatchStaging.mock.callCount(), 1);
   });
-});
 
-// Category: Routing failure propagation.
-// These tests verify storage or downstream-handler failures are logged and returned to the caller instead of being silently swallowed.
-describe('routing failure propagation', () => {
   test('logs and rethrows a downstream append failure', async (t) => {
-    const { makeRouteResultHandler, collaborators } = loadRouteHandler(t);
-    const context = routeContext(t);
+    const { handleRoutingDispatchResult, collaborators, tool } = loadResultHandler(t);
+    const ctx = routeContext(t);
     collaborators.appendPendingMessage.mock.mockImplementationOnce(async () => {
       throw new Error('disk unavailable');
     });
 
+    tool.setPendingRouteResult('space-1', { routes: [] });
+
     await assert.rejects(
-      makeRouteResultHandler(context)({ text: '{"routes":[]}' }),
+      handleRoutingDispatchResult(ctx),
       /disk unavailable/
     );
-    assert.equal(context.log.error.mock.callCount(), 1);
+    assert.equal(ctx.log.error.mock.callCount(), 1);
   });
 });
 
+// ---------------------------------------------------------------------------
 // Category: Webhook identity dispatch.
-// These tests verify OAuth message events and bot attachment actions go to separate handlers while unrelated payloads are ignored.
+// These tests verify OAuth message events and bot attachment actions go to
+// separate handlers while unrelated payloads are ignored.
+// ---------------------------------------------------------------------------
+
 describe('inbound webhook identity dispatch', () => {
   test('routes only the supported identity/resource combinations', async (t) => {
     const handleInboundWebexMessage = t.mock.fn(async () => 'message-result');
@@ -177,6 +335,10 @@ describe('inbound webhook identity dispatch', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Helpers for inbound/message tests
+// ---------------------------------------------------------------------------
+
 function loadMessageHandler(t, overrides = {}) {
   const defaultMessage = {
     id: 'message-1',
@@ -202,13 +364,14 @@ function loadMessageHandler(t, overrides = {}) {
       contextWindow: [],
     })),
     buildRoutingInstruction: t.mock.fn(() => 'routing prompt'),
-    dispatchToAgentForSpace: t.mock.fn(async () => undefined),
-    routeOutputHandler: t.mock.fn(async () => undefined),
+    dispatchToAgentForSpace: t.mock.fn(async ({ onSessionComplete }) => {
+      await onSessionComplete?.();
+    }),
+    handleRoutingDispatchResult: t.mock.fn(async () => undefined),
     getPluginRuntime: t.mock.fn(() => ({ runtime: true })),
     getRoutingAgentId: t.mock.fn(() => 'router'),
     ...overrides,
   };
-  const makeRouteResultHandler = t.mock.fn(() => collaborators.routeOutputHandler);
 
   const loaded = loadWithMocks(require.resolve('../inbound/message'), {
     [require.resolve('../api')]: { webexFetch: collaborators.webexFetch },
@@ -224,7 +387,9 @@ function loadMessageHandler(t, overrides = {}) {
     [require.resolve('../dispatch')]: {
       dispatchToAgentForSpace: collaborators.dispatchToAgentForSpace,
     },
-    [require.resolve('../routing/result-handler')]: { makeRouteResultHandler },
+    [require.resolve('../routing/result-handler')]: {
+      handleRoutingDispatchResult: collaborators.handleRoutingDispatchResult,
+    },
     [require.resolve('../runtime')]: {
       getPluginRuntime: collaborators.getPluginRuntime,
       getRoutingAgentId: collaborators.getRoutingAgentId,
@@ -232,7 +397,7 @@ function loadMessageHandler(t, overrides = {}) {
   });
   t.after(loaded.restore);
 
-  return { ...loaded.subject, collaborators, makeRouteResultHandler };
+  return { ...loaded.subject, collaborators };
 }
 
 function inboundContext(t, overrides = {}) {
@@ -245,8 +410,10 @@ function inboundContext(t, overrides = {}) {
   };
 }
 
+// ---------------------------------------------------------------------------
 // Category: Direct-message policy.
-// These tests verify allow, deny, allowlist, and safe-default behavior without invoking external services.
+// ---------------------------------------------------------------------------
+
 describe('direct-message policy', () => {
   test('supports allow, deny, allowlisted IDs/emails, and safe defaults', () => {
     const { isDmAllowed } = require('../inbound/message');
@@ -269,8 +436,10 @@ describe('direct-message policy', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
 // Category: Early inbound rejection.
-// These tests verify irrelevant, duplicate, unauthorised, unconfigured, and non-member messages stop before routing side effects.
+// ---------------------------------------------------------------------------
+
 describe('early inbound rejection', () => {
   test('ignores non-created message events before reading credentials', async (t) => {
     const { handleInboundWebexMessage, collaborators } = loadMessageHandler(t);
@@ -368,13 +537,16 @@ describe('early inbound rejection', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
 // Category: Accepted inbound routing.
-// These tests verify an eligible message is contextualised, dispatched to the configured routing agent, and wired to the route-result processor.
+// Verifies an eligible message is contextualised, dispatched to the routing
+// agent, and the post-dispatch result handler is called.
+// ---------------------------------------------------------------------------
+
 describe('accepted inbound routing', () => {
-  test('builds thread context and dispatches to the routing agent', async (t) => {
+  test('builds thread context, dispatches to routing agent, then calls handleRoutingDispatchResult', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
-    const { handleInboundWebexMessage, collaborators, makeRouteResultHandler } =
-      loadMessageHandler(t);
+    const { handleInboundWebexMessage, collaborators } = loadMessageHandler(t);
     const context = inboundContext(t);
 
     await handleInboundWebexMessage(
@@ -390,14 +562,24 @@ describe('accepted inbound routing', () => {
     });
     assert.equal(collaborators.buildRoutingInstruction.mock.callCount(), 1);
     assert.equal(collaborators.dispatchToAgentForSpace.mock.callCount(), 1);
+
     const dispatchArgs = collaborators.dispatchToAgentForSpace.mock.calls[0].arguments[0];
     assert.equal(dispatchArgs.spaceId, 'space-1');
     assert.deepEqual(dispatchArgs.pluginRuntime, { runtime: true });
     assert.equal(dispatchArgs.buildCtxPayload().CommandBody, 'routing prompt');
     assert.equal(dispatchArgs.buildCtxPayload().SessionKey, 'agent:router:webex:space-1:msg-routing');
-    assert.equal(dispatchArgs.buildCtxPayload('recovery').SessionKey, 'agent:router:webex:space-1:msg-routing:recovery');
-    assert.equal(makeRouteResultHandler.mock.callCount(), 1);
-    assert.equal(dispatchArgs.onAgentOutput, collaborators.routeOutputHandler);
+    assert.equal(
+      dispatchArgs.buildCtxPayload('recovery').SessionKey,
+      'agent:router:webex:space-1:msg-routing:recovery'
+    );
+    // onAgentOutput is the warn-only sink, onSessionComplete carries the result handler
+    assert.equal(typeof dispatchArgs.onAgentOutput, 'function');
+    assert.equal(typeof dispatchArgs.onSessionComplete, 'function');
+
+    // The mock calls onSessionComplete, which calls handleRoutingDispatchResult
+    assert.equal(collaborators.handleRoutingDispatchResult.mock.callCount(), 1);
+    const dispatchResultArgs = collaborators.handleRoutingDispatchResult.mock.calls[0].arguments[0];
+    assert.equal(dispatchResultArgs.spaceId, 'space-1');
   });
 
   test('uses the configured routingAgentId for the session key', async (t) => {
@@ -439,5 +621,6 @@ describe('accepted inbound routing', () => {
 
     assert.equal(collaborators.appendMessageToThreadContextWindow.mock.callCount(), 1);
     assert.equal(collaborators.dispatchToAgentForSpace.mock.callCount(), 0);
+    assert.equal(collaborators.handleRoutingDispatchResult.mock.callCount(), 0);
   });
 });

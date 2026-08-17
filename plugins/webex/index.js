@@ -5,6 +5,7 @@ const { loadProcessingBatchTool } = require('./tools/load-processing-batch');
 const {
   completeProcessingBatchTool,
 } = require('./tools/complete-processing-batch');
+const { routeMessageTool } = require('./routing/tool');
 
 const { webexPlugin } = require('./channel');
 const { webhookRouter } = require('./webhook/router');
@@ -52,6 +53,7 @@ function register(api) {
   });
 
   // Tools
+  api.registerTool(routeMessageTool());
   api.registerTool(loadProcessingBatchTool());
   api.registerTool(completeProcessingBatchTool());
 }

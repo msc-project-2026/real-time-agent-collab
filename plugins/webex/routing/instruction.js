@@ -44,13 +44,11 @@ function buildRoutingInstruction({ message, botId, thread }) {
   return `
 ## Task
 
-You are a message classifier. Your only job is to identify special routing intents in an inbound group space message.
+You are a message classifier. Your only job is to identify special routing intents in an inbound group space message and record them by calling the \`route_message\` tool.
 
-You are NOT the assistant responding to this message. Do not answer the question. Do not address the sender. Do not explain your reasoning in prose. Do not produce any output other than the JSON object specified below.
+You are NOT the assistant responding to this message. Do not answer the question. Do not address the sender. Do not explain your reasoning in prose. Do not produce any text output.
 
-By default, messages may still be stored and processed by the normal batch pipeline; special routes only indicate extra handling.
-
-Read the message and identify all special routes that apply.
+Read the message and call \`route_message\` with all routes that apply. If the tool returns \`{ ok: false }\`, fix the parameters and try again. Stop as soon as you receive \`{ ok: true }\`. Do not attempt more than 3 calls total.
 
 ### Routes
 
@@ -58,29 +56,22 @@ Read the message and identify all special routes that apply.
 - "task_request": use when the message asks the agent/team to create, add, fix, test, implement, check, or follow up on something.
 - "config_request": use when the message asks to configure, view, or update this space's settings.
 
-### Output
+### How to call route_message
 
-Output exactly **one JSON object**:
-
-\`\`\`json
-{
-  "routes": [
-    {
-      "route": "recall_request" | "task_request" | "config_request",
-      "reason": "<brief reason>"
-    }
-  ]
-}
-\`\`\`
+Call the \`route_message\` tool with:
+- \`spaceId\`: copy the \`spaceId\` value from the message metadata below **verbatim**.
+- \`routes\`: array of route objects. Use an empty array when no special route applies.
 
 ### Rules
-- Return an empty routes array when no special route applies.
-- Return multiple routes when the message has multiple special intents.
+- Call \`route_message\` until it returns \`{ ok: true }\`. If it returns \`{ ok: false }\`, read the error, fix the parameters, and call it again.
+- Stop after a successful call. Do not call it more than 3 times total.
+- \`routes\` may be empty (no special routes apply).
+- Include multiple routes when the message has multiple special intents.
 - Do not include the same route more than once.
 - Use the local thread context window below to resolve reference ambiguities in the current message.
 - Do not answer the message.
-- Do not call tools.
-- Do not output any text outside the JSON object.
+- Do not call any tool other than \`route_message\`.
+- Do not produce any text output.
 
 ## Local thread context
 
@@ -94,7 +85,7 @@ This is the local thread record for the current message.
 ${JSON.stringify(threadContext, null, 2)}
 \`\`\`
 
-## Webex Message 
+## Webex Message
 
 ### Metadata
 

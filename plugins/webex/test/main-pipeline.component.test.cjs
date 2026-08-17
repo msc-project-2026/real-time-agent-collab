@@ -5,7 +5,7 @@ const { describe, test } = require('node:test');
 
 const { makeTempWorkspace } = require('./helpers.cjs');
 const { setPluginRuntime } = require('../runtime');
-const { makeRouteResultHandler } = require('../routing/result-handler');
+const { handleRouteResult } = require('../routing/result-handler');
 const { getConversations } = require('../context/conversations-store');
 const { getItems } = require('../context/items-store');
 
@@ -110,14 +110,12 @@ describe('joined main Webex processing pipeline', () => {
       receivedAt: '2026-08-14T09:00:00.000Z',
     };
 
-    await makeRouteResultHandler({
+    await handleRouteResult({
+      routeResult: { routes: [{ route: 'task_request', reason: 'Explicit implementation request' }] },
       message,
       account: { accountId: 'default', config: { token: 'bot-token' } },
       log: { info() {}, warn() {}, error() {} },
-    })({
-      text: JSON.stringify({
-        routes: [{ route: 'task_request', reason: 'Explicit implementation request' }],
-      }),
+      sendFn: undefined,
     });
 
     const storedItems = await waitFor(async () => {

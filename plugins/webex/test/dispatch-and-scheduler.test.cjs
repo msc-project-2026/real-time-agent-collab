@@ -332,6 +332,59 @@ describe('dispatch availability and payload delivery', () => {
 
     assert.ok(mockCalls(context.log.error).some(([text]) => text.includes('output failed')));
   });
+
+  test('calls onSessionComplete when dispatch resolves', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    // Simulates a tool-only session: dispatch resolves without any deliver calls.
+    const dispatch = t.mock.fn(async () => undefined);
+    const { dispatchToAgentForSpace } = loadDispatch(t);
+    const onSessionComplete = t.mock.fn(async () => undefined);
+    const context = dispatchContext(t, dispatch, { onSessionComplete });
+
+    const promise = dispatchToAgentForSpace(context);
+    await finishSingleDispatch(t, promise);
+    await flushMicrotasks();
+
+    assert.equal(onSessionComplete.mock.callCount(), 1);
+    assert.equal(context.onAgentOutput.mock.callCount(), 0);
+  });
+
+  test('fires onSessionComplete exactly once regardless of deliver call count', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const dispatch = t.mock.fn(async (options) => {
+      await options.dispatcherOptions.deliver({});
+      await options.dispatcherOptions.deliver({ text: 'output' });
+    });
+    const { dispatchToAgentForSpace } = loadDispatch(t);
+    const onSessionComplete = t.mock.fn(async () => undefined);
+    const context = dispatchContext(t, dispatch, { onSessionComplete });
+
+    const promise = dispatchToAgentForSpace(context);
+    await finishSingleDispatch(t, promise);
+    await flushMicrotasks();
+
+    // dispatch() resolves once → onSessionComplete fires once, regardless of deliver call count
+    assert.equal(onSessionComplete.mock.callCount(), 1);
+  });
+
+  test('logs a rejected onSessionComplete handler without propagating', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const dispatch = t.mock.fn(async () => undefined);
+    const { dispatchToAgentForSpace } = loadDispatch(t);
+    const context = dispatchContext(t, dispatch, {
+      onSessionComplete: t.mock.fn(async () => {
+        throw new Error('session complete failed');
+      }),
+    });
+
+    const promise = dispatchToAgentForSpace(context);
+    await finishSingleDispatch(t, promise);
+    await flushMicrotasks();
+
+    assert.ok(
+      mockCalls(context.log.error).some(([text]) => text.includes('session complete failed'))
+    );
+  });
 });
 
 // Category: Session-conflict recovery.

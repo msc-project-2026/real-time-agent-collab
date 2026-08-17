@@ -10,7 +10,7 @@ const {
 } = require('../context/threads-store');
 const { buildRoutingInstruction } = require('../routing/instruction');
 const { dispatchToAgentForSpace } = require('../dispatch');
-const { makeRouteResultHandler } = require('../routing/result-handler');
+const { handleRoutingDispatchResult } = require('../routing/result-handler');
 const { getPluginRuntime, getRoutingAgentId } = require('../runtime');
 
 // 30-second deduplication window — Webex may deliver the same webhook event twice.
@@ -107,18 +107,28 @@ async function handleHydratedWebexMessage({
     };
   }
 
+  // onAgentOutput: warn when the routing agent produces text instead of calling the tool.
+  // onSessionComplete: consume the validated route result after the session settles.
   await dispatchToAgentForSpace({
     pluginRuntime: getPluginRuntime(),
     spaceId: message.roomId,
     account,
     log,
     buildCtxPayload: buildMessageRoutingCtxPayload,
-    onAgentOutput: makeRouteResultHandler({
-      message,
-      account,
-      log,
-      sendFn,
-    }),
+    onAgentOutput: ({ text }) => {
+      log?.warn?.(
+        `[webex:${account.accountId}] routing agent produced text instead of tool call — ignoring`,
+        { spaceId: message.roomId, text: text?.slice(0, 200) }
+      );
+    },
+    onSessionComplete: () =>
+      handleRoutingDispatchResult({
+        spaceId: message.roomId,
+        message,
+        account,
+        log,
+        sendFn,
+      }),
   });
 }
 
