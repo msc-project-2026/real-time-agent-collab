@@ -84,8 +84,8 @@ async function handleHydratedWebexMessage({
 
   function buildMessageRoutingCtxPayload(sessionKeySuffix) {
     return {
-      Body: message.text ?? '',
-      RawBody: message.text ?? '',
+      Body: '',
+      RawBody: '',
       CommandBody: routingInstruction,
       From: `webex:${message.personId}`,
       To: `webex:${message.roomId}`,
