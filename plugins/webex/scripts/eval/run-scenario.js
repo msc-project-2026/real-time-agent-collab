@@ -284,6 +284,7 @@ async function runScenario({ scenario, options = {}, log: externalLog } = {}) {
   // recall) to fully complete before reading back results from storage.
   log.info(`[eval] waiting for background pipeline to complete`);
   await waitForSpaceIdle(scenario.spaceId);
+  log.info(`[eval] background pipeline idle`);
 
   timings.completedAt = new Date().toISOString();
   timings.totalMs = Date.now() - startMs;

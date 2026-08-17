@@ -1,20 +1,25 @@
 // ********* EVAL/ROUTER.JS *********
 'use strict';
 
-// HTTP route handler for the synthetic evaluation endpoint.
+// Async job eval route.  Registered at /webex/collab/eval/ (prefix match)
+// when WEBEX_EVAL_ROUTES_ENABLED=true.
 //
-// Registered at /webex/collab/eval/ (prefix match) when WEBEX_EVAL_ROUTES_ENABLED=true.
-// Accepts POST /webex/collab/eval/run with a scenario JSON body, runs the full
-// plugin pipeline against synthetic hydrated Webex messages, and returns a result
-// bundle containing items, conversations, threads, routing decisions, recall
-// responses, timings, and a run log.
+// Endpoints:
+//   POST /webex/collab/eval/run              — start a background run, return runId
+//   GET  /webex/collab/eval/runs/:runId      — poll run status
+//   GET  /webex/collab/eval/runs/:runId/result — fetch completed result
 //
-// Auth: requires x-webex-eval-secret header matching WEBEX_EVAL_SECRET env var.
-// Both env vars must be set; if either is absent the route returns 403.
+// Auth: all endpoints require x-webex-eval-secret matching WEBEX_EVAL_SECRET.
+//
+// Job state is held in-memory and lost on restart.
 
+const { randomUUID } = require('node:crypto');
 const { runScenario } = require('../scripts/eval/run-scenario');
 
-const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10MB — scenarios can be large
+const MAX_BODY_BYTES = 10 * 1024 * 1024;
+
+// In-memory job store: runId → run record
+const runs = new Map();
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -48,35 +53,17 @@ function isSecretValid(req) {
   return typeof provided === 'string' && provided === required;
 }
 
-function makeLog() {
-  return {
-    info: (msg, meta) => console.log('[eval]', msg, meta != null ? meta : ''),
-    warn: (msg, meta) => console.warn('[eval:warn]', msg, meta != null ? meta : ''),
-    error: (msg, meta) => console.error('[eval:error]', msg, meta != null ? meta : ''),
-  };
-}
+const RUNS_STATUS_RE = /^\/webex\/collab\/eval\/runs\/([^/]+)$/;
+const RUNS_RESULT_RE = /^\/webex\/collab\/eval\/runs\/([^/]+)\/result$/;
 
 // ---------------------------------------------------------------------------
-// Route handler
-//
-// Returns false if the path is not /webex/collab/eval/run (OpenClaw skips to
-// the next registered handler).  Returns true once the request is handled.
+// POST /webex/collab/eval/run
 // ---------------------------------------------------------------------------
 
-async function evalRouter(req, res) {
-  const pathname = getPathname(req);
-  if (pathname !== '/webex/collab/eval/run') return false;
-
-  if (req.method !== 'POST') {
-    res.statusCode = 405;
-    res.setHeader('Allow', 'POST');
-    res.end('Method Not Allowed');
-    return true;
-  }
-
+async function handleRunPost(req, res) {
   if (!isSecretValid(req)) {
     sendJson(res, 403, { ok: false, error: 'Forbidden' });
-    return true;
+    return;
   }
 
   let rawBody;
@@ -84,12 +71,12 @@ async function evalRouter(req, res) {
     rawBody = await readBody(req);
   } catch {
     sendJson(res, 400, { ok: false, error: 'Failed to read request body' });
-    return true;
+    return;
   }
 
   if (!rawBody) {
     sendJson(res, 413, { ok: false, error: 'Payload Too Large' });
-    return true;
+    return;
   }
 
   let body;
@@ -97,41 +84,185 @@ async function evalRouter(req, res) {
     body = JSON.parse(rawBody.toString('utf-8'));
   } catch {
     sendJson(res, 400, { ok: false, error: 'Invalid JSON' });
-    return true;
+    return;
   }
 
   const { scenario, options } = body;
 
   if (!scenario?.id) {
     sendJson(res, 400, { ok: false, error: 'scenario.id is required' });
-    return true;
+    return;
   }
   if (!scenario.spaceId) {
     sendJson(res, 400, { ok: false, error: 'scenario.spaceId is required' });
-    return true;
+    return;
   }
   if (!Array.isArray(scenario.participants)) {
     sendJson(res, 400, { ok: false, error: 'scenario.participants must be an array' });
-    return true;
+    return;
   }
   if (!Array.isArray(scenario.messages)) {
     sendJson(res, 400, { ok: false, error: 'scenario.messages must be an array' });
+    return;
+  }
+
+  const runId = randomUUID();
+  const startedAt = new Date().toISOString();
+
+  const run = {
+    runId,
+    scenarioId: scenario.id,
+    status: 'running',
+    startedAt,
+    completedAt: null,
+    error: null,
+    result: null,
+  };
+  runs.set(runId, run);
+
+  console.log(
+    `[eval:${runId}] run started — scenario: ${scenario.id}, messages: ${scenario.messages.length}`
+  );
+
+  const log = {
+    info: (msg, meta) => console.log(`[eval:${runId}]`, msg, meta != null ? meta : ''),
+    warn: (msg, meta) => console.warn(`[eval:${runId}:warn]`, msg, meta != null ? meta : ''),
+    error: (msg, meta) => console.error(`[eval:${runId}:error]`, msg, meta != null ? meta : ''),
+  };
+
+  runScenario({ scenario, options, log })
+    .then((result) => {
+      run.status = 'complete';
+      run.completedAt = new Date().toISOString();
+      run.result = result;
+      const durationMs = new Date(run.completedAt) - new Date(startedAt);
+      console.log(
+        `[eval:${runId}] run complete — duration: ${durationMs}ms,` +
+        ` items: ${result.items.length}, conversations: ${result.conversations.length}`
+      );
+    })
+    .catch((err) => {
+      run.status = 'failed';
+      run.completedAt = new Date().toISOString();
+      run.error = { message: err?.message ?? String(err), stack: err?.stack ?? null };
+      console.error(`[eval:${runId}] run failed — ${err?.message ?? err}`);
+      if (err?.stack) console.error(err.stack);
+    });
+
+  sendJson(res, 202, { ok: true, runId, scenarioId: scenario.id, status: 'running' });
+}
+
+// ---------------------------------------------------------------------------
+// GET /webex/collab/eval/runs/:runId
+// ---------------------------------------------------------------------------
+
+function handleRunStatus(req, res, runId) {
+  if (!isSecretValid(req)) {
+    sendJson(res, 403, { ok: false, error: 'Forbidden' });
+    return;
+  }
+
+  const run = runs.get(runId);
+  if (!run) {
+    sendJson(res, 404, { ok: false, error: 'Run not found' });
+    return;
+  }
+
+  sendJson(res, 200, {
+    ok: true,
+    runId: run.runId,
+    scenarioId: run.scenarioId,
+    status: run.status,
+    startedAt: run.startedAt,
+    completedAt: run.completedAt,
+    ...(run.error != null ? { error: run.error } : {}),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// GET /webex/collab/eval/runs/:runId/result
+// ---------------------------------------------------------------------------
+
+function handleRunResult(req, res, runId) {
+  if (!isSecretValid(req)) {
+    sendJson(res, 403, { ok: false, error: 'Forbidden' });
+    return;
+  }
+
+  const run = runs.get(runId);
+  if (!run) {
+    sendJson(res, 404, { ok: false, error: 'Run not found' });
+    return;
+  }
+
+  if (run.status === 'running') {
+    sendJson(res, 202, { ok: false, status: 'running', runId, scenarioId: run.scenarioId });
+    return;
+  }
+
+  if (run.status === 'failed') {
+    sendJson(res, 200, {
+      ok: false,
+      status: 'failed',
+      runId,
+      scenarioId: run.scenarioId,
+      error: run.error,
+    });
+    return;
+  }
+
+  sendJson(res, 200, {
+    ok: true,
+    status: 'complete',
+    runId,
+    scenarioId: run.scenarioId,
+    result: run.result,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Router
+// ---------------------------------------------------------------------------
+
+async function evalRouter(req, res) {
+  const pathname = getPathname(req);
+
+  if (pathname === '/webex/collab/eval/run') {
+    if (req.method !== 'POST') {
+      res.statusCode = 405;
+      res.setHeader('Allow', 'POST');
+      res.end('Method Not Allowed');
+      return true;
+    }
+    await handleRunPost(req, res);
     return true;
   }
 
-  console.log(`[eval] received run request for scenario "${scenario.id}" (${scenario.messages.length} messages)`);
-
-  let result;
-  try {
-    result = await runScenario({ scenario, options, log: makeLog() });
-  } catch (err) {
-    console.error('[eval] runScenario failed:', err?.message ?? err);
-    sendJson(res, 500, { ok: false, error: err?.message ?? String(err) });
+  const statusMatch = RUNS_STATUS_RE.exec(pathname);
+  if (statusMatch) {
+    if (req.method !== 'GET') {
+      res.statusCode = 405;
+      res.setHeader('Allow', 'GET');
+      res.end('Method Not Allowed');
+      return true;
+    }
+    handleRunStatus(req, res, statusMatch[1]);
     return true;
   }
 
-  sendJson(res, 200, { ok: true, result });
-  return true;
+  const resultMatch = RUNS_RESULT_RE.exec(pathname);
+  if (resultMatch) {
+    if (req.method !== 'GET') {
+      res.statusCode = 405;
+      res.setHeader('Allow', 'GET');
+      res.end('Method Not Allowed');
+      return true;
+    }
+    handleRunResult(req, res, resultMatch[1]);
+    return true;
+  }
+
+  return false;
 }
 
 module.exports = { evalRouter };
