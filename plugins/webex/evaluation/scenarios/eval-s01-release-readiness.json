@@ -1,8 +1,8 @@
 {
-  "id": "scenario-01-release-readiness",
+  "id": "eval-s01-release-readiness",
   "title": "Release readiness for reporting dashboard",
   "type": "release_readiness",
-  "spaceId": "scenario-01-release-readiness",
+  "spaceId": "eval-s01-release-readiness",
   "participants": [
     {
       "name": "Maya",

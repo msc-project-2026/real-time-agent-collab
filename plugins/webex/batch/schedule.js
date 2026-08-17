@@ -3,6 +3,7 @@
 
 const fs = require('node:fs/promises');
 const { spacesRoot, pendingBatchStatePath } = require('../storage/paths');
+const { isEvalMode } = require('./eval-mode');
 
 // *** Scheduler
 // Note: timers are in-memory (map) only. They are lost on gateway restart/deploy.
@@ -18,6 +19,14 @@ function schedulePendingBatchStaging({
   batchStagingHandler,
 }) {
   if (!spaceId) throw new Error('spaceId is required');
+
+  if (isEvalMode()) {
+    log?.info?.(
+      `[webex:${account?.accountId ?? 'unknown'}] eval mode: skipping scheduled batch staging`,
+      { spaceId }
+    );
+    return;
+  }
 
   const existing = pendingBatchTimers.get(spaceId);
   if (existing) {

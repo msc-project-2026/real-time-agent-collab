@@ -30,6 +30,7 @@ const path = require('node:path');
 
 const { handleHydratedWebexMessage } = require('../../inbound/message');
 const { handleStagePendingBatchRequest } = require('../../batch/staging-handler');
+const { setEvalMode } = require('../../batch/eval-mode');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -164,7 +165,14 @@ async function runScenario({ scenario, options = {}, log: externalLog } = {}) {
 
   const { spaceDir, itemsPath, conversationsPath, threadsPath } = require('../../storage/paths');
 
-  if (options.clearPrevious) {
+  // clearPrevious defaults to true. Refuse to wipe a non-eval space.
+  const clearPrevious = options.clearPrevious !== false;
+  if (clearPrevious) {
+    if (!scenario.spaceId.startsWith('eval-')) {
+      throw new Error(
+        `[eval] refusing to clear non-eval space "${scenario.spaceId}". spaceId must start with "eval-".`
+      );
+    }
     await fs.rm(spaceDir(scenario.spaceId), { recursive: true, force: true });
   }
 
@@ -185,7 +193,7 @@ async function runScenario({ scenario, options = {}, log: externalLog } = {}) {
     return { id: `eval-captured-${Date.now()}` };
   }
 
-  log.info(`[eval] starting scenario`, { scenarioId: scenario.id });
+  log.info(`[eval] starting scenario`, { scenarioId: scenario.id, clearPrevious });
 
   const participants = {};
   for (const p of scenario.participants) participants[p.name] = p;
@@ -225,74 +233,110 @@ async function runScenario({ scenario, options = {}, log: externalLog } = {}) {
     rounds: [],
   };
 
+  // Suppress automatic batch staging (deferred timer and task_request immediate path)
+  // for the duration of this run. The eval runner controls staging at round boundaries.
+  setEvalMode(true);
+
   const startMs = Date.now();
   const rounds = groupByRound(scenario.messages);
 
-  for (const [round, roundMsgs] of rounds) {
-    log.info(`[eval] round ${round} start`, { messageCount: roundMsgs.length });
-    const roundStart = Date.now();
-    const roundTimings = { round, messages: [], stagingDurationMs: null, totalRoundMs: null };
+  try {
+    for (const [round, roundMsgs] of rounds) {
+      const roundStart = Date.now();
+      const roundTimings = {
+        round,
+        messages: [],
+        routingIdleMs: null,
+        stagingDurationMs: null,
+        processingIdleMs: null,
+        totalRoundMs: null,
+      };
 
-    for (const scenarioMsg of roundMsgs) {
-      const synthetic = syntheticMsgById.get(numberToId(scenarioMsg.number));
+      log.info(`[eval] round ${round} started`, { messageCount: roundMsgs.length });
 
-      log.info(`[eval] processing message`, {
-        number: scenarioMsg.number,
-        sender: scenarioMsg.sender,
-        expectedRoute: scenarioMsg.expectedRoute,
-      });
+      for (const scenarioMsg of roundMsgs) {
+        const synthetic = syntheticMsgById.get(numberToId(scenarioMsg.number));
 
-      const msgStart = Date.now();
+        log.info(`[eval] processing message`, {
+          number: scenarioMsg.number,
+          sender: scenarioMsg.sender,
+          expectedRoute: scenarioMsg.expectedRoute,
+        });
 
-      await handleHydratedWebexMessage({
-        message: synthetic,
-        botId: BOT_ID,
-        account,
-        log,
-        // fetchMessageById resolves parent messages from the synthetic message map,
-        // used by appendMessageToThreadContextWindow to seed thread context windows.
-        fetchMessageById: async (id) => {
-          const msg = syntheticMsgById.get(id);
-          if (!msg) throw new Error(`[eval] synthetic message not found: ${id}`);
-          return msg;
-        },
-        sendFn: captureSend,
-      });
+        const msgStart = Date.now();
 
-      roundTimings.messages.push({
-        number: scenarioMsg.number,
-        id: synthetic.id,
-        durationMs: Date.now() - msgStart,
+        await handleHydratedWebexMessage({
+          message: synthetic,
+          botId: BOT_ID,
+          account,
+          log,
+          // fetchMessageById resolves parent messages from the synthetic message map,
+          // used by appendMessageToThreadContextWindow to seed thread context windows.
+          fetchMessageById: async (id) => {
+            const msg = syntheticMsgById.get(id);
+            if (!msg) throw new Error(`[eval] synthetic message not found: ${id}`);
+            return msg;
+          },
+          sendFn: captureSend,
+        });
+
+        roundTimings.messages.push({
+          number: scenarioMsg.number,
+          id: synthetic.id,
+          durationMs: Date.now() - msgStart,
+        });
+      }
+
+      log.info(`[eval] round ${round} messages submitted`, { count: roundMsgs.length });
+
+      // Wait for routing dispatch queues (and their fire-and-forget onSessionComplete
+      // chains) to drain before forcing staging.
+      const routingWaitStart = Date.now();
+      await waitForSpaceIdle(scenario.spaceId);
+      roundTimings.routingIdleMs = Date.now() - routingWaitStart;
+      log.info(`[eval] round ${round} routing idle`, { routingIdleMs: roundTimings.routingIdleMs });
+
+      // Force staging for this round. handleStagePendingBatchRequest awaits the
+      // conv-processing dispatch, but item extraction is fire-and-forget from within it.
+      log.info(`[eval] round ${round} staging started`);
+      const stagingStart = Date.now();
+      await handleStagePendingBatchRequest({ spaceId: scenario.spaceId, account, log });
+      roundTimings.stagingDurationMs = Date.now() - stagingStart;
+      log.info(`[eval] round ${round} staging completed`, { stagingDurationMs: roundTimings.stagingDurationMs });
+
+      // Wait for conv-processing → item-extraction dispatch chains to fully settle
+      // before starting the next round.
+      const processingWaitStart = Date.now();
+      await waitForSpaceIdle(scenario.spaceId);
+      roundTimings.processingIdleMs = Date.now() - processingWaitStart;
+      log.info(`[eval] round ${round} processing idle`, { processingIdleMs: roundTimings.processingIdleMs });
+
+      roundTimings.totalRoundMs = Date.now() - roundStart;
+      timings.rounds.push(roundTimings);
+      log.info(`[eval] round ${round} complete`, {
+        totalRoundMs: roundTimings.totalRoundMs,
+        routingIdleMs: roundTimings.routingIdleMs,
+        stagingDurationMs: roundTimings.stagingDurationMs,
+        processingIdleMs: roundTimings.processingIdleMs,
       });
     }
-
-    // Force batch staging after each round so messages are processed as a
-    // complete batch before the next round starts.
-    log.info(`[eval] round ${round} forcing batch staging`);
-    const stagingStart = Date.now();
-    await handleStagePendingBatchRequest({ spaceId: scenario.spaceId, account, log });
-    roundTimings.stagingDurationMs = Date.now() - stagingStart;
-    roundTimings.totalRoundMs = Date.now() - roundStart;
-    timings.rounds.push(roundTimings);
-    log.info(`[eval] round ${round} complete`, {
-      totalRoundMs: roundTimings.totalRoundMs,
-      stagingDurationMs: roundTimings.stagingDurationMs,
-    });
+  } finally {
+    setEvalMode(false);
   }
-
-  // Wait for background dispatch chains (conv-processing → item extraction →
-  // recall) to fully complete before reading back results from storage.
-  log.info(`[eval] waiting for background pipeline to complete`);
-  await waitForSpaceIdle(scenario.spaceId);
-  log.info(`[eval] background pipeline idle`);
 
   timings.completedAt = new Date().toISOString();
   timings.totalMs = Date.now() - startMs;
-  log.info(`[eval] scenario complete`, { scenarioId: scenario.id, totalMs: timings.totalMs });
 
   const items = await readJsonIfExists(itemsPath(scenario.spaceId));
   const conversations = await readJsonIfExists(conversationsPath(scenario.spaceId));
   const threads = await readJsonIfExists(threadsPath(scenario.spaceId));
+
+  log.info(`[eval] scenario complete`, {
+    scenarioId: scenario.id,
+    totalMs: timings.totalMs,
+    itemCount: items?.length ?? 0,
+    conversationCount: conversations?.length ?? 0,
+  });
 
   return {
     scenarioId: scenario.id,
