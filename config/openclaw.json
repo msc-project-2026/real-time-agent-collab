@@ -27,6 +27,9 @@
         "baseUrl": "https://llm-proxy.dev.outshift.ai/",
         "apiKey": "${CISCO_LLM_API_KEY}",
         "api": "openai-completions",
+        "compat": {
+          "supportsUsageInStreaming": true
+        },
         "models": [
           {
             "id": "bedrock/global.anthropic.claude-sonnet-4-6",
