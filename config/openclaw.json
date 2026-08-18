@@ -48,7 +48,7 @@
   "agents": {
     "defaults": {
       "model": {
-        "primary": "cisco/bedrock/global.anthropic.claude-sonnet-4-6"
+        "primary": "cisco/bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0"
       },
       "memorySearch": {
         "provider": "none"
@@ -102,12 +102,21 @@
     "defaultSessionKey": "hook:collab-sync"
   },
   "plugins": {
+    "allow": ["webex", "langfuse-bridge"],
     "load": {
       "paths": ["plugins/webex"]
     },
     "entries": {
       "webex": {
         "enabled": true
+      },
+      "langfuse-bridge": {
+        "enabled": true,
+        "config": {
+          "publicKey": "${LANGFUSE_PUBLIC_KEY}",
+          "secretKey": "${LANGFUSE_SECRET_KEY}",
+          "baseUrl": "${LANGFUSE_BASE_URL}"
+        }
       }
     }
   }
