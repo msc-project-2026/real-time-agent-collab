@@ -1,14 +1,21 @@
 # Extends the official OpenClaw gateway image.
 # Base: node:24-bookworm-slim, runs as non-root user `node` (uid 1000).
-# Base ENTRYPOINT is ["tini", "-s", "--"]
-# Kept as-is so tini remains PID 1 for signal handling.
+# Base ENTRYPOINT is ["tini", "-s", "--"]; kept as-is for signal handling.
 FROM ghcr.io/openclaw/openclaw:latest
 
 # Versioned config is the source of truth. Copied into /app/config at build
 # time, then synced into the mounted volume at container start (volumes mask
 # image-layer files, so build-time COPY alone isn't enough).
+# Workspace (AGENTS.md/SOUL.md) is intentionally NOT copied here — that's
+# host-instance config, and this plugin shouldn't override it.
 COPY --chown=node:node config/openclaw.json /app/config/openclaw.json
-COPY --chown=node:node config/workspace/ /app/config/workspace/
+
+# Install third-party plugins at build time, into a staging home dir under
+# /app so the installed files land in the image layer instead of the
+# eventual Railway-mounted volume at /home/node/.openclaw (which would
+# otherwise mask them, same issue as config above). Synced into the volume
+# by docker-entrypoint.sh at container start.
+RUN HOME=/app openclaw plugins install clawhub:openclaw-x-langfuse-plugin
 
 COPY --chown=node:node docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
@@ -23,7 +30,7 @@ RUN chmod +x /app/docker-entrypoint.sh
 # so plugins can import shared packages (e.g. @collab/github) at runtime.
 COPY --chown=root:root plugins/ /app/plugins/
 COPY --chown=root:root lib/ /app/lib/
-COPY --chown=root:root package.json /app/package.json 
+COPY --chown=root:root package.json /app/package.json
 RUN npm install --workspaces --ignore-scripts
 
 # Overrides the base CMD only; ENTRYPOINT (tini) is inherited.
