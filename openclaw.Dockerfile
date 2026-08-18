@@ -15,7 +15,7 @@ COPY --chown=node:node config/openclaw.json /app/config/openclaw.json
 # eventual Railway-mounted volume at /home/node/.openclaw (which would
 # otherwise mask them, same issue as config above). Synced into the volume
 # by docker-entrypoint.sh at container start.
-RUN OPENCLAW_STATE_DIR=/app/.openclaw-build openclaw plugins install clawhub:openclaw-x-langfuse-plugin && find /app/.openclaw-build -maxdepth 3
+RUN OPENCLAW_STATE_DIR=/app/.openclaw-build openclaw plugins install clawhub:openclaw-x-langfuse-plugin
 
 COPY --chown=node:node docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
