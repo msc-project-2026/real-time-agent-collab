@@ -19,4 +19,10 @@ cp /app/config/openclaw.json /home/node/.openclaw/openclaw.json
 mkdir -p /home/node/.openclaw/extensions
 cp -r /app/.openclaw-build/extensions/. /home/node/.openclaw/extensions/
 
+# Bridge the plugin's `require('openclaw/...')` calls to the actual
+# OpenClaw package location — extensions/ is outside /app's ancestry,
+# so Node's require resolution can't find it without this.
+mkdir -p /home/node/.openclaw/node_modules
+ln -sf /app/dist /home/node/.openclaw/node_modules/openclaw
+
 exec node openclaw.mjs gateway
