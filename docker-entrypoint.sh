@@ -14,8 +14,9 @@ set -e
 mkdir -p /home/node/.openclaw
 cp /app/config/openclaw.json /home/node/.openclaw/openclaw.json
 
-# Sync build-time installed plugins (see HOME=/app RUN step in Dockerfile)
+# Sync build-time installed plugins (see OPENCLAW_STATE_DIR=/app/.openclaw-build
+# RUN step in Dockerfile)
 mkdir -p /home/node/.openclaw/plugins
-cp -r /app/.openclaw/plugins/. /home/node/.openclaw/plugins/
+cp -r /app/.openclaw-build/plugins/. /home/node/.openclaw/plugins/
 
 exec node openclaw.mjs gateway
