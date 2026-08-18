@@ -88,21 +88,30 @@ function sleep(ms) {
 }
 
 // ---------------------------------------------------------------------------
-// Wait for the space's dispatch queue to go idle.
+// Wait for all session queues belonging to a space to go idle.
 //
-// dispatchToAgentForSpace() fires onAgentOutput as a fire-and-forget promise.
+// dispatchToAgent() fires onJobCompletion as a fire-and-forget promise.
 // That callback may itself enqueue further dispatches (conv-processing, item
-// extraction).  Poll until the queue has been continuously empty for debounceMs,
-// which covers the brief gap between consecutive dispatches in the chain.
+// extraction).  Each session type has its own queue keyed as `${spaceId}:<type>`.
+// Poll until all keys prefixed with `${spaceId}:` have been continuously absent
+// for debounceMs, which covers the brief gap between consecutive dispatches.
 // ---------------------------------------------------------------------------
 
 async function waitForSpaceIdle(spaceId, { debounceMs = 2000, timeoutMs = 600000 } = {}) {
   const { dispatchQueues } = require('../../dispatch');
+  const prefix = `${spaceId}:`;
   const deadline = Date.now() + timeoutMs;
   let idleSince = null;
 
+  function hasActiveQueues() {
+    for (const key of dispatchQueues.keys()) {
+      if (key.startsWith(prefix)) return true;
+    }
+    return false;
+  }
+
   while (Date.now() < deadline) {
-    if (dispatchQueues.has(spaceId)) {
+    if (hasActiveQueues()) {
       idleSince = null;
       await sleep(100);
     } else {

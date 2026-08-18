@@ -251,11 +251,11 @@ describe('recall-agent dispatch and response delivery', () => {
     const resultHandler = t.mock.fn();
     const makeRecallResultHandler = t.mock.fn(() => resultHandler);
     let dispatchOptions;
-    const dispatchToAgentForSpace = t.mock.fn(async (options) => {
+    const dispatchToAgent = t.mock.fn(async (options) => {
       dispatchOptions = options;
     });
     const loaded = loadWithMocks(require.resolve('../recall/handle-request'), {
-      [require.resolve('../dispatch')]: { dispatchToAgentForSpace },
+      [require.resolve('../dispatch')]: { dispatchToAgent },
       [require.resolve('../runtime')]: { getPluginRuntime: () => ({ runtime: true }) },
       [require.resolve('../recall/context')]: { buildRecallContext },
       [require.resolve('../recall/instruction')]: { buildRecallInstruction },
@@ -296,7 +296,7 @@ describe('recall-agent dispatch and response delivery', () => {
     let dispatchOptions;
     const loaded = loadWithMocks(require.resolve('../recall/handle-request'), {
       [require.resolve('../dispatch')]: {
-        dispatchToAgentForSpace: t.mock.fn(async (options) => {
+        dispatchToAgent: t.mock.fn(async (options) => {
           dispatchOptions = options;
         }),
       },

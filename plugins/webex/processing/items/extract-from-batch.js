@@ -1,7 +1,7 @@
 // ********* PROCESSING/ITEMS/EXTRACT-FROM-BATCH.JS *********
 'use strict';
 
-const { dispatchToAgentForSpace } = require('../../dispatch');
+const { dispatchToAgent } = require('../../dispatch');
 const { getPluginRuntime } = require('../../runtime');
 
 const { readConversationsState } = require('../../context/conversations-store');
@@ -115,9 +115,9 @@ async function extractItemsFromBatch({
     };
   }
 
-  await dispatchToAgentForSpace({
+  await dispatchToAgent({
     pluginRuntime: getPluginRuntime(),
-    spaceId,
+    queueKey: `${spaceId}:item-extraction`,
     account,
     log,
     buildCtxPayload: buildItemExtractionCtxPayload,

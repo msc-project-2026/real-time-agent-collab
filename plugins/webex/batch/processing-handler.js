@@ -1,7 +1,7 @@
 // ********* BATCH/PROCESSING-HANDLER.JS *********
 'use strict';
 
-const { dispatchToAgentForSpace } = require('../dispatch');
+const { dispatchToAgent } = require('../dispatch');
 const { getPluginRuntime } = require('../runtime');
 
 const { loadProcessingBatch } = require('./load');
@@ -69,9 +69,9 @@ async function handleProcessStagedBatchRequest({
     };
   }
 
-  await dispatchToAgentForSpace({
+  await dispatchToAgent({
     pluginRuntime: getPluginRuntime(),
-    spaceId,
+    queueKey: `${spaceId}:conv-processing`,
     account,
     log,
     buildCtxPayload: buildProcessStagedBatchCtxPayload,

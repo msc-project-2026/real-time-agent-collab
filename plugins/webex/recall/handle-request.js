@@ -1,7 +1,7 @@
 // ********* RECALL/HANDLE-REQUEST.JS *********
 'use strict';
 
-const { dispatchToAgentForSpace } = require('../dispatch');
+const { dispatchToAgent } = require('../dispatch');
 const { getPluginRuntime } = require('../runtime');
 const { buildRecallContext } = require('./context');
 const { buildRecallInstruction } = require('./instruction');
@@ -50,9 +50,9 @@ async function handleRecallRequest({ message, account, log, sendFn }) {
     };
   }
 
-  await dispatchToAgentForSpace({
+  await dispatchToAgent({
     pluginRuntime: getPluginRuntime(),
-    spaceId,
+    queueKey: `${spaceId}:recall`,
     account,
     log,
     buildCtxPayload: buildRecallResponseCtxPayload,

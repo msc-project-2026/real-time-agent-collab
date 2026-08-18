@@ -107,7 +107,7 @@ function routeMessageTool() {
       }
 
       pendingRouteResults.set(spaceId, { routes });
-      return { ok: true, routeCount: routes.length };
+      return { ok: true, routeCount: routes.length, chosenRoutes: routes.map((r) => r.route) };
     },
   };
 }

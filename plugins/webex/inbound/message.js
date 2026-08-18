@@ -9,7 +9,7 @@ const {
   getThread,
 } = require('../context/threads-store');
 const { buildRoutingInstruction } = require('../routing/instruction');
-const { dispatchToAgentForSpace } = require('../dispatch');
+const { dispatchToAgent } = require('../dispatch');
 const { handleRoutingDispatchResult } = require('../routing/result-handler');
 const { getPluginRuntime, getRoutingAgentId } = require('../runtime');
 
@@ -108,10 +108,10 @@ async function handleHydratedWebexMessage({
   }
 
   // onAgentOutput: warn when the routing agent produces text instead of calling the tool.
-  // onSessionComplete: consume the validated route result after the session settles.
-  await dispatchToAgentForSpace({
+  // onJobCompletion: consume the validated route result after the session settles.
+  await dispatchToAgent({
     pluginRuntime: getPluginRuntime(),
-    spaceId: message.roomId,
+    queueKey: `${message.roomId}:routing`,
     account,
     log,
     buildCtxPayload: buildMessageRoutingCtxPayload,
@@ -121,7 +121,7 @@ async function handleHydratedWebexMessage({
         { spaceId: message.roomId, text: text?.slice(0, 200) }
       );
     },
-    onSessionComplete: () =>
+    onJobCompletion: () =>
       handleRoutingDispatchResult({
         spaceId: message.roomId,
         message,

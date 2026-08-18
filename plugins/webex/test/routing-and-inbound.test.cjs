@@ -25,7 +25,7 @@ describe('route_message tool validation', () => {
 
     const result = await tool.execute('id-1', { spaceId: 'space-1', routes: [] });
 
-    assert.deepEqual(result, { ok: true, routeCount: 0 });
+    assert.deepEqual(result, { ok: true, routeCount: 0, chosenRoutes: [] });
     assert.deepEqual(takePendingRouteResult('space-1'), { routes: [] });
   });
 
@@ -38,7 +38,7 @@ describe('route_message tool validation', () => {
       routes: [{ route: 'recall_request', reason: 'Asking about prior decisions' }],
     });
 
-    assert.deepEqual(result, { ok: true, routeCount: 1 });
+    assert.deepEqual(result, { ok: true, routeCount: 1, chosenRoutes: ['recall_request'] });
     assert.deepEqual(takePendingRouteResult('space-1'), {
       routes: [{ route: 'recall_request', reason: 'Asking about prior decisions' }],
     });
@@ -56,7 +56,7 @@ describe('route_message tool validation', () => {
       ],
     });
 
-    assert.deepEqual(result, { ok: true, routeCount: 2 });
+    assert.deepEqual(result, { ok: true, routeCount: 2, chosenRoutes: ['recall_request', 'task_request'] });
     const stored = takePendingRouteResult('space-1');
     assert.equal(stored.routes.length, 2);
   });
@@ -364,8 +364,8 @@ function loadMessageHandler(t, overrides = {}) {
       contextWindow: [],
     })),
     buildRoutingInstruction: t.mock.fn(() => 'routing prompt'),
-    dispatchToAgentForSpace: t.mock.fn(async ({ onSessionComplete }) => {
-      await onSessionComplete?.();
+    dispatchToAgent: t.mock.fn(async ({ onJobCompletion }) => {
+      await onJobCompletion?.();
     }),
     handleRoutingDispatchResult: t.mock.fn(async () => undefined),
     getPluginRuntime: t.mock.fn(() => ({ runtime: true })),
@@ -385,7 +385,7 @@ function loadMessageHandler(t, overrides = {}) {
       buildRoutingInstruction: collaborators.buildRoutingInstruction,
     },
     [require.resolve('../dispatch')]: {
-      dispatchToAgentForSpace: collaborators.dispatchToAgentForSpace,
+      dispatchToAgent: collaborators.dispatchToAgent,
     },
     [require.resolve('../routing/result-handler')]: {
       handleRoutingDispatchResult: collaborators.handleRoutingDispatchResult,
@@ -561,10 +561,10 @@ describe('accepted inbound routing', () => {
       excludeMessageIds: ['message-1'],
     });
     assert.equal(collaborators.buildRoutingInstruction.mock.callCount(), 1);
-    assert.equal(collaborators.dispatchToAgentForSpace.mock.callCount(), 1);
+    assert.equal(collaborators.dispatchToAgent.mock.callCount(), 1);
 
-    const dispatchArgs = collaborators.dispatchToAgentForSpace.mock.calls[0].arguments[0];
-    assert.equal(dispatchArgs.spaceId, 'space-1');
+    const dispatchArgs = collaborators.dispatchToAgent.mock.calls[0].arguments[0];
+    assert.equal(dispatchArgs.queueKey, 'space-1:routing');
     assert.deepEqual(dispatchArgs.pluginRuntime, { runtime: true });
     assert.equal(dispatchArgs.buildCtxPayload().CommandBody, 'routing prompt');
     assert.equal(dispatchArgs.buildCtxPayload().SessionKey, 'agent:router:webex:space-1:msg-routing');
@@ -572,11 +572,11 @@ describe('accepted inbound routing', () => {
       dispatchArgs.buildCtxPayload('recovery').SessionKey,
       'agent:router:webex:space-1:msg-routing:recovery'
     );
-    // onAgentOutput is the warn-only sink, onSessionComplete carries the result handler
+    // onAgentOutput is the warn-only sink, onJobCompletion carries the result handler
     assert.equal(typeof dispatchArgs.onAgentOutput, 'function');
-    assert.equal(typeof dispatchArgs.onSessionComplete, 'function');
+    assert.equal(typeof dispatchArgs.onJobCompletion, 'function');
 
-    // The mock calls onSessionComplete, which calls handleRoutingDispatchResult
+    // The mock calls onJobCompletion, which calls handleRoutingDispatchResult
     assert.equal(collaborators.handleRoutingDispatchResult.mock.callCount(), 1);
     const dispatchResultArgs = collaborators.handleRoutingDispatchResult.mock.calls[0].arguments[0];
     assert.equal(dispatchResultArgs.spaceId, 'space-1');
@@ -593,8 +593,8 @@ describe('accepted inbound routing', () => {
       inboundContext(t)
     );
 
-    assert.equal(collaborators.dispatchToAgentForSpace.mock.callCount(), 1);
-    const { buildCtxPayload } = collaborators.dispatchToAgentForSpace.mock.calls[0].arguments[0];
+    assert.equal(collaborators.dispatchToAgent.mock.callCount(), 1);
+    const { buildCtxPayload } = collaborators.dispatchToAgent.mock.calls[0].arguments[0];
     assert.equal(buildCtxPayload().SessionKey, 'agent:fast-router:webex:space-1:msg-routing');
   });
 
@@ -620,7 +620,7 @@ describe('accepted inbound routing', () => {
     );
 
     assert.equal(collaborators.appendMessageToThreadContextWindow.mock.callCount(), 1);
-    assert.equal(collaborators.dispatchToAgentForSpace.mock.callCount(), 0);
+    assert.equal(collaborators.dispatchToAgent.mock.callCount(), 0);
     assert.equal(collaborators.handleRoutingDispatchResult.mock.callCount(), 0);
   });
 });

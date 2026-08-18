@@ -135,12 +135,12 @@ describe('conversation-processing dispatch construction', () => {
     const resultHandler = t.mock.fn();
     const makeConversationProcessingResultHandler = t.mock.fn(() => resultHandler);
     let dispatched;
-    const dispatchToAgentForSpace = t.mock.fn(async (options) => {
+    const dispatchToAgent = t.mock.fn(async (options) => {
       dispatched = options;
     });
     const runtime = { channel: { reply: {} } };
     const loaded = loadWithMocks(require.resolve('../batch/processing-handler'), {
-      [require.resolve('../dispatch')]: { dispatchToAgentForSpace },
+      [require.resolve('../dispatch')]: { dispatchToAgent },
       [require.resolve('../runtime')]: { getPluginRuntime: () => runtime },
       [require.resolve('../batch/load')]: { loadProcessingBatch },
       [require.resolve('../context/conversations-store')]: { getConversations },
@@ -189,7 +189,7 @@ describe('conversation-processing dispatch construction', () => {
 
   test('validates required orchestration identifiers before reading storage', async (t) => {
     const loaded = loadWithMocks(require.resolve('../batch/processing-handler'), {
-      [require.resolve('../dispatch')]: { dispatchToAgentForSpace: t.mock.fn() },
+      [require.resolve('../dispatch')]: { dispatchToAgent: t.mock.fn() },
       [require.resolve('../runtime')]: { getPluginRuntime: t.mock.fn() },
       [require.resolve('../batch/load')]: { loadProcessingBatch: t.mock.fn() },
       [require.resolve('../context/conversations-store')]: { getConversations: t.mock.fn() },
@@ -395,7 +395,7 @@ describe('conversation model-result handling', () => {
 describe('item-extraction dispatch selection', () => {
   function loadExtractor(t) {
     const collaborators = {
-      dispatchToAgentForSpace: t.mock.fn(async () => undefined),
+      dispatchToAgent: t.mock.fn(async () => undefined),
       readConversationsState: t.mock.fn(async () => ({
         conversations: [
           { id: 'conv-1', summary: 'Touched' },
@@ -410,7 +410,7 @@ describe('item-extraction dispatch selection', () => {
       require.resolve('../processing/items/extract-from-batch'),
       {
         [require.resolve('../dispatch')]: {
-          dispatchToAgentForSpace: collaborators.dispatchToAgentForSpace,
+          dispatchToAgent: collaborators.dispatchToAgent,
         },
         [require.resolve('../runtime')]: { getPluginRuntime: () => ({ runtime: true }) },
         [require.resolve('../context/conversations-store')]: {
@@ -443,7 +443,7 @@ describe('item-extraction dispatch selection', () => {
 
     assert.equal(response.skipped, true);
     assert.equal(collaborators.readConversationsState.mock.callCount(), 0);
-    assert.equal(collaborators.dispatchToAgentForSpace.mock.callCount(), 0);
+    assert.equal(collaborators.dispatchToAgent.mock.callCount(), 0);
   });
 
   test('validates batch and account identifiers before reading context', async (t) => {
@@ -483,7 +483,7 @@ describe('item-extraction dispatch selection', () => {
       candidateItems: [{ id: 'item-1' }],
     });
     const dispatchOptions =
-      collaborators.dispatchToAgentForSpace.mock.calls[0].arguments[0];
+      collaborators.dispatchToAgent.mock.calls[0].arguments[0];
     assert.equal(dispatchOptions.buildCtxPayload().SessionKey,
       'agent:main:webex:space-1:item-extraction');
     assert.equal(dispatchOptions.buildCtxPayload('recovery').SessionKey,

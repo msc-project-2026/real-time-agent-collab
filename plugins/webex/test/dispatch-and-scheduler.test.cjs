@@ -254,7 +254,7 @@ function dispatchContext(t, dispatch, overrides = {}) {
         reply: { dispatchReplyWithBufferedBlockDispatcher: dispatch },
       },
     },
-    spaceId: 'space-1',
+    queueKey: 'space-1:routing',
     account: { accountId: 'default' },
     log: makeLog(t),
     buildCtxPayload: t.mock.fn((suffix) => ({
@@ -276,12 +276,12 @@ async function finishSingleDispatch(t, promise) {
 // These tests verify missing runtime support is non-fatal and successful dispatch uses loaded configuration, filters empty output, and forwards errors.
 describe('dispatch availability and payload delivery', () => {
   test('warns and returns when the OpenClaw reply dispatcher is unavailable', async (t) => {
-    const { dispatchToAgentForSpace } = loadDispatch(t);
+    const { dispatchToAgent } = loadDispatch(t);
     const log = makeLog(t);
 
-    await dispatchToAgentForSpace({
+    await dispatchToAgent({
       pluginRuntime: {},
-      spaceId: 'space-1',
+      queueKey: 'space-1:routing',
       account: { accountId: 'default' },
       log,
       buildCtxPayload: t.mock.fn(),
@@ -300,10 +300,10 @@ describe('dispatch availability and payload delivery', () => {
       await value.dispatcherOptions.deliver({ text: 'agent response' });
       value.dispatcherOptions.onError(new Error('reported failure'));
     });
-    const { dispatchToAgentForSpace } = loadDispatch(t);
+    const { dispatchToAgent } = loadDispatch(t);
     const context = dispatchContext(t, dispatch);
 
-    const promise = dispatchToAgentForSpace(context);
+    const promise = dispatchToAgent(context);
     await finishSingleDispatch(t, promise);
 
     assert.deepEqual(options.ctx, { SessionKey: 'canonical' });
@@ -319,65 +319,65 @@ describe('dispatch availability and payload delivery', () => {
     const dispatch = t.mock.fn(async (options) => {
       await options.dispatcherOptions.deliver({ text: 'agent response' });
     });
-    const { dispatchToAgentForSpace } = loadDispatch(t);
+    const { dispatchToAgent } = loadDispatch(t);
     const context = dispatchContext(t, dispatch, {
       onAgentOutput: t.mock.fn(async () => {
         throw new Error('output failed');
       }),
     });
 
-    const promise = dispatchToAgentForSpace(context);
+    const promise = dispatchToAgent(context);
     await finishSingleDispatch(t, promise);
     await flushMicrotasks();
 
     assert.ok(mockCalls(context.log.error).some(([text]) => text.includes('output failed')));
   });
 
-  test('calls onSessionComplete when dispatch resolves', async (t) => {
+  test('calls onJobCompletion when dispatch resolves', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     // Simulates a tool-only session: dispatch resolves without any deliver calls.
     const dispatch = t.mock.fn(async () => undefined);
-    const { dispatchToAgentForSpace } = loadDispatch(t);
-    const onSessionComplete = t.mock.fn(async () => undefined);
-    const context = dispatchContext(t, dispatch, { onSessionComplete });
+    const { dispatchToAgent } = loadDispatch(t);
+    const onJobCompletion = t.mock.fn(async () => undefined);
+    const context = dispatchContext(t, dispatch, { onJobCompletion });
 
-    const promise = dispatchToAgentForSpace(context);
+    const promise = dispatchToAgent(context);
     await finishSingleDispatch(t, promise);
     await flushMicrotasks();
 
-    assert.equal(onSessionComplete.mock.callCount(), 1);
+    assert.equal(onJobCompletion.mock.callCount(), 1);
     assert.equal(context.onAgentOutput.mock.callCount(), 0);
   });
 
-  test('fires onSessionComplete exactly once regardless of deliver call count', async (t) => {
+  test('fires onJobCompletion exactly once regardless of deliver call count', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const dispatch = t.mock.fn(async (options) => {
       await options.dispatcherOptions.deliver({});
       await options.dispatcherOptions.deliver({ text: 'output' });
     });
-    const { dispatchToAgentForSpace } = loadDispatch(t);
-    const onSessionComplete = t.mock.fn(async () => undefined);
-    const context = dispatchContext(t, dispatch, { onSessionComplete });
+    const { dispatchToAgent } = loadDispatch(t);
+    const onJobCompletion = t.mock.fn(async () => undefined);
+    const context = dispatchContext(t, dispatch, { onJobCompletion });
 
-    const promise = dispatchToAgentForSpace(context);
+    const promise = dispatchToAgent(context);
     await finishSingleDispatch(t, promise);
     await flushMicrotasks();
 
-    // dispatch() resolves once → onSessionComplete fires once, regardless of deliver call count
-    assert.equal(onSessionComplete.mock.callCount(), 1);
+    // dispatch() resolves once → onJobCompletion fires once, regardless of deliver call count
+    assert.equal(onJobCompletion.mock.callCount(), 1);
   });
 
-  test('logs a rejected onSessionComplete handler without propagating', async (t) => {
+  test('logs a rejected onJobCompletion handler without propagating', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const dispatch = t.mock.fn(async () => undefined);
-    const { dispatchToAgentForSpace } = loadDispatch(t);
+    const { dispatchToAgent } = loadDispatch(t);
     const context = dispatchContext(t, dispatch, {
-      onSessionComplete: t.mock.fn(async () => {
+      onJobCompletion: t.mock.fn(async () => {
         throw new Error('session complete failed');
       }),
     });
 
-    const promise = dispatchToAgentForSpace(context);
+    const promise = dispatchToAgent(context);
     await finishSingleDispatch(t, promise);
     await flushMicrotasks();
 
@@ -399,10 +399,10 @@ describe('session-conflict recovery', () => {
         throw new Error('reply session initialization conflicted with existing session');
       }
     });
-    const { dispatchToAgentForSpace } = loadDispatch(t);
+    const { dispatchToAgent } = loadDispatch(t);
     const context = dispatchContext(t, dispatch);
 
-    const promise = dispatchToAgentForSpace(context);
+    const promise = dispatchToAgent(context);
     await flushMicrotasks();
     assert.equal(dispatch.mock.callCount(), 1);
     t.mock.timers.tick(500);
@@ -422,10 +422,10 @@ describe('session-conflict recovery', () => {
     const dispatch = t.mock.fn(async () => {
       throw new Error('permission denied');
     });
-    const { dispatchToAgentForSpace } = loadDispatch(t);
+    const { dispatchToAgent } = loadDispatch(t);
     const context = dispatchContext(t, dispatch);
 
-    const promise = dispatchToAgentForSpace(context);
+    const promise = dispatchToAgent(context);
     await flushMicrotasks();
     t.mock.timers.tick(500);
     await flushMicrotasks();
@@ -435,16 +435,17 @@ describe('session-conflict recovery', () => {
   });
 });
 
-// Category: Per-space dispatch ordering.
-// These tests verify jobs in one Webex space are serialised while independent spaces can start concurrently.
-describe('per-space dispatch ordering', () => {
-  test('waits for the prior same-space settle delay before starting the next job', async (t) => {
+// Category: Per-session dispatch ordering.
+// These tests verify jobs sharing the same queue key are serialised while independent
+// queue keys (different spaces or different session types) can start concurrently.
+describe('per-session dispatch ordering', () => {
+  test('waits for the prior same-queue settle delay before starting the next job', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const starts = [];
     const dispatch = t.mock.fn(async (options) => {
       starts.push(options.ctx.SessionKey);
     });
-    const { dispatchToAgentForSpace } = loadDispatch(t);
+    const { dispatchToAgent } = loadDispatch(t);
     const first = dispatchContext(t, dispatch, {
       buildCtxPayload: () => ({ SessionKey: 'first' }),
     });
@@ -452,8 +453,8 @@ describe('per-space dispatch ordering', () => {
       buildCtxPayload: () => ({ SessionKey: 'second' }),
     });
 
-    const firstPromise = dispatchToAgentForSpace(first);
-    const secondPromise = dispatchToAgentForSpace(second);
+    const firstPromise = dispatchToAgent(first);
+    const secondPromise = dispatchToAgent(second);
     await flushMicrotasks();
     assert.deepEqual(starts, ['first']);
 
@@ -466,23 +467,23 @@ describe('per-space dispatch ordering', () => {
     await Promise.all([firstPromise, secondPromise]);
   });
 
-  test('starts jobs for different spaces independently', async (t) => {
+  test('starts jobs for different queue keys independently', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const starts = [];
     const dispatch = t.mock.fn(async (options) => {
       starts.push(options.ctx.SessionKey);
     });
-    const { dispatchToAgentForSpace } = loadDispatch(t);
+    const { dispatchToAgent } = loadDispatch(t);
     const first = dispatchContext(t, dispatch, {
-      spaceId: 'space-a',
+      queueKey: 'space-a:routing',
       buildCtxPayload: () => ({ SessionKey: 'space-a' }),
     });
     const second = dispatchContext(t, dispatch, {
-      spaceId: 'space-b',
+      queueKey: 'space-b:routing',
       buildCtxPayload: () => ({ SessionKey: 'space-b' }),
     });
 
-    const promises = [dispatchToAgentForSpace(first), dispatchToAgentForSpace(second)];
+    const promises = [dispatchToAgent(first), dispatchToAgent(second)];
     await flushMicrotasks();
     assert.deepEqual(new Set(starts), new Set(['space-a', 'space-b']));
 
@@ -498,14 +499,14 @@ describe('per-space dispatch ordering', () => {
       throw new Error('first dispatch failed');
     });
     const secondDispatch = t.mock.fn(async () => undefined);
-    const { dispatchToAgentForSpace } = loadDispatch(t);
-    const firstPromise = dispatchToAgentForSpace(
+    const { dispatchToAgent } = loadDispatch(t);
+    const firstPromise = dispatchToAgent(
       dispatchContext(t, firstDispatch, {
         buildCtxPayload: () => ({ SessionKey: 'first' }),
       })
     );
     const observedFirst = firstPromise.catch((error) => error);
-    const secondPromise = dispatchToAgentForSpace(
+    const secondPromise = dispatchToAgent(
       dispatchContext(t, secondDispatch, {
         buildCtxPayload: () => ({ SessionKey: 'second' }),
       })

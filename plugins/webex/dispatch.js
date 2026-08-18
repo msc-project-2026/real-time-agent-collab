@@ -1,7 +1,10 @@
 // ********* DISPATCH.JS *********
 'use strict';
 
-// Serialise dispatch per Webex space
+// Serialise dispatch per session queue key (e.g. `${spaceId}:routing`).
+// Each session type maintains its own independent queue so routing, recall,
+// conv-processing, and item-extraction sessions serialise within their own
+// type without blocking one another.
 const dispatchQueues = new Map();
 const DISPATCH_SETTLE_DELAY_MS = 500;
 
@@ -9,24 +12,24 @@ function sleep(ms = DISPATCH_SETTLE_DELAY_MS) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function enqueueSpaceDispatch(spaceId, job) {
-  const previous = dispatchQueues.get(spaceId) ?? Promise.resolve();
+function enqueueSessionDispatch(queueKey, job) {
+  const previous = dispatchQueues.get(queueKey) ?? Promise.resolve();
 
   console.log('[webex] enqueue dispatch', {
-    spaceId,
-    alreadyQueued: dispatchQueues.has(spaceId),
+    queueKey,
+    alreadyQueued: dispatchQueues.has(queueKey),
   });
 
   const next = previous
     .catch((err) => {
       // Keep the queue alive even if the previous dispatch failed.
       console.warn('[webex] previous dispatch failed; continuing queue', {
-        spaceId,
+        queueKey,
         error: err?.message ?? String(err),
       });
     })
     .then(async () => {
-      console.log('[webex] start dispatch', { spaceId });
+      console.log('[webex] start dispatch', { queueKey });
       try {
         return await job();
       } finally {
@@ -34,13 +37,13 @@ function enqueueSpaceDispatch(spaceId, job) {
       }
     })
     .finally(() => {
-      console.log('[webex] finish dispatch', { spaceId });
-      if (dispatchQueues.get(spaceId) === next) {
-        dispatchQueues.delete(spaceId);
+      console.log('[webex] finish dispatch', { queueKey });
+      if (dispatchQueues.get(queueKey) === next) {
+        dispatchQueues.delete(queueKey);
       }
     });
 
-  dispatchQueues.set(spaceId, next);
+  dispatchQueues.set(queueKey, next);
   return next;
 }
 
@@ -74,16 +77,18 @@ async function dispatchWithSessionConflictRetry(dispatchJob) {
   }
 }
 
-// *** Dispatch to agent for space
-// (nested dispatch in dispatchWithRetry, itself nested in enqueuedDispatch call)
-async function dispatchToAgentForSpace({
+// *** Dispatch an agent job into its session queue.
+// queueKey is the serialisation key — callers pass `${spaceId}:<type>` (e.g.
+// `${spaceId}:routing`) so each session type maintains its own independent queue.
+// onJobCompletion fires once when the dispatch session ends, fire-and-forget.
+async function dispatchToAgent({
   pluginRuntime,
-  spaceId,
+  queueKey,
   account,
   log,
   buildCtxPayload,
   onAgentOutput,
-  onSessionComplete,
+  onJobCompletion,
 }) {
   const dispatch =
     pluginRuntime?.channel?.reply?.dispatchReplyWithBufferedBlockDispatcher;
@@ -96,7 +101,7 @@ async function dispatchToAgentForSpace({
 
   const loadedCfg = pluginRuntime.config?.current?.() ?? {};
 
-  await enqueueSpaceDispatch(spaceId, () =>
+  await enqueueSessionDispatch(queueKey, () =>
     dispatchWithSessionConflictRetry((sessionKeySuffix) => {
       function deliver(out) {
         if (!out.text) return;
@@ -106,11 +111,11 @@ async function dispatchToAgentForSpace({
         );
 
         void Promise.resolve(
-          onAgentOutput?.({ text: out.text, spaceId, account, log })
+          onAgentOutput?.({ text: out.text, queueKey, account, log })
         ).catch((err) => {
           log?.error?.(
             `[webex:${account.accountId}] onAgentOutput handler failed: ${err?.message ?? err}`,
-            { spaceId, error: err?.message ?? String(err) }
+            { queueKey, error: err?.message ?? String(err) }
           );
         });
       }
@@ -128,11 +133,11 @@ async function dispatchToAgentForSpace({
         replyOptions: {},
       });
 
-      // onSessionComplete chains on the dispatch promise itself.
+      // onJobCompletion chains on the dispatch promise itself.
       // dispatch() resolves once when the session ends, making this the
-      // natural session-complete signal regardless of whether text was produced.
+      // natural job-complete signal regardless of whether text was produced.
       void Promise.resolve(p)
-        .then(() => onSessionComplete?.())
+        .then(() => onJobCompletion?.())
         .catch((err) => onError(err));
 
       return p;
@@ -141,6 +146,6 @@ async function dispatchToAgentForSpace({
 }
 
 module.exports = {
-  dispatchToAgentForSpace,
+  dispatchToAgent,
   dispatchQueues,
 };
