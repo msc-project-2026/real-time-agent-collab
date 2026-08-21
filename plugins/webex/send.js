@@ -3,9 +3,19 @@
 
 const { webexFetch } = require('./api');
 
+// Some callers (e.g. OpenClaw core's durable delivery queue) pass targets in
+// the generic `<channel>:<id>` form instead of the bare Webex id. Left
+// unstripped, the prefix corrupts the base64 decode below and gets sent to
+// Webex as a literal roomId, which 404s.
+function stripChannelPrefix(to) {
+  return to.toLowerCase().startsWith('webex:') ? to.slice(6).trim() : to;
+}
+
 // Build a Webex Messages API POST body, inferring roomId vs toPersonId vs email destination.
 function buildMsgBody(to, content, parentId) {
   const body = {};
+
+  to = stripChannelPrefix(to);
 
   if (to.includes('@')) {
     body.toPersonEmail = to;

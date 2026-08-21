@@ -110,6 +110,27 @@ describe('Webex message construction and sending', () => {
     );
   });
 
+  // OpenClaw core's durable delivery queue (e.g. the restart-sentinel notice)
+  // passes targets as `webex:<id>` — an unstripped prefix corrupts the
+  // base64 decode and gets sent to Webex as a literal roomId, which 404s.
+  test('strips a leading webex: channel prefix from room, person, and email targets', () => {
+    const { buildMsgBody } = require('../send');
+    const personId = Buffer.from('ciscospark://us/PEOPLE/person-1').toString('base64');
+
+    assert.deepEqual(buildMsgBody('webex:room-id', { text: 'Hello' }), {
+      roomId: 'room-id',
+      text: 'Hello',
+    });
+    assert.deepEqual(buildMsgBody(`webex:${personId}`, { text: 'Hi' }), {
+      toPersonId: personId,
+      text: 'Hi',
+    });
+    assert.deepEqual(
+      buildMsgBody('WEBEX:person@example.com', { text: 'Hi' }),
+      { toPersonEmail: 'person@example.com', text: 'Hi' }
+    );
+  });
+
   test('validates required fields and posts the constructed body', async (t) => {
     const webexFetch = t.mock.fn(async () => ({ id: 'message-1', roomId: 'space-1' }));
     const loaded = loadWithMocks(require.resolve('../send'), {
