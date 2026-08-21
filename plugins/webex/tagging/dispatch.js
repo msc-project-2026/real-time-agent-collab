@@ -75,21 +75,24 @@ async function runTaggingGate({
   });
 
   if (waitResult && waitResult.status !== 'ok') {
-    log?.warn?.('[webex] tagging gate run did not complete cleanly', {
-      spaceId,
-      threadKey,
-      runId,
-      status: waitResult.status,
-      error: waitResult.error,
-    });
+    log?.warn?.(
+      `[webex] tagging gate run did not complete cleanly ${JSON.stringify({
+        spaceId,
+        threadKey,
+        runId,
+        status: waitResult.status,
+        error: waitResult.error,
+      })}`
+    );
   }
 
   const tagResult = takePendingTagResult(spaceId, threadKey);
 
   if (!tagResult) {
     log?.warn?.(
-      '[webex] tagging gate did not call tag_message — no result to validate',
-      { spaceId, threadKey, runId }
+      `[webex] tagging gate did not call tag_message — no result to validate ${JSON.stringify(
+        { spaceId, threadKey, runId }
+      )}`
     );
     return null;
   }
@@ -145,11 +148,13 @@ async function dispatchTaggingGate({
       })
     );
   } catch (err) {
-    log?.error?.('[webex] tagging gate spawn failed', {
-      spaceId,
-      threadKey,
-      error: err?.message ?? String(err),
-    });
+    log?.error?.(
+      `[webex] tagging gate spawn failed ${JSON.stringify({
+        spaceId,
+        threadKey,
+        error: err?.message ?? String(err),
+      })}`
+    );
     return null;
   }
 }
