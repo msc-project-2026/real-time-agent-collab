@@ -20,7 +20,9 @@ const { loadProcessingBatch } = require('../batch/load');
 const { completeProcessingBatch } = require('../batch/complete');
 const {
   MAIN_THREAD_KEY,
-  appendMessageToThreadContextWindow,
+  appendMessageToThreadWindow,
+  markThreadMessagesProcessed,
+  getPendingSlice,
   getThread,
   getThreads,
 } = require('../context/threads-store');
@@ -155,7 +157,7 @@ describe('thread context windows', () => {
     const root = await makeTempWorkspace(t);
 
     for (let index = 1; index <= 4; index += 1) {
-      await appendMessageToThreadContextWindow({
+      await appendMessageToThreadWindow({
         spaceId: 'space-1',
         explicitRoot: root,
         contextWindowSize: 3,
@@ -189,7 +191,7 @@ describe('thread context windows', () => {
       personId: 'person-1',
     }));
 
-    await appendMessageToThreadContextWindow({
+    await appendMessageToThreadWindow({
       spaceId: 'space-1',
       explicitRoot: root,
       message: {
@@ -218,12 +220,12 @@ describe('thread context windows', () => {
 
   test('filters and orders thread listings', async (t) => {
     const root = await makeTempWorkspace(t);
-    await appendMessageToThreadContextWindow({
+    await appendMessageToThreadWindow({
       spaceId: 'space-1',
       explicitRoot: root,
       message: { id: 'main-1', text: 'Main' },
     });
-    await appendMessageToThreadContextWindow({
+    await appendMessageToThreadWindow({
       spaceId: 'space-1',
       explicitRoot: root,
       message: { id: 'reply-1', parentId: 'root-1', text: 'Reply' },
@@ -235,6 +237,112 @@ describe('thread context windows', () => {
       kinds: ['webex_thread'],
     });
     assert.deepEqual(replyThreads.map((thread) => thread.key), ['root-1']);
+  });
+});
+
+// Category: Pending/processed thread window (v3 §2, §3, §4).
+// These tests verify every arriving message is durably tagged pending with full
+// v3 metadata regardless of the (unrelated, size-capped) legacy context window,
+// that the pending slice is never storage-evicted, and that flushing moves
+// messages into a size-capped processed window.
+describe('pending/processed thread window', () => {
+  test('tags an arriving message pending with v3 metadata, independent of the capped context window', async (t) => {
+    const root = await makeTempWorkspace(t);
+
+    let lastResult;
+    for (let index = 1; index <= 4; index += 1) {
+      lastResult = await appendMessageToThreadWindow({
+        spaceId: 'space-1',
+        explicitRoot: root,
+        contextWindowSize: 3,
+        botId: 'bot-1',
+        message: {
+          id: `message-${index}`,
+          text: `Message ${index}`,
+          personId: 'person-1',
+          personEmail: 'dev@example.com',
+          created: `2026-01-0${index}T00:00:00.000Z`,
+          mentionedPeople: index === 4 ? ['bot-1'] : [],
+        },
+      });
+    }
+
+    // The append result reports the pending count directly so a future dispatch
+    // layer can check the backstop cap without a second read (v3 §2).
+    assert.equal(lastResult.pendingCount, 4);
+
+    const thread = await getThread({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      threadKey: MAIN_THREAD_KEY,
+    });
+
+    // The legacy context window is capped at 3 and lost message-1, but the
+    // pending window must retain every message — nothing is storage-evicted.
+    assert.deepEqual(thread.pending.map((message) => message.id), [
+      'message-1',
+      'message-2',
+      'message-3',
+      'message-4',
+    ]);
+
+    assert.deepEqual(thread.pending[0], {
+      id: 'message-1',
+      threadId: null,
+      senderId: 'person-1',
+      senderName: 'dev@example.com',
+      content: 'Message 1',
+      botIsMentioned: false,
+      datetime: '2026-01-01T00:00:00.000Z',
+      status: 'pending',
+    });
+    assert.equal(thread.pending[3].botIsMentioned, true);
+    assert.deepEqual(thread.processed, []);
+  });
+
+  test('exposes the pending slice directly for the tagging gate', async (t) => {
+    const root = await makeTempWorkspace(t);
+    await appendMessageToThreadWindow({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      message: { id: 'message-1', text: 'Hello' },
+    });
+
+    const slice = await getPendingSlice({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      threadKey: MAIN_THREAD_KEY,
+    });
+    assert.deepEqual(slice.map((message) => message.id), ['message-1']);
+  });
+
+  test('flushes selected messages from pending into a size-capped processed window', async (t) => {
+    const root = await makeTempWorkspace(t);
+
+    for (let index = 1; index <= 3; index += 1) {
+      await appendMessageToThreadWindow({
+        spaceId: 'space-1',
+        explicitRoot: root,
+        message: { id: `message-${index}`, text: `Message ${index}` },
+      });
+    }
+
+    const thread = await markThreadMessagesProcessed({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      threadKey: MAIN_THREAD_KEY,
+      messageIds: ['message-1', 'message-2'],
+      processedWindowSize: 1,
+    });
+
+    assert.deepEqual(thread.pending.map((message) => message.id), [
+      'message-3',
+    ]);
+    // processedWindowSize caps at 1 — only the most recently flushed survives.
+    assert.deepEqual(thread.processed.map((message) => message.id), [
+      'message-2',
+    ]);
+    assert.equal(thread.processed[0].status, 'processed');
   });
 });
 

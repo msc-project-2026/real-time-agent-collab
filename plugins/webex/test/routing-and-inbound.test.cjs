@@ -355,7 +355,7 @@ function loadMessageHandler(t, overrides = {}) {
         : { items: [{ id: 'membership-1' }] }
     ),
     getAccessToken: t.mock.fn(() => 'oauth-token'),
-    appendMessageToThreadContextWindow: t.mock.fn(async () => ({
+    appendMessageToThreadWindow: t.mock.fn(async () => ({
       threadKey: '__main__',
     })),
     getThread: t.mock.fn(async () => ({
@@ -377,8 +377,8 @@ function loadMessageHandler(t, overrides = {}) {
     [require.resolve('../api')]: { webexFetch: collaborators.webexFetch },
     [require.resolve('../token')]: { getAccessToken: collaborators.getAccessToken },
     [require.resolve('../context/threads-store')]: {
-      appendMessageToThreadContextWindow:
-        collaborators.appendMessageToThreadContextWindow,
+      appendMessageToThreadWindow:
+        collaborators.appendMessageToThreadWindow,
       getThread: collaborators.getThread,
     },
     [require.resolve('../routing/instruction')]: {
@@ -500,7 +500,7 @@ describe('early inbound rejection', () => {
     );
 
     assert.equal(webexFetch.mock.callCount(), 1);
-    assert.equal(collaborators.appendMessageToThreadContextWindow.mock.callCount(), 0);
+    assert.equal(collaborators.appendMessageToThreadWindow.mock.callCount(), 0);
   });
 
   test('drops messages when membership lookup fails or returns no membership', async (t) => {
@@ -533,7 +533,7 @@ describe('early inbound rejection', () => {
       context
     );
 
-    assert.equal(collaborators.appendMessageToThreadContextWindow.mock.callCount(), 0);
+    assert.equal(collaborators.appendMessageToThreadWindow.mock.callCount(), 0);
   });
 });
 
@@ -554,7 +554,7 @@ describe('accepted inbound routing', () => {
       context
     );
 
-    assert.equal(collaborators.appendMessageToThreadContextWindow.mock.callCount(), 1);
+    assert.equal(collaborators.appendMessageToThreadWindow.mock.callCount(), 1);
     assert.deepEqual(collaborators.getThread.mock.calls[0].arguments[0], {
       spaceId: 'space-1',
       threadKey: '__main__',
@@ -619,7 +619,7 @@ describe('accepted inbound routing', () => {
       inboundContext(t)
     );
 
-    assert.equal(collaborators.appendMessageToThreadContextWindow.mock.callCount(), 1);
+    assert.equal(collaborators.appendMessageToThreadWindow.mock.callCount(), 1);
     assert.equal(collaborators.dispatchToAgent.mock.callCount(), 0);
     assert.equal(collaborators.handleRoutingDispatchResult.mock.callCount(), 0);
   });

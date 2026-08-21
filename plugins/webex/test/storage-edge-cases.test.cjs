@@ -21,7 +21,7 @@ const { loadProcessingBatch } = require('../batch/load');
 const { completeProcessingBatch } = require('../batch/complete');
 const {
   MAIN_THREAD_KEY,
-  appendMessageToThreadContextWindow,
+  appendMessageToThreadWindow,
   getThread,
   getThreads,
 } = require('../context/threads-store');
@@ -85,11 +85,11 @@ describe('storage input contracts', () => {
     await assert.rejects(getThread(), /spaceId is required/);
     await assert.rejects(getThreads(), /spaceId is required/);
     await assert.rejects(
-      appendMessageToThreadContextWindow({ message: { id: 'message-1' } }),
+      appendMessageToThreadWindow({ message: { id: 'message-1' } }),
       /spaceId is required/
     );
     await assert.rejects(
-      appendMessageToThreadContextWindow({ spaceId: 'space-1' }),
+      appendMessageToThreadWindow({ spaceId: 'space-1' }),
       /message\.id is required/
     );
     await assert.rejects(readActiveConfig({}), /spaceId is required/);
@@ -191,6 +191,8 @@ describe('context state defaults and filtering', () => {
       kind: 'main',
       rootMessageId: null,
       contextWindow: [],
+      pending: [],
+      processed: [],
       updatedAt: null,
     });
     assert.equal(missingReply.kind, 'webex_thread');
@@ -234,13 +236,13 @@ describe('context state defaults and filtering', () => {
         ],
       },
     });
-    await appendMessageToThreadContextWindow({
+    await appendMessageToThreadWindow({
       spaceId: 'space-1',
       explicitRoot: root,
       message: { id: 'main-message' },
     });
     await new Promise((resolve) => setTimeout(resolve, 2));
-    await appendMessageToThreadContextWindow({
+    await appendMessageToThreadWindow({
       spaceId: 'space-1',
       explicitRoot: root,
       message: { id: 'reply-message', parentId: 'root-1' },
@@ -265,7 +267,7 @@ describe('context state defaults and filtering', () => {
     });
 
     for (const rootId of ['root-invalid', 'root-error']) {
-      await appendMessageToThreadContextWindow({
+      await appendMessageToThreadWindow({
         spaceId: 'space-1',
         explicitRoot: root,
         message: { id: `reply-${rootId}`, parentId: rootId, text: 'Reply' },

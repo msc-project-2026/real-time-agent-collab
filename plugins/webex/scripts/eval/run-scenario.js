@@ -280,7 +280,7 @@ async function runScenario({ scenario, options = {}, log: externalLog } = {}) {
           account,
           log,
           // fetchMessageById resolves parent messages from the synthetic message map,
-          // used by appendMessageToThreadContextWindow to seed thread context windows.
+          // used by appendMessageToThreadWindow to seed thread context windows.
           fetchMessageById: async (id) => {
             const msg = syntheticMsgById.get(id);
             if (!msg) throw new Error(`[eval] synthetic message not found: ${id}`);

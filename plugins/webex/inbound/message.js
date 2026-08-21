@@ -5,7 +5,7 @@
 const { webexFetch } = require('../api');
 const { getAccessToken } = require('../token');
 const {
-  appendMessageToThreadContextWindow,
+  appendMessageToThreadWindow,
   getThread,
 } = require('../context/threads-store');
 const { buildRoutingInstruction } = require('../routing/instruction');
@@ -52,9 +52,10 @@ async function handleHydratedWebexMessage({
   sendFn,
 }) {
   // Thread handling
-  const { threadKey } = await appendMessageToThreadContextWindow({
+  const { threadKey } = await appendMessageToThreadWindow({
     spaceId: message.roomId,
     message,
+    botId,
     log,
     fetchMessageById,
   });
