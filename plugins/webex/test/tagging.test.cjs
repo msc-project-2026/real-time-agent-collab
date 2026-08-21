@@ -348,6 +348,115 @@ describe('dispatchTaggingGate', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Category: decideDispatch — v3 §5 deterministic dispatch, pure controller
+// logic with no I/O. Phase 3: replaces the routing LLM classifier.
+// ---------------------------------------------------------------------------
+
+describe('decideDispatch', () => {
+  const { decideDispatch } = require('../tagging/decide');
+
+  test('neither mentioned, ready, nor configRequest: no dispatch', () => {
+    const decision = decideDispatch({
+      tagResult: {
+        messageTags: { isMentioned: false, configRequest: false },
+        pendingThreadWindowDecision: { ready: false, reason: 'Not yet.' },
+      },
+      botIsMentioned: false,
+    });
+
+    assert.deepEqual(decision, {
+      finalIsMentioned: false,
+      configRequest: false,
+      ready: false,
+      shouldProcess: false,
+      reason: 'Not yet.',
+    });
+  });
+
+  test('deterministic botIsMentioned alone is OR-ed in, independent of the gate', () => {
+    const decision = decideDispatch({
+      tagResult: {
+        messageTags: { isMentioned: false, configRequest: false },
+        pendingThreadWindowDecision: { ready: false, reason: 'Not judged mentioned.' },
+      },
+      botIsMentioned: true,
+    });
+
+    assert.equal(decision.finalIsMentioned, true);
+    assert.equal(decision.shouldProcess, true);
+  });
+
+  test('gate-judged isMentioned alone is OR-ed in, independent of the deterministic flag', () => {
+    const decision = decideDispatch({
+      tagResult: {
+        messageTags: { isMentioned: true, configRequest: false },
+        pendingThreadWindowDecision: { ready: false, reason: 'Semantically addressed.' },
+      },
+      botIsMentioned: false,
+    });
+
+    assert.equal(decision.finalIsMentioned, true);
+    assert.equal(decision.shouldProcess, true);
+  });
+
+  test('ready alone triggers shouldProcess without mention', () => {
+    const decision = decideDispatch({
+      tagResult: {
+        messageTags: { isMentioned: false, configRequest: false },
+        pendingThreadWindowDecision: { ready: true, reason: 'Complete ask.' },
+      },
+      botIsMentioned: false,
+    });
+
+    assert.equal(decision.finalIsMentioned, false);
+    assert.equal(decision.ready, true);
+    assert.equal(decision.shouldProcess, true);
+  });
+
+  test('mention and ready can both be true for the same message', () => {
+    const decision = decideDispatch({
+      tagResult: {
+        messageTags: { isMentioned: true, configRequest: false },
+        pendingThreadWindowDecision: { ready: true, reason: 'Both.' },
+      },
+      botIsMentioned: true,
+    });
+
+    assert.equal(decision.finalIsMentioned, true);
+    assert.equal(decision.ready, true);
+    assert.equal(decision.shouldProcess, true);
+  });
+
+  test('configRequest is independent of mention/ready and can co-occur', () => {
+    const decision = decideDispatch({
+      tagResult: {
+        messageTags: { isMentioned: false, configRequest: true },
+        pendingThreadWindowDecision: { ready: true, reason: 'Config ask plus a task.' },
+      },
+      botIsMentioned: false,
+    });
+
+    assert.equal(decision.configRequest, true);
+    assert.equal(decision.shouldProcess, true);
+  });
+
+  test('a null tagResult (failed/missing gate) falls back to botIsMentioned alone', () => {
+    const notMentioned = decideDispatch({ tagResult: null, botIsMentioned: false });
+    assert.deepEqual(notMentioned, {
+      finalIsMentioned: false,
+      configRequest: false,
+      ready: false,
+      shouldProcess: false,
+      reason: null,
+    });
+
+    const mentioned = decideDispatch({ tagResult: null, botIsMentioned: true });
+    assert.equal(mentioned.finalIsMentioned, true);
+    assert.equal(mentioned.shouldProcess, true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Category: validation log — real filesystem write via a temp workspace.
 // ---------------------------------------------------------------------------
 

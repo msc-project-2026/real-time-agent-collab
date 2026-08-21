@@ -6,13 +6,15 @@ const { webexFetch } = require('../api');
 const { getAccessToken } = require('../token');
 const {
   appendMessageToThreadWindow,
-  getThread,
+  getPendingSlice,
+  markThreadMessagesProcessed,
 } = require('../context/threads-store');
-const { buildRoutingInstruction } = require('../routing/instruction');
-const { dispatchToAgent } = require('../dispatch');
-const { handleRoutingDispatchResult } = require('../routing/result-handler');
+const { appendPendingMessage } = require('../batch/append');
+const { handleStagePendingBatchRequest } = require('../batch/staging-handler');
+const { handleConfigRequest } = require('../config/handle-request');
 const { dispatchTaggingGate } = require('../tagging/dispatch');
-const { getPluginRuntime, getRoutingAgentId } = require('../runtime');
+const { decideDispatch } = require('../tagging/decide');
+const { getPluginRuntime } = require('../runtime');
 
 // 30-second deduplication window — Webex may deliver the same webhook event twice.
 const seenMessageIds = new Set();
@@ -41,7 +43,8 @@ function isDmAllowed(cfg, personId, personEmail) {
 
 // *** Hydrated Webex Message Handler
 // Called with a fully-hydrated Webex message object (id, roomId, text, personId, etc.).
-// Runs the shared pipeline: thread context → bot filter → routing → batch append/staging.
+// Runs the shared pipeline: thread context → bot filter → tagging gate →
+// deterministic dispatch (v3 §5) → config flow / existing batch+processing dispatch.
 // Used by both the real inbound handler (after fetching from /messages/:id) and the
 // synthetic evaluation runner (which builds hydrated message objects from scenario JSON).
 async function handleHydratedWebexMessage({
@@ -52,9 +55,12 @@ async function handleHydratedWebexMessage({
   fetchMessageById,
   sendFn,
 }) {
-  // Thread handling
+  const spaceId = message.roomId;
+
+  // Thread handling — the message is durably stored as `pending` before
+  // anything downstream runs (v3 §3), regardless of what dispatch decides.
   const { threadKey } = await appendMessageToThreadWindow({
-    spaceId: message.roomId,
+    spaceId,
     message,
     botId,
     log,
@@ -63,92 +69,51 @@ async function handleHydratedWebexMessage({
 
   message.threadKey = threadKey;
 
-  const thread = await getThread({
-    spaceId: message.roomId,
-    threadKey,
-    excludeMessageIds: [message.id], // Exclude current message we just appended
-  });
-
-  // Skip routing bot messages
+  // Skip bot's own messages
   if (message.personId === botId) {
     log?.info?.(`[webex] ignoring bot message`);
     return;
   }
 
-  // v3 §4 tagging gate (phase 2): a bare, non-Task-Flow spawn run alongside
-  // the routing pipeline below purely to validate output quality — it does
-  // not control dispatch yet, so it's fired without blocking the pipeline
-  // and any failure is swallowed rather than surfaced here.
-  void dispatchTaggingGate({
+  // v3 §4 tagging gate — the sole classification call. Awaited: its output
+  // (or `null` on failure) feeds deterministic dispatch (§5) below, replacing
+  // the routing LLM classifier (phase 3). It never throws.
+  const tagResult = await dispatchTaggingGate({
     pluginRuntime: getPluginRuntime(),
-    spaceId: message.roomId,
+    spaceId,
     threadKey,
     message,
     log,
-  }).catch((err) => {
-    log?.error?.(
-      `[webex:${account.accountId}] tagging gate dispatch failed`,
-      { spaceId: message.roomId, threadKey, error: err?.message ?? String(err) }
-    );
   });
 
-  // Routing: dispatch to the configured routing agent for classification.
-  const routingInstruction = buildRoutingInstruction({
-    message,
-    botId,
-    thread,
-  });
+  const botIsMentioned =
+    Array.isArray(message.mentionedPeople) && message.mentionedPeople.includes(botId);
 
-  const baseSessionKey = `agent:${getRoutingAgentId()}:webex:${message.roomId}:msg-routing`;
+  const decision = decideDispatch({ tagResult, botIsMentioned });
 
-  function buildMessageRoutingCtxPayload(sessionKeySuffix) {
-    return {
-      Body: '',
-      RawBody: '',
-      CommandBody: routingInstruction,
-      From: `webex:${message.personId}`,
-      To: `webex:${message.roomId}`,
-      SessionKey: sessionKeySuffix
-        ? `${baseSessionKey}:${sessionKeySuffix}`
-        : baseSessionKey,
-      WebexRoomId: message.roomId,
-      AccountId: account.accountId,
-      ChatType: message.roomType === 'direct' ? 'direct' : 'group',
-      SenderName: message.personEmail ?? message.personId,
-      SenderId: message.personId,
-      Provider: 'webex',
-      Surface: 'webex',
-      MessageSid: message.id,
-      Timestamp: message.created,
-      OriginatingChannel: 'webex',
-      OriginatingTo: `webex:${message.roomId}`,
-      MessageThreadId: message.parentId,
-    };
+  // Baseline capture: every accepted message still enters the existing batch
+  // pipeline (context/threads-store's pending window is a separate, per-thread
+  // concern from this per-space batch file that processing reads from).
+  await appendPendingMessage({ spaceId, message });
+
+  if (decision.configRequest) {
+    await handleConfigRequest({ spaceId, account, log, sendFn });
   }
 
-  // onAgentOutput: warn when the routing agent produces text instead of calling the tool.
-  // onJobCompletion: consume the validated route result after the session settles.
-  await dispatchToAgent({
-    pluginRuntime: getPluginRuntime(),
-    queueKey: `${message.roomId}:routing`,
-    account,
-    log,
-    buildCtxPayload: buildMessageRoutingCtxPayload,
-    onAgentOutput: ({ text }) => {
-      log?.warn?.(
-        `[webex:${account.accountId}] routing agent produced text instead of tool call — ignoring`,
-        { spaceId: message.roomId, text: text?.slice(0, 200) }
-      );
-    },
-    onJobCompletion: () =>
-      handleRoutingDispatchResult({
-        spaceId: message.roomId,
-        message,
-        account,
-        log,
-        sendFn,
-      }),
-  });
+  // v3 §5: mention or ready flushes the thread's pending slice and spawns
+  // processing, immediately — no debounce. Still calls into the existing
+  // batch staging + conv-processing/item-extraction dispatch underneath
+  // (phase 3 replaces only the trigger decision, not that pipeline).
+  if (decision.shouldProcess) {
+    const pendingSlice = await getPendingSlice({ spaceId, threadKey });
+    const messageIds = pendingSlice.map((entry) => entry.id);
+
+    if (messageIds.length > 0) {
+      await markThreadMessagesProcessed({ spaceId, threadKey, messageIds });
+    }
+
+    await handleStagePendingBatchRequest({ spaceId, account, log });
+  }
 }
 
 // *** Inbound Webex Message Handler

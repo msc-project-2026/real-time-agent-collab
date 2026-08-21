@@ -518,8 +518,6 @@ function loadChannel(t) {
     targets: new Map(),
     handleInboundWebexWebhook: t.mock.fn(async () => undefined),
     sendWebexMessage: t.mock.fn(async () => ({ id: 'sent-1', roomId: 'space-1' })),
-    runPendingBatchStagingRecovery: t.mock.fn(async () => undefined),
-    handleStagePendingBatchRequest: t.mock.fn(async () => undefined),
   };
   const loaded = loadWithMocks(require.resolve('../channel'), {
     [require.resolve('../api')]: {
@@ -544,14 +542,6 @@ function loadChannel(t) {
     },
     [require.resolve('../send')]: {
       sendWebexMessage: collaborators.sendWebexMessage,
-    },
-    [require.resolve('../batch/schedule')]: {
-      runPendingBatchStagingRecovery:
-        collaborators.runPendingBatchStagingRecovery,
-    },
-    [require.resolve('../batch/staging-handler')]: {
-      handleStagePendingBatchRequest:
-        collaborators.handleStagePendingBatchRequest,
     },
   });
   t.after(loaded.restore);
@@ -809,7 +799,8 @@ describe('channel adapter contracts', () => {
 });
 
 // Category: Channel startup wiring.
-// These tests verify account startup initialises identity/token state, ensures remote webhooks, installs bot/OAuth local targets, and starts batch recovery.
+// These tests verify account startup initialises identity/token state, ensures remote webhooks, and installs bot/OAuth local targets.
+// (Batch restart-recovery scanning was retired in phase 3 of the v3 migration — see channel.js.)
 describe('channel startup wiring', () => {
   test('initialises a configured account and installs both inbound targets', async (t) => {
     const { webexPlugin, collaborators } = loadChannel(t);
@@ -844,7 +835,6 @@ describe('channel startup wiring', () => {
     assert.equal(collaborators.targets.size, 2);
     assert.ok(collaborators.targets.has('/webhooks/webex/bot/default'));
     assert.ok(collaborators.targets.has('/webhooks/webex/oauth/default'));
-    assert.equal(collaborators.runPendingBatchStagingRecovery.mock.callCount(), 1);
 
     await collaborators.targets.get('/webhooks/webex/bot/default').handle({ id: 'bot-hook' });
     await collaborators.targets.get('/webhooks/webex/oauth/default').handle({ id: 'oauth-hook' });
@@ -1009,7 +999,6 @@ describe('plugin registration and tool exposure', () => {
     const contextRouter = t.mock.fn();
     const boardRouter = t.mock.fn();
     const setPluginRuntime = t.mock.fn();
-    const routeTool = { name: 'route_message' };
     const tagTool = { name: 'tag_message' };
     const loadTool = { name: 'load' };
     const completeTool = { name: 'complete' };
@@ -1019,7 +1008,6 @@ describe('plugin registration and tool exposure', () => {
       [require.resolve('../visibility/context-router')]: { contextRouter },
       [require.resolve('../visibility/board-router')]: { boardRouter },
       [require.resolve('../runtime')]: { setPluginRuntime, setPluginConfig: t.mock.fn() },
-      [require.resolve('../routing/tool')]: { routeMessageTool: () => routeTool },
       [require.resolve('../tagging/tool')]: { tagMessageTool: () => tagTool },
       [require.resolve('../tools/load-processing-batch')]: {
         loadProcessingBatchTool: () => loadTool,
@@ -1049,7 +1037,7 @@ describe('plugin registration and tool exposure', () => {
     );
     assert.deepEqual(
       api.registerTool.mock.calls.map((call) => call.arguments[0]),
-      [routeTool, tagTool, loadTool, completeTool]
+      [tagTool, loadTool, completeTool]
     );
   });
 

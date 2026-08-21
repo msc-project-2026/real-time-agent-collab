@@ -5,7 +5,6 @@ const { loadProcessingBatchTool } = require('./tools/load-processing-batch');
 const {
   completeProcessingBatchTool,
 } = require('./tools/complete-processing-batch');
-const { routeMessageTool } = require('./routing/tool');
 const { tagMessageTool } = require('./tagging/tool');
 
 const { webexPlugin } = require('./channel');
@@ -54,7 +53,11 @@ function register(api) {
   });
 
   // Tools
-  api.registerTool(routeMessageTool());
+  // route_message (routing/tool.js) is no longer registered — deterministic
+  // dispatch (tagging/decide.js, phase 3) replaced the routing LLM classifier
+  // that was its only caller. The module survives for now as a plain function
+  // still exercised by processing-pipeline tests; full removal is routing/*'s
+  // formal retirement (v3 migration phase 5+).
   api.registerTool(tagMessageTool());
   api.registerTool(loadProcessingBatchTool());
   api.registerTool(completeProcessingBatchTool());

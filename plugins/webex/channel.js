@@ -16,8 +16,6 @@ const {
 const { targets, normPath } = require('./webhook/router');
 const { handleInboundWebexWebhook } = require('./inbound');
 const { sendWebexMessage } = require('./send');
-const { runPendingBatchStagingRecovery } = require('./batch/schedule');
-const { handleStagePendingBatchRequest } = require('./batch/staging-handler');
 
 const DEFAULT_ACCOUNT = 'default';
 
@@ -438,12 +436,15 @@ const webexPlugin = {
       });
       log?.info?.(`[webex:${account.accountId}] ready at ${oauthWebhookPath}`);
 
-      // *** Batch recovery scan run
-      void runPendingBatchStagingRecovery({
-        account,
-        log,
-        batchStagingHandler: handleStagePendingBatchRequest,
-      });
+      // Batch restart-recovery scanning (batch/schedule.js) was built around
+      // the debounce-timer trigger model: a persisted `scheduledRunAfter`
+      // deadline that's always due shortly after the last message, recovered
+      // if the in-memory timer was lost to a restart. Deterministic dispatch
+      // (v3 §5, phase 3) has no such deadline — a thread can legitimately sit
+      // pending indefinitely until it's mentioned or judged ready — so running
+      // this scan now would force-stage threads dispatch intentionally held
+      // back. Not wired until it's rebuilt against Task Flow persistence
+      // (phase 5+).
 
       // The channel must stay alive until the gateway stops it.
       // On shutdown the finally block deregisters the target and Webex webhook.

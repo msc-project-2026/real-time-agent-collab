@@ -1,11 +1,14 @@
 // ********* TAGGING/DISPATCH.JS *********
 'use strict';
 
-// v3 §4/§7a phase 2: the tagging gate as a bare, non-Task-Flow subagent spawn
-// (`pluginRuntime.subagent.run`), run alongside the existing routing pipeline
-// purely to validate its output quality — it does not control dispatch yet.
-// Any failure here is caught and logged; it must never affect the routing
-// pipeline it runs beside.
+// v3 §4/§7a: the tagging gate as a bare, non-Task-Flow subagent spawn
+// (`pluginRuntime.subagent.run`). Phase 2 ran this in shadow mode only, for
+// output-quality validation. Phase 3 makes it load-bearing: the caller awaits
+// dispatchTaggingGate() and feeds the returned tag result into the
+// deterministic dispatch decision (tagging/decide.js), replacing the routing
+// LLM classifier. It still never throws — a failed/missing gate result
+// resolves to `null`, which decideDispatch() treats as "fall back to the
+// deterministic botIsMentioned flag alone."
 
 const { getPendingSlice } = require('../context/threads-store');
 const { safeSegment } = require('../storage/paths');
@@ -88,7 +91,7 @@ async function runTaggingGate({
       '[webex] tagging gate did not call tag_message — no result to validate',
       { spaceId, threadKey, runId }
     );
-    return;
+    return null;
   }
 
   await appendTaggingValidationRecord({
@@ -100,10 +103,14 @@ async function runTaggingGate({
     tagResult,
     explicitRoot,
   });
+
+  return tagResult;
 }
 
-// Fire-and-forget entry point. Never throws — this is shadow-mode validation
-// running alongside the routing pipeline, not on its critical path.
+// Entry point. Never throws — resolves to the tag result on success, or
+// `null` if the gate is unavailable, fails, or never calls tag_message. The
+// caller (inbound/message.js) awaits this and feeds the result into
+// deterministic dispatch (tagging/decide.js).
 async function dispatchTaggingGate({
   pluginRuntime,
   spaceId,
@@ -120,13 +127,13 @@ async function dispatchTaggingGate({
     log?.warn?.(
       '[webex] tagging gate spawn unavailable — runtime does not expose subagent.run'
     );
-    return;
+    return null;
   }
 
   const queueKey = `${spaceId}::${threadKey}`;
 
   try {
-    await enqueueTaggingDispatch(queueKey, () =>
+    return await enqueueTaggingDispatch(queueKey, () =>
       runTaggingGate({
         pluginRuntime,
         spaceId,
@@ -143,6 +150,7 @@ async function dispatchTaggingGate({
       threadKey,
       error: err?.message ?? String(err),
     });
+    return null;
   }
 }
 

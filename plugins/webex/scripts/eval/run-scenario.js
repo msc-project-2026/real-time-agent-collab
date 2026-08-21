@@ -9,7 +9,17 @@
 // immediately after a real webhook would have fetched a message from /messages/:id.
 //
 // The full pipeline runs unchanged via the existing dispatch machinery:
-//   routing → conversation processing → item extraction → recall
+//   tagging gate → deterministic dispatch → conversation processing → item extraction
+//
+// Caveat (phase 3): deterministic dispatch stages immediately whenever the
+// tagging gate judges a thread mentioned/ready — unlike the old routing
+// classifier, this is no longer limited to explicit task_request phrasing.
+// A scenario round with such a message will trigger staging mid-round,
+// ahead of this harness's own end-of-round handleStagePendingBatchRequest
+// call (which then becomes a no-op for that space). round-grouping here is
+// already slated for removal per v3 §11 (see migration plan phase 8); until
+// then, scenarios that rely on precise round boundaries should avoid
+// messages the gate is expected to flag as mentioned/ready.
 //
 // This module requires the OpenClaw plugin runtime to already be initialised
 // (i.e. the webex plugin must have been registered) so that getPluginRuntime()

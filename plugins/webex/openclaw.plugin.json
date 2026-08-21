@@ -5,7 +5,7 @@
   "channels": ["webex"],
   "contracts": {
     "tools": [
-      "route_message",
+      "tag_message",
       "collab_load_processing_batch",
       "collab_complete_processing_batch"
     ]

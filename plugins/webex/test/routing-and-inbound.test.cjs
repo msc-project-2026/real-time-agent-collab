@@ -358,19 +358,18 @@ function loadMessageHandler(t, overrides = {}) {
     appendMessageToThreadWindow: t.mock.fn(async () => ({
       threadKey: '__main__',
     })),
-    getThread: t.mock.fn(async () => ({
-      key: '__main__',
-      kind: 'main',
-      contextWindow: [],
+    getPendingSlice: t.mock.fn(async () => []),
+    markThreadMessagesProcessed: t.mock.fn(async () => undefined),
+    appendPendingMessage: t.mock.fn(async () => ({ ok: true })),
+    handleStagePendingBatchRequest: t.mock.fn(async () => ({ ok: true })),
+    handleConfigRequest: t.mock.fn(async () => undefined),
+    // Default: gate produces a result that never triggers dispatch on its own —
+    // individual tests override this to exercise configRequest/mention/ready.
+    dispatchTaggingGate: t.mock.fn(async () => ({
+      messageTags: { isMentioned: false, configRequest: false },
+      pendingThreadWindowDecision: { ready: false, reason: 'Not yet.' },
     })),
-    buildRoutingInstruction: t.mock.fn(() => 'routing prompt'),
-    dispatchToAgent: t.mock.fn(async ({ onJobCompletion }) => {
-      await onJobCompletion?.();
-    }),
-    handleRoutingDispatchResult: t.mock.fn(async () => undefined),
-    dispatchTaggingGate: t.mock.fn(async () => undefined),
     getPluginRuntime: t.mock.fn(() => ({ runtime: true })),
-    getRoutingAgentId: t.mock.fn(() => 'router'),
     ...overrides,
   };
 
@@ -380,23 +379,23 @@ function loadMessageHandler(t, overrides = {}) {
     [require.resolve('../context/threads-store')]: {
       appendMessageToThreadWindow:
         collaborators.appendMessageToThreadWindow,
-      getThread: collaborators.getThread,
+      getPendingSlice: collaborators.getPendingSlice,
+      markThreadMessagesProcessed: collaborators.markThreadMessagesProcessed,
     },
-    [require.resolve('../routing/instruction')]: {
-      buildRoutingInstruction: collaborators.buildRoutingInstruction,
+    [require.resolve('../batch/append')]: {
+      appendPendingMessage: collaborators.appendPendingMessage,
     },
-    [require.resolve('../dispatch')]: {
-      dispatchToAgent: collaborators.dispatchToAgent,
+    [require.resolve('../batch/staging-handler')]: {
+      handleStagePendingBatchRequest: collaborators.handleStagePendingBatchRequest,
     },
-    [require.resolve('../routing/result-handler')]: {
-      handleRoutingDispatchResult: collaborators.handleRoutingDispatchResult,
+    [require.resolve('../config/handle-request')]: {
+      handleConfigRequest: collaborators.handleConfigRequest,
     },
     [require.resolve('../tagging/dispatch')]: {
       dispatchTaggingGate: collaborators.dispatchTaggingGate,
     },
     [require.resolve('../runtime')]: {
       getPluginRuntime: collaborators.getPluginRuntime,
-      getRoutingAgentId: collaborators.getRoutingAgentId,
     },
   });
   t.after(loaded.restore);
@@ -542,67 +541,156 @@ describe('early inbound rejection', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Category: Accepted inbound routing.
-// Verifies an eligible message is contextualised, dispatched to the routing
-// agent, and the post-dispatch result handler is called.
+// Category: Accepted inbound message → deterministic dispatch (v3 §5, phase 3).
+// Verifies an eligible message runs the tagging gate, and that its output
+// (plus the deterministic botIsMentioned flag) drives config/staging calls
+// through plain controller code — replacing the routing LLM classifier.
 // ---------------------------------------------------------------------------
 
-describe('accepted inbound routing', () => {
-  test('builds thread context, dispatches to routing agent, then calls handleRoutingDispatchResult', async (t) => {
+describe('accepted inbound message — deterministic dispatch', () => {
+  test('builds thread context and always runs the tagging gate and baseline capture', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const { handleInboundWebexMessage, collaborators } = loadMessageHandler(t);
-    const context = inboundContext(t);
 
     await handleInboundWebexMessage(
       { resource: 'messages', event: 'created', data: { id: 'message-accepted' } },
-      context
-    );
-
-    assert.equal(collaborators.appendMessageToThreadWindow.mock.callCount(), 1);
-    assert.deepEqual(collaborators.getThread.mock.calls[0].arguments[0], {
-      spaceId: 'space-1',
-      threadKey: '__main__',
-      excludeMessageIds: ['message-1'],
-    });
-    assert.equal(collaborators.buildRoutingInstruction.mock.callCount(), 1);
-    assert.equal(collaborators.dispatchToAgent.mock.callCount(), 1);
-
-    const dispatchArgs = collaborators.dispatchToAgent.mock.calls[0].arguments[0];
-    assert.equal(dispatchArgs.queueKey, 'space-1:routing');
-    assert.deepEqual(dispatchArgs.pluginRuntime, { runtime: true });
-    assert.equal(dispatchArgs.buildCtxPayload().CommandBody, 'routing prompt');
-    assert.equal(dispatchArgs.buildCtxPayload().SessionKey, 'agent:router:webex:space-1:msg-routing');
-    assert.equal(
-      dispatchArgs.buildCtxPayload('recovery').SessionKey,
-      'agent:router:webex:space-1:msg-routing:recovery'
-    );
-    // onAgentOutput is the warn-only sink, onJobCompletion carries the result handler
-    assert.equal(typeof dispatchArgs.onAgentOutput, 'function');
-    assert.equal(typeof dispatchArgs.onJobCompletion, 'function');
-
-    // The mock calls onJobCompletion, which calls handleRoutingDispatchResult
-    assert.equal(collaborators.handleRoutingDispatchResult.mock.callCount(), 1);
-    const dispatchResultArgs = collaborators.handleRoutingDispatchResult.mock.calls[0].arguments[0];
-    assert.equal(dispatchResultArgs.spaceId, 'space-1');
-  });
-
-  test('uses the configured routingAgentId for the session key', async (t) => {
-    t.mock.timers.enable({ apis: ['setTimeout'] });
-    const { handleInboundWebexMessage, collaborators } = loadMessageHandler(t, {
-      getRoutingAgentId: t.mock.fn(() => 'fast-router'),
-    });
-
-    await handleInboundWebexMessage(
-      { resource: 'messages', event: 'created', data: { id: 'message-custom-agent' } },
       inboundContext(t)
     );
 
-    assert.equal(collaborators.dispatchToAgent.mock.callCount(), 1);
-    const { buildCtxPayload } = collaborators.dispatchToAgent.mock.calls[0].arguments[0];
-    assert.equal(buildCtxPayload().SessionKey, 'agent:fast-router:webex:space-1:msg-routing');
+    assert.equal(collaborators.appendMessageToThreadWindow.mock.callCount(), 1);
+    assert.equal(collaborators.dispatchTaggingGate.mock.callCount(), 1);
+
+    const gateArgs = collaborators.dispatchTaggingGate.mock.calls[0].arguments[0];
+    assert.equal(gateArgs.spaceId, 'space-1');
+    assert.equal(gateArgs.threadKey, '__main__');
+    assert.deepEqual(gateArgs.pluginRuntime, { runtime: true });
+    assert.equal(gateArgs.message.id, 'message-1');
+
+    assert.equal(collaborators.appendPendingMessage.mock.callCount(), 1);
+    assert.deepEqual(collaborators.appendPendingMessage.mock.calls[0].arguments[0].spaceId, 'space-1');
   });
 
-  test('stops before routing a bot-authored message after recording thread context', async (t) => {
+  test('neither config, mention, nor ready: no config or staging call', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const { handleInboundWebexMessage, collaborators } = loadMessageHandler(t);
+
+    await handleInboundWebexMessage(
+      { resource: 'messages', event: 'created', data: { id: 'message-accepted' } },
+      inboundContext(t)
+    );
+
+    assert.equal(collaborators.handleConfigRequest.mock.callCount(), 0);
+    assert.equal(collaborators.handleStagePendingBatchRequest.mock.callCount(), 0);
+    assert.equal(collaborators.markThreadMessagesProcessed.mock.callCount(), 0);
+  });
+
+  test('configRequest from the gate triggers the config flow', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const { handleInboundWebexMessage, collaborators } = loadMessageHandler(t, {
+      dispatchTaggingGate: t.mock.fn(async () => ({
+        messageTags: { isMentioned: false, configRequest: true },
+        pendingThreadWindowDecision: { ready: false, reason: 'Config ask only.' },
+      })),
+    });
+
+    await handleInboundWebexMessage(
+      { resource: 'messages', event: 'created', data: { id: 'message-accepted' } },
+      inboundContext(t)
+    );
+
+    assert.equal(collaborators.handleConfigRequest.mock.callCount(), 1);
+    assert.deepEqual(collaborators.handleConfigRequest.mock.calls[0].arguments[0].spaceId, 'space-1');
+    assert.equal(collaborators.handleStagePendingBatchRequest.mock.callCount(), 0);
+  });
+
+  test('gate-judged ready flushes the pending slice and stages immediately', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const { handleInboundWebexMessage, collaborators } = loadMessageHandler(t, {
+      dispatchTaggingGate: t.mock.fn(async () => ({
+        messageTags: { isMentioned: false, configRequest: false },
+        pendingThreadWindowDecision: { ready: true, reason: 'Complete ask.' },
+      })),
+      getPendingSlice: t.mock.fn(async () => [{ id: 'message-1' }, { id: 'message-0' }]),
+    });
+
+    await handleInboundWebexMessage(
+      { resource: 'messages', event: 'created', data: { id: 'message-accepted' } },
+      inboundContext(t)
+    );
+
+    assert.equal(collaborators.markThreadMessagesProcessed.mock.callCount(), 1);
+    assert.deepEqual(collaborators.markThreadMessagesProcessed.mock.calls[0].arguments[0], {
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      messageIds: ['message-1', 'message-0'],
+    });
+    assert.equal(collaborators.handleStagePendingBatchRequest.mock.callCount(), 1);
+  });
+
+  test('deterministic botIsMentioned alone (gate says not mentioned) still triggers staging', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const webexFetch = t.mock.fn(async (_token, apiPath) =>
+      apiPath.startsWith('/messages/')
+        ? {
+            id: 'message-1',
+            roomId: 'space-1',
+            roomType: 'group',
+            personId: 'person-1',
+            mentionedPeople: ['bot-1'],
+          }
+        : { items: [{ id: 'membership-1' }] }
+    );
+    const { handleInboundWebexMessage, collaborators } = loadMessageHandler(t, {
+      webexFetch,
+      dispatchTaggingGate: t.mock.fn(async () => ({
+        messageTags: { isMentioned: false, configRequest: false },
+        pendingThreadWindowDecision: { ready: false, reason: 'Not ready.' },
+      })),
+    });
+
+    await handleInboundWebexMessage(
+      { resource: 'messages', event: 'created', data: { id: 'message-accepted' } },
+      inboundContext(t)
+    );
+
+    assert.equal(collaborators.handleStagePendingBatchRequest.mock.callCount(), 1);
+  });
+
+  test('a failed tagging gate (returns null) falls back to botIsMentioned alone, never throws', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const { handleInboundWebexMessage, collaborators } = loadMessageHandler(t, {
+      dispatchTaggingGate: t.mock.fn(async () => null),
+    });
+
+    await handleInboundWebexMessage(
+      { resource: 'messages', event: 'created', data: { id: 'message-accepted' } },
+      inboundContext(t)
+    );
+
+    assert.equal(collaborators.handleStagePendingBatchRequest.mock.callCount(), 0);
+    assert.equal(collaborators.handleConfigRequest.mock.callCount(), 0);
+  });
+
+  test('skips an empty pending slice without calling markThreadMessagesProcessed', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const { handleInboundWebexMessage, collaborators } = loadMessageHandler(t, {
+      dispatchTaggingGate: t.mock.fn(async () => ({
+        messageTags: { isMentioned: true, configRequest: false },
+        pendingThreadWindowDecision: { ready: false, reason: 'Mentioned.' },
+      })),
+      getPendingSlice: t.mock.fn(async () => []),
+    });
+
+    await handleInboundWebexMessage(
+      { resource: 'messages', event: 'created', data: { id: 'message-accepted' } },
+      inboundContext(t)
+    );
+
+    assert.equal(collaborators.markThreadMessagesProcessed.mock.callCount(), 0);
+    assert.equal(collaborators.handleStagePendingBatchRequest.mock.callCount(), 1);
+  });
+
+  test('stops before running the gate on a bot-authored message, after recording thread context', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const webexFetch = t.mock.fn(async (_token, apiPath) =>
       apiPath.startsWith('/messages/')
@@ -624,45 +712,7 @@ describe('accepted inbound routing', () => {
     );
 
     assert.equal(collaborators.appendMessageToThreadWindow.mock.callCount(), 1);
-    assert.equal(collaborators.dispatchToAgent.mock.callCount(), 0);
-    assert.equal(collaborators.handleRoutingDispatchResult.mock.callCount(), 0);
     assert.equal(collaborators.dispatchTaggingGate.mock.callCount(), 0);
-  });
-
-  // v3 §4 phase 2: the tagging gate runs alongside routing, not in place of it.
-  test('fires the tagging gate spawn alongside routing dispatch', async (t) => {
-    t.mock.timers.enable({ apis: ['setTimeout'] });
-    const { handleInboundWebexMessage, collaborators } = loadMessageHandler(t);
-
-    await handleInboundWebexMessage(
-      { resource: 'messages', event: 'created', data: { id: 'message-accepted' } },
-      inboundContext(t)
-    );
-
-    assert.equal(collaborators.dispatchTaggingGate.mock.callCount(), 1);
-    assert.equal(collaborators.dispatchToAgent.mock.callCount(), 1);
-
-    const gateArgs = collaborators.dispatchTaggingGate.mock.calls[0].arguments[0];
-    assert.equal(gateArgs.spaceId, 'space-1');
-    assert.equal(gateArgs.threadKey, '__main__');
-    assert.deepEqual(gateArgs.pluginRuntime, { runtime: true });
-    assert.equal(gateArgs.message.id, 'message-1');
-  });
-
-  test('a rejected tagging gate dispatch does not affect routing or throw', async (t) => {
-    t.mock.timers.enable({ apis: ['setTimeout'] });
-    const { handleInboundWebexMessage, collaborators } = loadMessageHandler(t, {
-      dispatchTaggingGate: t.mock.fn(async () => {
-        throw new Error('gate exploded');
-      }),
-    });
-
-    await handleInboundWebexMessage(
-      { resource: 'messages', event: 'created', data: { id: 'message-accepted' } },
-      inboundContext(t)
-    );
-
-    assert.equal(collaborators.dispatchToAgent.mock.callCount(), 1);
-    assert.equal(collaborators.handleRoutingDispatchResult.mock.callCount(), 1);
+    assert.equal(collaborators.appendPendingMessage.mock.callCount(), 0);
   });
 });
