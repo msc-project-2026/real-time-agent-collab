@@ -94,8 +94,21 @@ function threadsPath(spaceId, explicitRoot) {
   return path.join(contextDir(spaceId, explicitRoot), 'threads.json');
 }
 
+// -- .collab/spaces/<spaceId>/tagging/
+function taggingDir(spaceId, explicitRoot) {
+  return path.join(spaceDir(spaceId, explicitRoot), 'tagging');
+}
+
+// Shadow-mode output-quality log for the v3 §4 tagging gate (phase 2) — not
+// read by any pipeline code, only appended to for manual/offline comparison
+// against the existing routing pipeline it runs alongside.
+function taggingValidationLogPath(spaceId, explicitRoot) {
+  return path.join(taggingDir(spaceId, explicitRoot), 'validation.jsonl');
+}
+
 module.exports = {
   getWorkspaceRoot,
+  safeSegment,
   spacesRoot,
   spaceDir,
   pendingDir,
@@ -112,4 +125,6 @@ module.exports = {
   conversationsPath,
   itemsPath,
   threadsPath,
+  taggingDir,
+  taggingValidationLogPath,
 };

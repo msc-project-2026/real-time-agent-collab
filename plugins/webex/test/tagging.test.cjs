@@ -1,0 +1,426 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const { describe, test } = require('node:test');
+
+const { loadWithMocks, makeLog, makeTempWorkspace } = require('./helpers.cjs');
+const { taggingValidationLogPath } = require('../storage/paths');
+const { buildTaggingInstruction } = require('../tagging/instruction');
+const {
+  appendMessageToThreadWindow,
+} = require('../context/threads-store');
+
+// ---------------------------------------------------------------------------
+// Category: tag_message tool validation.
+// Mirrors routing/tool.js's contract: invalid inputs return structured
+// errors so the model can retry without the gateway throwing.
+// ---------------------------------------------------------------------------
+
+describe('tag_message tool validation', () => {
+  function loadTool() {
+    const resolved = require.resolve('../tagging/tool');
+    delete require.cache[resolved];
+    return require(resolved);
+  }
+
+  const validParams = {
+    spaceId: 'space-1',
+    threadKey: '__main__',
+    isMentioned: true,
+    configRequest: false,
+    ready: true,
+    reason: 'Contains a complete request.',
+  };
+
+  test('valid params store the split result and return ok', async () => {
+    const { tagMessageTool, takePendingTagResult } = loadTool();
+    const tool = tagMessageTool();
+
+    const result = await tool.execute('id-1', validParams);
+
+    assert.deepEqual(result, { ok: true });
+    assert.deepEqual(takePendingTagResult('space-1', '__main__'), {
+      messageTags: { isMentioned: true, configRequest: false },
+      pendingThreadWindowDecision: {
+        ready: true,
+        reason: 'Contains a complete request.',
+      },
+    });
+  });
+
+  test('takePendingTagResult clears the entry after reading', async () => {
+    const { tagMessageTool, takePendingTagResult } = loadTool();
+    const tool = tagMessageTool();
+
+    await tool.execute('id-1', validParams);
+    takePendingTagResult('space-1', '__main__');
+
+    assert.equal(takePendingTagResult('space-1', '__main__'), null);
+  });
+
+  test('results for different threads in the same space do not collide', async () => {
+    const { tagMessageTool, takePendingTagResult } = loadTool();
+    const tool = tagMessageTool();
+
+    await tool.execute('id-1', { ...validParams, threadKey: 'thread-a', ready: true });
+    await tool.execute('id-2', { ...validParams, threadKey: 'thread-b', ready: false });
+
+    assert.equal(
+      takePendingTagResult('space-1', 'thread-a').pendingThreadWindowDecision.ready,
+      true
+    );
+    assert.equal(
+      takePendingTagResult('space-1', 'thread-b').pendingThreadWindowDecision.ready,
+      false
+    );
+  });
+
+  test('missing threadKey returns validation error and does not store', async () => {
+    const { tagMessageTool, takePendingTagResult } = loadTool();
+    const tool = tagMessageTool();
+
+    const result = await tool.execute('id-1', { ...validParams, threadKey: undefined });
+
+    assert.equal(result.ok, false);
+    assert.ok(result.errors.some((e) => e.includes('threadKey')));
+    assert.equal(takePendingTagResult('space-1', '__main__'), null);
+  });
+
+  test('non-boolean isMentioned/configRequest/ready returns validation error', async () => {
+    const { tagMessageTool } = loadTool();
+    const tool = tagMessageTool();
+
+    const result = await tool.execute('id-1', {
+      ...validParams,
+      isMentioned: 'yes',
+      configRequest: 0,
+      ready: 'true',
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(result.errors.some((e) => e.includes('isMentioned')));
+    assert.ok(result.errors.some((e) => e.includes('configRequest')));
+    assert.ok(result.errors.some((e) => e.includes('ready')));
+  });
+
+  test('empty reason string returns validation error and does not store', async () => {
+    const { tagMessageTool, takePendingTagResult } = loadTool();
+    const tool = tagMessageTool();
+
+    const result = await tool.execute('id-1', { ...validParams, reason: '   ' });
+
+    assert.equal(result.ok, false);
+    assert.ok(result.errors.some((e) => e.includes('reason')));
+    assert.equal(takePendingTagResult('space-1', '__main__'), null);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Category: tagging instruction prompt building.
+// ---------------------------------------------------------------------------
+
+describe('buildTaggingInstruction', () => {
+  test('embeds spaceId, threadKey, and the pending slice verbatim', () => {
+    const pendingSlice = [
+      {
+        id: 'msg-1',
+        senderName: 'Ada',
+        content: 'Can we',
+        botIsMentioned: false,
+        datetime: '2026-08-21T09:00:00.000Z',
+      },
+      {
+        id: 'msg-2',
+        senderName: 'Ada',
+        content: 'fix the login test?',
+        botIsMentioned: true,
+        datetime: '2026-08-21T09:00:05.000Z',
+      },
+    ];
+
+    const instruction = buildTaggingInstruction({
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      pendingSlice,
+    });
+
+    assert.match(instruction, /tag_message/);
+    assert.match(instruction, /space-1/);
+    assert.match(instruction, /__main__/);
+    assert.match(instruction, /fix the login test\?/);
+    assert.match(instruction, /"botIsMentioned": true/);
+  });
+
+  test('requires spaceId and threadKey', () => {
+    assert.throws(() =>
+      buildTaggingInstruction({ spaceId: '', threadKey: '__main__', pendingSlice: [] })
+    );
+    assert.throws(() =>
+      buildTaggingInstruction({ spaceId: 'space-1', threadKey: '', pendingSlice: [] })
+    );
+  });
+
+  test('tolerates a missing/non-array pendingSlice', () => {
+    const instruction = buildTaggingInstruction({
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      pendingSlice: undefined,
+    });
+
+    assert.match(instruction, /\[\]/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Category: dispatchTaggingGate — the bare non-Task-Flow spawn.
+// ---------------------------------------------------------------------------
+
+describe('dispatchTaggingGate', () => {
+  function loadDispatch(t, overrides = {}) {
+    const collaborators = {
+      getPendingSlice: t.mock.fn(async () => [
+        { id: 'msg-1', senderName: 'Ada', content: 'hi', botIsMentioned: false, datetime: null },
+      ]),
+      takePendingTagResult: t.mock.fn(() => ({
+        messageTags: { isMentioned: true, configRequest: false },
+        pendingThreadWindowDecision: { ready: true, reason: 'Complete ask.' },
+      })),
+      appendTaggingValidationRecord: t.mock.fn(async () => undefined),
+      getRoutingAgentId: t.mock.fn(() => 'main'),
+      ...overrides,
+    };
+
+    const loaded = loadWithMocks(require.resolve('../tagging/dispatch'), {
+      [require.resolve('../context/threads-store')]: {
+        getPendingSlice: collaborators.getPendingSlice,
+      },
+      [require.resolve('../tagging/tool')]: {
+        takePendingTagResult: collaborators.takePendingTagResult,
+      },
+      [require.resolve('../tagging/validation-log')]: {
+        appendTaggingValidationRecord: collaborators.appendTaggingValidationRecord,
+      },
+      [require.resolve('../runtime')]: {
+        getRoutingAgentId: collaborators.getRoutingAgentId,
+      },
+    });
+    t.after(loaded.restore);
+
+    return { ...loaded.subject, collaborators };
+  }
+
+  test('spawns a bare subagent run with a per-thread session key and records the result', async (t) => {
+    const runCalls = [];
+    const subagent = {
+      run: t.mock.fn(async (params) => {
+        runCalls.push(params);
+        return { runId: 'run-1' };
+      }),
+      waitForRun: t.mock.fn(async () => ({ status: 'ok' })),
+    };
+
+    const { dispatchTaggingGate, collaborators } = loadDispatch(t);
+
+    await dispatchTaggingGate({
+      pluginRuntime: { subagent },
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      message: { id: 'msg-1' },
+      log: makeLog(t),
+    });
+
+    assert.equal(subagent.run.mock.callCount(), 1);
+    assert.equal(runCalls[0].sessionKey, 'agent:main:webex:space-1:tagging-gate:__main__');
+    assert.equal(runCalls[0].deliver, false);
+    assert.equal(runCalls[0].lightContext, true);
+    assert.equal(subagent.waitForRun.mock.callCount(), 1);
+    assert.deepEqual(subagent.waitForRun.mock.calls[0].arguments[0], {
+      runId: 'run-1',
+      timeoutMs: 15_000,
+    });
+
+    assert.equal(collaborators.appendTaggingValidationRecord.mock.callCount(), 1);
+    const record = collaborators.appendTaggingValidationRecord.mock.calls[0].arguments[0];
+    assert.equal(record.spaceId, 'space-1');
+    assert.equal(record.threadKey, '__main__');
+    assert.equal(record.runId, 'run-1');
+    assert.equal(record.pendingSliceSize, 1);
+    assert.deepEqual(record.tagResult.messageTags, { isMentioned: true, configRequest: false });
+  });
+
+  test('is a silent no-op when the runtime does not expose subagent.run', async (t) => {
+    const { dispatchTaggingGate, collaborators } = loadDispatch(t);
+    const log = makeLog(t);
+
+    await dispatchTaggingGate({
+      pluginRuntime: { channel: {} },
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      message: { id: 'msg-1' },
+      log,
+    });
+
+    assert.equal(collaborators.getPendingSlice.mock.callCount(), 0);
+    assert.equal(log.warn.mock.callCount(), 1);
+  });
+
+  test('never throws when the subagent run itself fails', async (t) => {
+    const subagent = {
+      run: async () => {
+        throw new Error('spawn exploded');
+      },
+    };
+    const { dispatchTaggingGate, collaborators } = loadDispatch(t);
+    const log = makeLog(t);
+
+    await assert.doesNotReject(
+      dispatchTaggingGate({
+        pluginRuntime: { subagent },
+        spaceId: 'space-1',
+        threadKey: '__main__',
+        message: { id: 'msg-1' },
+        log,
+      })
+    );
+
+    assert.equal(log.error.mock.callCount(), 1);
+    assert.equal(collaborators.appendTaggingValidationRecord.mock.callCount(), 0);
+  });
+
+  test('logs and skips validation recording when the gate never calls tag_message', async (t) => {
+    const subagent = {
+      run: async () => ({ runId: 'run-2' }),
+      waitForRun: async () => ({ status: 'ok' }),
+    };
+    const { dispatchTaggingGate, collaborators } = loadDispatch(t, {
+      takePendingTagResult: () => null,
+    });
+    const log = makeLog(t);
+
+    await dispatchTaggingGate({
+      pluginRuntime: { subagent },
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      message: { id: 'msg-1' },
+      log,
+    });
+
+    assert.equal(log.warn.mock.callCount(), 1);
+    assert.equal(collaborators.appendTaggingValidationRecord.mock.callCount(), 0);
+  });
+
+  test('serialises concurrent runs for the same thread so tag results cannot race', async (t) => {
+    let concurrent = 0;
+    let maxConcurrent = 0;
+    const subagent = {
+      run: t.mock.fn(async () => {
+        concurrent += 1;
+        maxConcurrent = Math.max(maxConcurrent, concurrent);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        concurrent -= 1;
+        return { runId: `run-${subagent.run.mock.callCount()}` };
+      }),
+      waitForRun: async () => ({ status: 'ok' }),
+    };
+
+    const { dispatchTaggingGate } = loadDispatch(t);
+
+    await Promise.all([
+      dispatchTaggingGate({
+        pluginRuntime: { subagent },
+        spaceId: 'space-1',
+        threadKey: '__main__',
+        message: { id: 'msg-1' },
+        log: makeLog(t),
+      }),
+      dispatchTaggingGate({
+        pluginRuntime: { subagent },
+        spaceId: 'space-1',
+        threadKey: '__main__',
+        message: { id: 'msg-2' },
+        log: makeLog(t),
+      }),
+    ]);
+
+    assert.equal(maxConcurrent, 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Category: validation log — real filesystem write via a temp workspace.
+// ---------------------------------------------------------------------------
+
+describe('appendTaggingValidationRecord', () => {
+  test('appends one JSON line per call under the space tagging dir', async (t) => {
+    const root = await makeTempWorkspace(t);
+    const { appendTaggingValidationRecord } = require('../tagging/validation-log');
+
+    await appendTaggingValidationRecord({
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      messageId: 'msg-1',
+      runId: 'run-1',
+      pendingSliceSize: 2,
+      tagResult: {
+        messageTags: { isMentioned: true, configRequest: false },
+        pendingThreadWindowDecision: { ready: true, reason: 'done' },
+      },
+      explicitRoot: root,
+    });
+    await appendTaggingValidationRecord({
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      messageId: 'msg-2',
+      runId: 'run-2',
+      pendingSliceSize: 3,
+      tagResult: {
+        messageTags: { isMentioned: false, configRequest: false },
+        pendingThreadWindowDecision: { ready: false, reason: 'not yet' },
+      },
+      explicitRoot: root,
+    });
+
+    const raw = await fs.readFile(taggingValidationLogPath('space-1', root), 'utf8');
+    const lines = raw.trim().split('\n').map((line) => JSON.parse(line));
+
+    assert.equal(lines.length, 2);
+    assert.equal(lines[0].messageId, 'msg-1');
+    assert.equal(lines[1].messageId, 'msg-2');
+    assert.equal(lines[1].pendingThreadWindowDecision.ready, false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Category: end-to-end thread window -> pending slice, sanity-checking the
+// exact shape the tagging gate's prompt is built from (phase 1 integration).
+// ---------------------------------------------------------------------------
+
+describe('pending slice feeding the tagging gate', () => {
+  test('a message appended to the thread window appears in its pending slice', async (t) => {
+    const root = await makeTempWorkspace(t);
+    const { getPendingSlice } = require('../context/threads-store');
+
+    await appendMessageToThreadWindow({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      message: {
+        id: 'msg-1',
+        text: 'Please fix the failing login test',
+        personEmail: 'dev@example.com',
+        created: '2026-08-21T09:00:00.000Z',
+      },
+      botId: 'bot-1',
+    });
+
+    const slice = await getPendingSlice({
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      explicitRoot: root,
+    });
+
+    assert.equal(slice.length, 1);
+    assert.equal(slice[0].content, 'Please fix the failing login test');
+    assert.equal(slice[0].status, 'pending');
+  });
+});

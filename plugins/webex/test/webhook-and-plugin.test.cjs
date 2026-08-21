@@ -1010,6 +1010,7 @@ describe('plugin registration and tool exposure', () => {
     const boardRouter = t.mock.fn();
     const setPluginRuntime = t.mock.fn();
     const routeTool = { name: 'route_message' };
+    const tagTool = { name: 'tag_message' };
     const loadTool = { name: 'load' };
     const completeTool = { name: 'complete' };
     const loaded = loadWithMocks(require.resolve('../index'), {
@@ -1019,6 +1020,7 @@ describe('plugin registration and tool exposure', () => {
       [require.resolve('../visibility/board-router')]: { boardRouter },
       [require.resolve('../runtime')]: { setPluginRuntime, setPluginConfig: t.mock.fn() },
       [require.resolve('../routing/tool')]: { routeMessageTool: () => routeTool },
+      [require.resolve('../tagging/tool')]: { tagMessageTool: () => tagTool },
       [require.resolve('../tools/load-processing-batch')]: {
         loadProcessingBatchTool: () => loadTool,
       },
@@ -1047,7 +1049,7 @@ describe('plugin registration and tool exposure', () => {
     );
     assert.deepEqual(
       api.registerTool.mock.calls.map((call) => call.arguments[0]),
-      [routeTool, loadTool, completeTool]
+      [routeTool, tagTool, loadTool, completeTool]
     );
   });
 

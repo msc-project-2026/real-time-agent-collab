@@ -11,6 +11,7 @@ const {
 const { buildRoutingInstruction } = require('../routing/instruction');
 const { dispatchToAgent } = require('../dispatch');
 const { handleRoutingDispatchResult } = require('../routing/result-handler');
+const { dispatchTaggingGate } = require('../tagging/dispatch');
 const { getPluginRuntime, getRoutingAgentId } = require('../runtime');
 
 // 30-second deduplication window — Webex may deliver the same webhook event twice.
@@ -73,6 +74,23 @@ async function handleHydratedWebexMessage({
     log?.info?.(`[webex] ignoring bot message`);
     return;
   }
+
+  // v3 §4 tagging gate (phase 2): a bare, non-Task-Flow spawn run alongside
+  // the routing pipeline below purely to validate output quality — it does
+  // not control dispatch yet, so it's fired without blocking the pipeline
+  // and any failure is swallowed rather than surfaced here.
+  void dispatchTaggingGate({
+    pluginRuntime: getPluginRuntime(),
+    spaceId: message.roomId,
+    threadKey,
+    message,
+    log,
+  }).catch((err) => {
+    log?.error?.(
+      `[webex:${account.accountId}] tagging gate dispatch failed`,
+      { spaceId: message.roomId, threadKey, error: err?.message ?? String(err) }
+    );
+  });
 
   // Routing: dispatch to the configured routing agent for classification.
   const routingInstruction = buildRoutingInstruction({

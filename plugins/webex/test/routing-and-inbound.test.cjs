@@ -368,6 +368,7 @@ function loadMessageHandler(t, overrides = {}) {
       await onJobCompletion?.();
     }),
     handleRoutingDispatchResult: t.mock.fn(async () => undefined),
+    dispatchTaggingGate: t.mock.fn(async () => undefined),
     getPluginRuntime: t.mock.fn(() => ({ runtime: true })),
     getRoutingAgentId: t.mock.fn(() => 'router'),
     ...overrides,
@@ -389,6 +390,9 @@ function loadMessageHandler(t, overrides = {}) {
     },
     [require.resolve('../routing/result-handler')]: {
       handleRoutingDispatchResult: collaborators.handleRoutingDispatchResult,
+    },
+    [require.resolve('../tagging/dispatch')]: {
+      dispatchTaggingGate: collaborators.dispatchTaggingGate,
     },
     [require.resolve('../runtime')]: {
       getPluginRuntime: collaborators.getPluginRuntime,
@@ -622,5 +626,43 @@ describe('accepted inbound routing', () => {
     assert.equal(collaborators.appendMessageToThreadWindow.mock.callCount(), 1);
     assert.equal(collaborators.dispatchToAgent.mock.callCount(), 0);
     assert.equal(collaborators.handleRoutingDispatchResult.mock.callCount(), 0);
+    assert.equal(collaborators.dispatchTaggingGate.mock.callCount(), 0);
+  });
+
+  // v3 §4 phase 2: the tagging gate runs alongside routing, not in place of it.
+  test('fires the tagging gate spawn alongside routing dispatch', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const { handleInboundWebexMessage, collaborators } = loadMessageHandler(t);
+
+    await handleInboundWebexMessage(
+      { resource: 'messages', event: 'created', data: { id: 'message-accepted' } },
+      inboundContext(t)
+    );
+
+    assert.equal(collaborators.dispatchTaggingGate.mock.callCount(), 1);
+    assert.equal(collaborators.dispatchToAgent.mock.callCount(), 1);
+
+    const gateArgs = collaborators.dispatchTaggingGate.mock.calls[0].arguments[0];
+    assert.equal(gateArgs.spaceId, 'space-1');
+    assert.equal(gateArgs.threadKey, '__main__');
+    assert.deepEqual(gateArgs.pluginRuntime, { runtime: true });
+    assert.equal(gateArgs.message.id, 'message-1');
+  });
+
+  test('a rejected tagging gate dispatch does not affect routing or throw', async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const { handleInboundWebexMessage, collaborators } = loadMessageHandler(t, {
+      dispatchTaggingGate: t.mock.fn(async () => {
+        throw new Error('gate exploded');
+      }),
+    });
+
+    await handleInboundWebexMessage(
+      { resource: 'messages', event: 'created', data: { id: 'message-accepted' } },
+      inboundContext(t)
+    );
+
+    assert.equal(collaborators.dispatchToAgent.mock.callCount(), 1);
+    assert.equal(collaborators.handleRoutingDispatchResult.mock.callCount(), 1);
   });
 });
