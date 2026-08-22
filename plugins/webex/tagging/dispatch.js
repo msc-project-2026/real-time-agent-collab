@@ -109,7 +109,13 @@ async function runTaggingGate({
       // completeness check expects a message-tool call or text payload and
       // logs a spurious "incomplete turn" warning for every gate run.
       disableMessageTool: true,
-      visible: true,
+      // The actual off-switch for that check: shouldTreatEmptyAssistantReplyAsSilent
+      // (embedded-agent runtime) only treats a zero-payload turn as
+      // intentional — vs. surfacing "incomplete turn ... surfacing error to
+      // user" — when this is set. It still excludes stopReason === "error",
+      // so a genuine dropped-connection/API failure is unaffected and would
+      // still surface normally.
+      allowEmptyAssistantReplyAsSilent: true,
     });
   } finally {
     if (tempDir) {
