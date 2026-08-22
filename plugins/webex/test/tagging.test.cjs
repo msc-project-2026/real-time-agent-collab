@@ -150,6 +150,7 @@ describe('buildTaggingInstruction', () => {
     assert.match(instruction, /__main__/);
     assert.match(instruction, /fix the login test\?/);
     assert.match(instruction, /"botIsMentioned": true/);
+    assert.match(instruction, /respond with exactly the word `done`/);
   });
 
   test('requires spaceId and threadKey', () => {
@@ -227,7 +228,7 @@ describe('dispatchTaggingGate', () => {
     const runCalls = [];
     const runEmbeddedAgent = t.mock.fn(async (params) => {
       runCalls.push(params);
-      return { payloads: [] };
+      return { payloads: [{ text: 'done' }], meta: { toolSummary: { calls: 1 } } };
     });
     const pluginRuntime = makeAgentRuntime(t, { runEmbeddedAgent });
 
@@ -252,6 +253,8 @@ describe('dispatchTaggingGate', () => {
     assert.ok(params.sessionFile.endsWith('session.jsonl'));
     assert.ok(typeof params.sessionId === 'string' && params.sessionId.length > 0);
     assert.ok(typeof params.runId === 'string' && params.runId.length > 0);
+    assert.equal(params.disableMessageTool, true);
+    assert.equal(params.allowEmptyAssistantReplyAsSilent, true);
 
     assert.equal(collaborators.appendTaggingValidationRecord.mock.callCount(), 1);
     const record = collaborators.appendTaggingValidationRecord.mock.calls[0].arguments[0];
@@ -259,7 +262,51 @@ describe('dispatchTaggingGate', () => {
     assert.equal(record.threadKey, '__main__');
     assert.equal(record.runId, params.runId);
     assert.equal(record.pendingSliceSize, 1);
+    assert.equal(record.toolCallAttempts, 1);
     assert.deepEqual(record.tagResult.messageTags, { isMentioned: true, configRequest: false });
+  });
+
+  test('reads a multi-attempt count from meta.toolSummary.calls (retried tag_message calls)', async (t) => {
+    const pluginRuntime = makeAgentRuntime(t, {
+      runEmbeddedAgent: async () => ({
+        payloads: [{ text: 'done' }],
+        meta: { toolSummary: { calls: 2, tools: ['tag_message'], failures: 1 } },
+      }),
+    });
+    const { dispatchTaggingGate, collaborators } = loadDispatch(t);
+
+    await dispatchTaggingGate({
+      pluginRuntime,
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      message: { id: 'msg-1' },
+      log: makeLog(t),
+    });
+
+    assert.equal(
+      collaborators.appendTaggingValidationRecord.mock.calls[0].arguments[0].toolCallAttempts,
+      2
+    );
+  });
+
+  test('falls back to null when meta.toolSummary is missing or malformed', async (t) => {
+    const pluginRuntime = makeAgentRuntime(t, {
+      runEmbeddedAgent: async () => ({ payloads: [{ text: 'done' }] }),
+    });
+    const { dispatchTaggingGate, collaborators } = loadDispatch(t);
+
+    await dispatchTaggingGate({
+      pluginRuntime,
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      message: { id: 'msg-1' },
+      log: makeLog(t),
+    });
+
+    assert.equal(
+      collaborators.appendTaggingValidationRecord.mock.calls[0].arguments[0].toolCallAttempts,
+      null
+    );
   });
 
   test('cleans up the temp session directory after the run', async (t) => {
@@ -501,6 +548,7 @@ describe('appendTaggingValidationRecord', () => {
       messageId: 'msg-1',
       runId: 'run-1',
       pendingSliceSize: 2,
+      toolCallAttempts: 1,
       tagResult: {
         messageTags: { isMentioned: true, configRequest: false },
         pendingThreadWindowDecision: { ready: true, reason: 'done' },
@@ -525,7 +573,9 @@ describe('appendTaggingValidationRecord', () => {
 
     assert.equal(lines.length, 2);
     assert.equal(lines[0].messageId, 'msg-1');
+    assert.equal(lines[0].toolCallAttempts, 1);
     assert.equal(lines[1].messageId, 'msg-2');
+    assert.equal(lines[1].toolCallAttempts, null);
     assert.equal(lines[1].pendingThreadWindowDecision.ready, false);
   });
 });

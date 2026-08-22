@@ -89,11 +89,12 @@ async function runTaggingGate({
   // Isolated, non-persistent turn (v3 §8a) — a fresh temp session file per
   // call, discarded afterward, never accumulated or reused across gate runs.
   let tempDir;
+  let result;
   try {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'webex-tagging-gate-'));
     const sessionFile = path.join(tempDir, 'session.jsonl');
 
-    await pluginRuntime.agent.runEmbeddedAgent({
+    result = await pluginRuntime.agent.runEmbeddedAgent({
       sessionId: `${runId}-${randomSessionSuffix()}`,
       sessionKey,
       agentId,
@@ -104,17 +105,16 @@ async function runTaggingGate({
       prompt: instruction,
       timeoutMs: waitTimeoutMs,
       runId,
-      // The gate is instructed to only ever call tag_message — never reply
-      // with text (v3 §4). Without this, the harness's generic turn-
-      // completeness check expects a message-tool call or text payload and
-      // logs a spurious "incomplete turn" warning for every gate run.
+      // No dedicated message/reply tool — the gate calls tag_message and
+      // reports its own attempt count as plain text (see instruction.js),
+      // never a channel reply.
       disableMessageTool: true,
-      // The actual off-switch for that check: shouldTreatEmptyAssistantReplyAsSilent
-      // (embedded-agent runtime) only treats a zero-payload turn as
-      // intentional — vs. surfacing "incomplete turn ... surfacing error to
-      // user" — when this is set. It still excludes stopReason === "error",
-      // so a genuine dropped-connection/API failure is unaffected and would
-      // still surface normally.
+      // Belt-and-suspenders: shouldTreatEmptyAssistantReplyAsSilent (embedded-
+      // agent runtime) would otherwise flag a genuinely empty turn as
+      // "incomplete" — moot now that the gate always replies with its
+      // attempt-count line, but harmless to leave set. Still excludes
+      // stopReason === "error", so a real dropped-connection/API failure is
+      // unaffected and would still surface normally.
       allowEmptyAssistantReplyAsSilent: true,
     });
   } finally {
@@ -123,12 +123,14 @@ async function runTaggingGate({
     }
   }
 
+  const toolCallAttempts = readToolCallCount(result);
+
   const tagResult = takePendingTagResult(spaceId, threadKey);
 
   if (!tagResult) {
     log?.warn?.(
       `[webex] tagging gate did not call tag_message — no result to validate ${JSON.stringify(
-        { spaceId, threadKey, runId }
+        { spaceId, threadKey, runId, toolCallAttempts }
       )}`
     );
     return null;
@@ -140,6 +142,7 @@ async function runTaggingGate({
     messageId: message?.id,
     runId,
     pendingSliceSize: pendingSlice.length,
+    toolCallAttempts,
     tagResult,
     explicitRoot,
   });
@@ -149,6 +152,16 @@ async function runTaggingGate({
 
 function randomSessionSuffix() {
   return Math.random().toString(36).slice(2, 10);
+}
+
+// Ground-truth tool-call count from the embedded-agent runtime's own
+// per-attempt record (toolMetas.length, surfaced as meta.toolSummary.calls) —
+// not something the model self-reports. Diagnostic only: never gates
+// dispatch, so a missing/malformed field just yields null rather than
+// failing the run.
+function readToolCallCount(result) {
+  const calls = result?.meta?.toolSummary?.calls;
+  return Number.isInteger(calls) && calls > 0 ? calls : null;
 }
 
 // Entry point. Never throws — resolves to the tag result on success, or
