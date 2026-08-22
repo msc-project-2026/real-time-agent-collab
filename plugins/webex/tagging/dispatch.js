@@ -153,6 +153,7 @@ async function dispatchTaggingGate({
         spaceId,
         threadKey,
         error: err?.message ?? String(err),
+        stack: err?.stack ?? null,
       })}`
     );
     return null;
