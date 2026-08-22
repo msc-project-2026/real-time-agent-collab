@@ -147,7 +147,7 @@ async function runFlowSpike({ pluginRuntime, spaceId, threadKey, message, log })
         flowId,
         runId,
         created: afterRunTask?.created,
-        taskId: afterRunTask?.task?.id ?? null,
+        taskId: afterRunTask?.task?.taskId ?? null,
         reason: afterRunTask?.reason ?? null,
       })}`
     );
