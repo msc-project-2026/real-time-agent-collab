@@ -9,7 +9,7 @@ async function handleInboundWebexWebhook(payload, ctx) {
   const { identity, account, log } = ctx;
 
   log?.info?.(
-    `[webex:${account.accountId}] inbound webhook payload ${JSON.stringify({
+    `[collab-agent:inbound] inbound webhook payload ${JSON.stringify({
       identity,
       webhookId: payload.id,
       name: payload.name,
@@ -36,11 +36,13 @@ async function handleInboundWebexWebhook(payload, ctx) {
     return handleInboundWebexAttachmentAction(payload, ctx);
   }
 
-  log?.info?.(`[webex:${account.accountId}] ignored webhook payload`, {
-    identity,
-    resource: payload.resource,
-    event: payload.event,
-  });
+  log?.info?.(
+    `[collab-agent:inbound] ignored webhook payload ${JSON.stringify({
+      identity,
+      resource: payload.resource,
+      event: payload.event,
+    })}`
+  );
 }
 
 module.exports = {

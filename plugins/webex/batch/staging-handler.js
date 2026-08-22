@@ -10,12 +10,14 @@ async function handleStagePendingBatchRequest({ spaceId, account, log }) {
 
   const result = await stagePendingBatch({ spaceId });
 
-  log?.info?.(`[webex:${account.accountId}] pending batch staging result`, {
-    spaceId,
-    staged: result.staged,
-    batchId: result.batchId,
-    messageCount: result.messageCount,
-  });
+  log?.info?.(
+    `[collab-agent:batch-staging] pending batch staging result ${JSON.stringify({
+      spaceId,
+      staged: result.staged,
+      batchId: result.batchId,
+      messageCount: result.messageCount,
+    })}`
+  );
 
   if (!result.staged || result.messageCount <= 0) {
     return result;

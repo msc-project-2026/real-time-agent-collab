@@ -44,7 +44,6 @@ function verifyHmac(secret, rawBody, signature) {
 // Registered at /webhooks/webex/ (prefix match, auth: plugin).
 // Dispatches to the right account target based on the full path.
 async function webhookRouter(req, res) {
-  console.log(`[webex] webhookRouter called: ${req.method} ${req.url}`);
   const path = normPath(new URL(req.url ?? '/', 'http://x').pathname);
   const target = targets.get(path);
   if (!target) return false; // not our path
@@ -108,7 +107,7 @@ async function webhookRouter(req, res) {
 
   target.handle(payload).catch((err) => {
     console.error(
-      `[webex:${target.account.accountId}] inbound error: ${err?.message ?? err}`
+      `[collab-agent:webhook-router] inbound error: ${err?.message ?? err}`
     );
   });
 

@@ -129,7 +129,7 @@ async function runTaggingGate({
 
   if (!tagResult) {
     log?.warn?.(
-      `[webex] tagging gate did not call tag_message — no result to validate ${JSON.stringify(
+      `[collab-agent:tagging-dispatch] tagging gate did not call tag_message — no result to validate ${JSON.stringify(
         { spaceId, threadKey, runId, toolCallAttempts }
       )}`
     );
@@ -182,7 +182,7 @@ async function dispatchTaggingGate({
 
   if (!pluginRuntime?.agent?.runEmbeddedAgent) {
     log?.warn?.(
-      '[webex] tagging gate spawn unavailable — runtime does not expose agent.runEmbeddedAgent'
+      '[collab-agent:tagging-dispatch] tagging gate spawn unavailable — runtime does not expose agent.runEmbeddedAgent'
     );
     return null;
   }
@@ -203,7 +203,7 @@ async function dispatchTaggingGate({
     );
   } catch (err) {
     log?.error?.(
-      `[webex] tagging gate spawn failed ${JSON.stringify({
+      `[collab-agent:tagging-dispatch] tagging gate spawn failed ${JSON.stringify({
         spaceId,
         threadKey,
         error: err?.message ?? String(err),

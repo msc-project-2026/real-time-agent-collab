@@ -71,7 +71,7 @@ async function handleHydratedWebexMessage({
 
   // Skip bot's own messages
   if (message.personId === botId) {
-    log?.info?.(`[webex] ignoring bot message`);
+    log?.info?.(`[collab-agent:inbound-message] ignoring bot message`);
     return;
   }
 
@@ -90,6 +90,27 @@ async function handleHydratedWebexMessage({
     Array.isArray(message.mentionedPeople) && message.mentionedPeople.includes(botId);
 
   const decision = decideDispatch({ tagResult, botIsMentioned });
+
+  // The one anchor line for understanding this message's outcome without
+  // Control UI visibility into the tagging-gate session itself (it doesn't
+  // appear there — see tagging/dispatch.js). Ties the gate's raw judgment to
+  // the deterministic action actually taken; full gate diagnostics
+  // (toolCallAttempts, reason text) live in the tagging validation log.
+  log?.info?.(
+    `[collab-agent:inbound-message] dispatch decision ${JSON.stringify({
+      spaceId,
+      threadKey,
+      messageId: message.id,
+      gateRan: Boolean(tagResult),
+      gateIsMentioned: tagResult?.messageTags?.isMentioned ?? null,
+      gateConfigRequest: tagResult?.messageTags?.configRequest ?? null,
+      gateReady: tagResult?.pendingThreadWindowDecision?.ready ?? null,
+      botIsMentioned,
+      finalIsMentioned: decision.finalIsMentioned,
+      configRequest: decision.configRequest,
+      shouldProcess: decision.shouldProcess,
+    })}`
+  );
 
   // Baseline capture: every accepted message still enters the existing batch
   // pipeline (context/threads-store's pending window is a separate, per-thread
@@ -127,9 +148,11 @@ async function handleInboundWebexMessage(
 
   // Drop duplicates before any API calls — Webex may redeliver the same event.
   if (isDuplicate(payload.data?.id)) {
-    log?.info?.(`[webex:${account.accountId}] ignoring duplicate message`, {
-      messageId: payload.data?.id,
-    });
+    log?.info?.(
+      `[collab-agent:inbound-message] ignoring duplicate message ${JSON.stringify({
+        messageId: payload.data?.id,
+      })}`
+    );
     return;
   }
 

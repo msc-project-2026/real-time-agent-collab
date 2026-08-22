@@ -11,10 +11,12 @@ async function handleConfigRequest({ spaceId, account, log, sendFn }) {
 
   const activeConfig = await readActiveConfig({ spaceId });
 
-  log?.info?.(`[webex:${account.accountId}] handling config request`, {
-    spaceId,
-    hasActiveConfig: Boolean(activeConfig),
-  });
+  log?.info?.(
+    `[collab-agent:config-request] handling config request ${JSON.stringify({
+      spaceId,
+      hasActiveConfig: Boolean(activeConfig),
+    })}`
+  );
 
   await sendConfigCard({
     spaceId,
