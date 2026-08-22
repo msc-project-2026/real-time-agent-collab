@@ -14,15 +14,12 @@ set -e
 mkdir -p /home/node/.openclaw
 cp /app/config/openclaw.json /home/node/.openclaw/openclaw.json
 
-# Sync build-time installed plugin (see OPENCLAW_STATE_DIR=/app/.openclaw-build
-# RUN step in Dockerfile). Plugin installs live under extensions/, not plugins/.
-mkdir -p /home/node/.openclaw/extensions
-cp -r /app/.openclaw-build/extensions/. /home/node/.openclaw/extensions/
-
-# Bridge the plugin's `require('openclaw/...')` calls to the actual
-# OpenClaw package location — extensions/ is outside /app's ancestry,
-# so Node's require resolution can't find it without this.
-mkdir -p /home/node/.openclaw/node_modules
-ln -sf /app/dist /home/node/.openclaw/node_modules/openclaw
+# Sync the webex plugin. plugins.load.paths in openclaw.json ("plugins/webex")
+# resolves relative to the OpenClaw state dir (/home/node/.openclaw), not /app
+# where the image actually puts it — without this copy, the gateway fails with
+# "plugin path not found: /home/node/.openclaw/plugins/webex", which also
+# blocks config validation for unrelated commands (e.g. `openclaw devices list`).
+mkdir -p /home/node/.openclaw/plugins
+cp -r /app/plugins/webex /home/node/.openclaw/plugins/webex
 
 exec node openclaw.mjs gateway

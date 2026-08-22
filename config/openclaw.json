@@ -109,21 +109,13 @@
     "defaultSessionKey": "hook:collab-sync"
   },
   "plugins": {
-    "allow": ["webex", "langfuse-bridge"],
+    "allow": ["webex"],
     "load": {
       "paths": ["plugins/webex"]
     },
     "entries": {
       "webex": {
         "enabled": true
-      },
-      "langfuse-bridge": {
-        "enabled": true,
-        "config": {
-          "publicKey": "${LANGFUSE_PUBLIC_KEY}",
-          "secretKey": "${LANGFUSE_SECRET_KEY}",
-          "baseUrl": "${LANGFUSE_BASE_URL}"
-        }
       }
     }
   }
