@@ -47,11 +47,13 @@ function enqueueTaggingDispatch(queueKey, job) {
   // rejects with; catch here so a job failure doesn't surface as an
   // unhandled rejection on this branch (the caller still observes it via
   // the returned `next` promise).
-  next.catch(() => {}).finally(() => {
-    if (taggingQueues.get(queueKey) === next) {
-      taggingQueues.delete(queueKey);
-    }
-  });
+  next
+    .catch(() => {})
+    .finally(() => {
+      if (taggingQueues.get(queueKey) === next) {
+        taggingQueues.delete(queueKey);
+      }
+    });
 
   return next;
 }
@@ -78,7 +80,10 @@ async function runTaggingGate({
   const runId = `tagging-gate-${Date.now()}`;
 
   const cfg = pluginRuntime.config.current();
-  const workspaceDir = pluginRuntime.agent.resolveAgentWorkspaceDir(cfg, agentId);
+  const workspaceDir = pluginRuntime.agent.resolveAgentWorkspaceDir(
+    cfg,
+    agentId
+  );
   const agentDir = pluginRuntime.agent.resolveAgentDir(cfg, agentId);
 
   // Isolated, non-persistent turn (v3 §8a) — a fresh temp session file per
@@ -99,6 +104,12 @@ async function runTaggingGate({
       prompt: instruction,
       timeoutMs: waitTimeoutMs,
       runId,
+      // The gate is instructed to only ever call tag_message — never reply
+      // with text (v3 §4). Without this, the harness's generic turn-
+      // completeness check expects a message-tool call or text payload and
+      // logs a spurious "incomplete turn" warning for every gate run.
+      disableMessageTool: true,
+      visible: true,
     });
   } finally {
     if (tempDir) {
