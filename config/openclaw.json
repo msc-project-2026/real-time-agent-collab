@@ -97,8 +97,7 @@
         "davit.gevorgyan.25@ucl.ac.uk",
         "leonardo.martin.25@ucl.ac.uk",
         "shuminwang233@outlook.com"
-      ],
-      "taskFlowSpikeEnabled": true
+      ]
     }
   },
   "hooks": {
@@ -116,7 +115,10 @@
     },
     "entries": {
       "webex": {
-        "enabled": true
+        "enabled": true,
+        "config": {
+          "taskFlowSpikeEnabled": true
+        }
       }
     }
   }
