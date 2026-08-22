@@ -210,46 +210,82 @@ describe('dispatchTaggingGate', () => {
     return { ...loaded.subject, collaborators };
   }
 
-  test('spawns a bare subagent run with a per-thread session key and records the result', async (t) => {
-    const runCalls = [];
-    const subagent = {
-      run: t.mock.fn(async (params) => {
-        runCalls.push(params);
-        return { runId: 'run-1' };
-      }),
-      waitForRun: t.mock.fn(async () => ({ status: 'ok' })),
+  // Builds a pluginRuntime stub matching the shape runTaggingGate expects:
+  // config.current() plus agent.{resolveAgentWorkspaceDir,resolveAgentDir,runEmbeddedAgent}.
+  function makeAgentRuntime(t, { runEmbeddedAgent } = {}) {
+    return {
+      config: { current: t.mock.fn(() => ({ agents: { defaults: {} } })) },
+      agent: {
+        resolveAgentWorkspaceDir: t.mock.fn(() => '/workspace/main'),
+        resolveAgentDir: t.mock.fn(() => '/workspace/main/.agent'),
+        runEmbeddedAgent: runEmbeddedAgent ?? t.mock.fn(async () => ({ payloads: [] })),
+      },
     };
+  }
+
+  test('runs an embedded agent turn with a per-thread session key and records the result', async (t) => {
+    const runCalls = [];
+    const runEmbeddedAgent = t.mock.fn(async (params) => {
+      runCalls.push(params);
+      return { payloads: [] };
+    });
+    const pluginRuntime = makeAgentRuntime(t, { runEmbeddedAgent });
 
     const { dispatchTaggingGate, collaborators } = loadDispatch(t);
 
     await dispatchTaggingGate({
-      pluginRuntime: { subagent },
+      pluginRuntime,
       spaceId: 'space-1',
       threadKey: '__main__',
       message: { id: 'msg-1' },
       log: makeLog(t),
     });
 
-    assert.equal(subagent.run.mock.callCount(), 1);
-    assert.equal(runCalls[0].sessionKey, 'agent:main:webex:space-1:tagging-gate:__main__');
-    assert.equal(runCalls[0].deliver, false);
-    assert.equal(runCalls[0].lightContext, true);
-    assert.equal(subagent.waitForRun.mock.callCount(), 1);
-    assert.deepEqual(subagent.waitForRun.mock.calls[0].arguments[0], {
-      runId: 'run-1',
-      timeoutMs: 15_000,
-    });
+    assert.equal(runEmbeddedAgent.mock.callCount(), 1);
+    const params = runCalls[0];
+    assert.equal(params.sessionKey, 'agent:main:webex:space-1:tagging-gate:__main__');
+    assert.equal(params.agentId, 'main');
+    assert.equal(params.workspaceDir, '/workspace/main');
+    assert.equal(params.agentDir, '/workspace/main/.agent');
+    assert.match(params.prompt, /tag_message/);
+    assert.equal(params.timeoutMs, 15_000);
+    assert.ok(params.sessionFile.endsWith('session.jsonl'));
+    assert.ok(typeof params.sessionId === 'string' && params.sessionId.length > 0);
+    assert.ok(typeof params.runId === 'string' && params.runId.length > 0);
 
     assert.equal(collaborators.appendTaggingValidationRecord.mock.callCount(), 1);
     const record = collaborators.appendTaggingValidationRecord.mock.calls[0].arguments[0];
     assert.equal(record.spaceId, 'space-1');
     assert.equal(record.threadKey, '__main__');
-    assert.equal(record.runId, 'run-1');
+    assert.equal(record.runId, params.runId);
     assert.equal(record.pendingSliceSize, 1);
     assert.deepEqual(record.tagResult.messageTags, { isMentioned: true, configRequest: false });
   });
 
-  test('is a silent no-op when the runtime does not expose subagent.run', async (t) => {
+  test('cleans up the temp session directory after the run', async (t) => {
+    const fs = require('node:fs/promises');
+    let capturedSessionFile;
+    const runEmbeddedAgent = t.mock.fn(async (params) => {
+      capturedSessionFile = params.sessionFile;
+      // The temp dir must exist while the run is in flight.
+      await assert.doesNotReject(fs.access(require('node:path').dirname(params.sessionFile)));
+      return { payloads: [] };
+    });
+    const pluginRuntime = makeAgentRuntime(t, { runEmbeddedAgent });
+    const { dispatchTaggingGate } = loadDispatch(t);
+
+    await dispatchTaggingGate({
+      pluginRuntime,
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      message: { id: 'msg-1' },
+      log: makeLog(t),
+    });
+
+    await assert.rejects(fs.access(require('node:path').dirname(capturedSessionFile)));
+  });
+
+  test('is a silent no-op when the runtime does not expose agent.runEmbeddedAgent', async (t) => {
     const { dispatchTaggingGate, collaborators } = loadDispatch(t);
     const log = makeLog(t);
 
@@ -265,18 +301,17 @@ describe('dispatchTaggingGate', () => {
     assert.equal(log.warn.mock.callCount(), 1);
   });
 
-  test('never throws when the subagent run itself fails', async (t) => {
-    const subagent = {
-      run: async () => {
-        throw new Error('spawn exploded');
-      },
+  test('never throws when the embedded agent run itself fails, and still cleans up', async (t) => {
+    const runEmbeddedAgent = async () => {
+      throw new Error('spawn exploded');
     };
+    const pluginRuntime = makeAgentRuntime(t, { runEmbeddedAgent });
     const { dispatchTaggingGate, collaborators } = loadDispatch(t);
     const log = makeLog(t);
 
     await assert.doesNotReject(
       dispatchTaggingGate({
-        pluginRuntime: { subagent },
+        pluginRuntime,
         spaceId: 'space-1',
         threadKey: '__main__',
         message: { id: 'msg-1' },
@@ -289,17 +324,14 @@ describe('dispatchTaggingGate', () => {
   });
 
   test('logs and skips validation recording when the gate never calls tag_message', async (t) => {
-    const subagent = {
-      run: async () => ({ runId: 'run-2' }),
-      waitForRun: async () => ({ status: 'ok' }),
-    };
+    const pluginRuntime = makeAgentRuntime(t);
     const { dispatchTaggingGate, collaborators } = loadDispatch(t, {
       takePendingTagResult: () => null,
     });
     const log = makeLog(t);
 
     await dispatchTaggingGate({
-      pluginRuntime: { subagent },
+      pluginRuntime,
       spaceId: 'space-1',
       threadKey: '__main__',
       message: { id: 'msg-1' },
@@ -313,29 +345,27 @@ describe('dispatchTaggingGate', () => {
   test('serialises concurrent runs for the same thread so tag results cannot race', async (t) => {
     let concurrent = 0;
     let maxConcurrent = 0;
-    const subagent = {
-      run: t.mock.fn(async () => {
-        concurrent += 1;
-        maxConcurrent = Math.max(maxConcurrent, concurrent);
-        await new Promise((resolve) => setTimeout(resolve, 10));
-        concurrent -= 1;
-        return { runId: `run-${subagent.run.mock.callCount()}` };
-      }),
-      waitForRun: async () => ({ status: 'ok' }),
-    };
+    const runEmbeddedAgent = t.mock.fn(async () => {
+      concurrent += 1;
+      maxConcurrent = Math.max(maxConcurrent, concurrent);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      concurrent -= 1;
+      return { payloads: [] };
+    });
+    const pluginRuntime = makeAgentRuntime(t, { runEmbeddedAgent });
 
     const { dispatchTaggingGate } = loadDispatch(t);
 
     await Promise.all([
       dispatchTaggingGate({
-        pluginRuntime: { subagent },
+        pluginRuntime,
         spaceId: 'space-1',
         threadKey: '__main__',
         message: { id: 'msg-1' },
         log: makeLog(t),
       }),
       dispatchTaggingGate({
-        pluginRuntime: { subagent },
+        pluginRuntime,
         spaceId: 'space-1',
         threadKey: '__main__',
         message: { id: 'msg-2' },

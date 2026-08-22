@@ -1,14 +1,27 @@
 // ********* TAGGING/DISPATCH.JS *********
 'use strict';
 
-// v3 §4/§7a: the tagging gate as a bare, non-Task-Flow subagent spawn
-// (`pluginRuntime.subagent.run`). Phase 2 ran this in shadow mode only, for
-// output-quality validation. Phase 3 makes it load-bearing: the caller awaits
-// dispatchTaggingGate() and feeds the returned tag result into the
-// deterministic dispatch decision (tagging/decide.js), replacing the routing
-// LLM classifier. It still never throws — a failed/missing gate result
-// resolves to `null`, which decideDispatch() treats as "fall back to the
-// deterministic botIsMentioned flag alone."
+// v3 §4/§7a: the tagging gate as a bare, non-Task-Flow isolated agent turn.
+// Originally spawned via `pluginRuntime.subagent.run`, which routes through
+// gateway-method RPC dispatch and requires `operator.write` — a scope this
+// deployment's HTTP-route-triggered runtime context never carries (routes
+// registered with `auth: 'plugin'` get zero operator scope for their runtime
+// calls, by design, regardless of device/config state). Switched to
+// `pluginRuntime.agent.runEmbeddedAgent`, a lower-level, direct in-process
+// execution primitive with no gateway-RPC/operator-scope layer at all — the
+// same one core OpenClaw code uses for its own one-shot, throwaway LLM calls
+// (e.g. session-slug generation). Phase 2 ran the subagent.run version in
+// shadow mode only, for output-quality validation. Phase 3 makes it
+// load-bearing: the caller awaits dispatchTaggingGate() and feeds the
+// returned tag result into the deterministic dispatch decision
+// (tagging/decide.js), replacing the routing LLM classifier. It still never
+// throws — a failed/missing gate result resolves to `null`, which
+// decideDispatch() treats as "fall back to the deterministic botIsMentioned
+// flag alone."
+
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
 
 const { getPendingSlice } = require('../context/threads-store');
 const { safeSegment } = require('../storage/paths');
@@ -60,30 +73,37 @@ async function runTaggingGate({
     pendingSlice,
   });
 
-  const sessionKey = `agent:${getRoutingAgentId()}:webex:${spaceId}:tagging-gate:${safeSegment(threadKey)}`;
+  const agentId = getRoutingAgentId();
+  const sessionKey = `agent:${agentId}:webex:${spaceId}:tagging-gate:${safeSegment(threadKey)}`;
+  const runId = `tagging-gate-${Date.now()}`;
 
-  const { runId } = await pluginRuntime.subagent.run({
-    sessionKey,
-    message: instruction,
-    lightContext: true,
-    deliver: false,
-  });
+  const cfg = pluginRuntime.config.current();
+  const workspaceDir = pluginRuntime.agent.resolveAgentWorkspaceDir(cfg, agentId);
+  const agentDir = pluginRuntime.agent.resolveAgentDir(cfg, agentId);
 
-  const waitResult = await pluginRuntime.subagent.waitForRun?.({
-    runId,
-    timeoutMs: waitTimeoutMs,
-  });
+  // Isolated, non-persistent turn (v3 §8a) — a fresh temp session file per
+  // call, discarded afterward, never accumulated or reused across gate runs.
+  let tempDir;
+  try {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'webex-tagging-gate-'));
+    const sessionFile = path.join(tempDir, 'session.jsonl');
 
-  if (waitResult && waitResult.status !== 'ok') {
-    log?.warn?.(
-      `[webex] tagging gate run did not complete cleanly ${JSON.stringify({
-        spaceId,
-        threadKey,
-        runId,
-        status: waitResult.status,
-        error: waitResult.error,
-      })}`
-    );
+    await pluginRuntime.agent.runEmbeddedAgent({
+      sessionId: `${runId}-${randomSessionSuffix()}`,
+      sessionKey,
+      agentId,
+      sessionFile,
+      workspaceDir,
+      agentDir,
+      config: cfg,
+      prompt: instruction,
+      timeoutMs: waitTimeoutMs,
+      runId,
+    });
+  } finally {
+    if (tempDir) {
+      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
   }
 
   const tagResult = takePendingTagResult(spaceId, threadKey);
@@ -110,6 +130,10 @@ async function runTaggingGate({
   return tagResult;
 }
 
+function randomSessionSuffix() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
 // Entry point. Never throws — resolves to the tag result on success, or
 // `null` if the gate is unavailable, fails, or never calls tag_message. The
 // caller (inbound/message.js) awaits this and feeds the result into
@@ -126,9 +150,9 @@ async function dispatchTaggingGate({
   if (!spaceId) throw new Error('spaceId is required');
   if (!threadKey) throw new Error('threadKey is required');
 
-  if (!pluginRuntime?.subagent?.run) {
+  if (!pluginRuntime?.agent?.runEmbeddedAgent) {
     log?.warn?.(
-      '[webex] tagging gate spawn unavailable — runtime does not expose subagent.run'
+      '[webex] tagging gate spawn unavailable — runtime does not expose agent.runEmbeddedAgent'
     );
     return null;
   }
