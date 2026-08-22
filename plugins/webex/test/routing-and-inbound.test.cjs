@@ -396,6 +396,7 @@ function loadMessageHandler(t, overrides = {}) {
     },
     [require.resolve('../runtime')]: {
       getPluginRuntime: collaborators.getPluginRuntime,
+      getPluginConfig: () => ({}),
     },
   });
   t.after(loaded.restore);

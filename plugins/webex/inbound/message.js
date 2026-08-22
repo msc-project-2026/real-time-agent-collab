@@ -14,7 +14,8 @@ const { handleStagePendingBatchRequest } = require('../batch/staging-handler');
 const { handleConfigRequest } = require('../config/handle-request');
 const { dispatchTaggingGate } = require('../tagging/dispatch');
 const { decideDispatch } = require('../tagging/decide');
-const { getPluginRuntime } = require('../runtime');
+const { runFlowSpike } = require('../tagging/flow-spike');
+const { getPluginRuntime, getPluginConfig } = require('../runtime');
 
 // 30-second deduplication window — Webex may deliver the same webhook event twice.
 const seenMessageIds = new Set();
@@ -78,13 +79,23 @@ async function handleHydratedWebexMessage({
   // v3 §4 tagging gate — the sole classification call. Awaited: its output
   // (or `null` on failure) feeds deterministic dispatch (§5) below, replacing
   // the routing LLM classifier (phase 3). It never throws.
+  const pluginRuntime = getPluginRuntime();
+
   const tagResult = await dispatchTaggingGate({
-    pluginRuntime: getPluginRuntime(),
+    pluginRuntime,
     spaceId,
     threadKey,
     message,
     log,
   });
+
+  // v3 phase 4: Task Flow API spike, run only when explicitly enabled via
+  // config. Fire-and-forget — never awaited, never touches dispatch below.
+  if (getPluginConfig().taskFlowSpikeEnabled) {
+    runFlowSpike({ pluginRuntime, spaceId, threadKey, message, log }).catch(
+      () => {}
+    );
+  }
 
   const botIsMentioned =
     Array.isArray(message.mentionedPeople) && message.mentionedPeople.includes(botId);

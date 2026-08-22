@@ -27,9 +27,14 @@ function getRoutingAgentId() {
   return pluginConfig?.routingAgentId ?? 'main';
 }
 
+function getPluginConfig() {
+  return pluginConfig ?? {};
+}
+
 module.exports = {
   setPluginRuntime,
   getPluginRuntime,
   setPluginConfig,
+  getPluginConfig,
   getRoutingAgentId,
 };
