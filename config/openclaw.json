@@ -115,10 +115,7 @@
     },
     "entries": {
       "webex": {
-        "enabled": true,
-        "config": {
-          "taskFlowSpikeEnabled": true
-        }
+        "enabled": true
       }
     }
   }

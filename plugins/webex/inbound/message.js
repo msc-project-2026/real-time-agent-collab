@@ -4,18 +4,8 @@
 // Inbound message filtering, membership checks, and agent pipeline dispatch.
 const { webexFetch } = require('../api');
 const { getAccessToken } = require('../token');
-const {
-  appendMessageToThreadWindow,
-  getPendingSlice,
-  markThreadMessagesProcessed,
-} = require('../context/threads-store');
-const { appendPendingMessage } = require('../batch/append');
-const { handleStagePendingBatchRequest } = require('../batch/staging-handler');
-const { handleConfigRequest } = require('../config/handle-request');
-const { dispatchTaggingGate } = require('../tagging/dispatch');
-const { decideDispatch } = require('../tagging/decide');
-const { runFlowSpike } = require('../tagging/flow-spike');
-const { getPluginRuntime, getPluginConfig } = require('../runtime');
+const { appendMessageToThreadWindow } = require('../context/threads-store');
+const { runMessageFlow } = require('../flow/run-message-flow');
 
 // 30-second deduplication window — Webex may deliver the same webhook event twice.
 const seenMessageIds = new Set();
@@ -44,8 +34,8 @@ function isDmAllowed(cfg, personId, personEmail) {
 
 // *** Hydrated Webex Message Handler
 // Called with a fully-hydrated Webex message object (id, roomId, text, personId, etc.).
-// Runs the shared pipeline: thread context → bot filter → tagging gate →
-// deterministic dispatch (v3 §5) → config flow / existing batch+processing dispatch.
+// Runs the shared pipeline: thread context → bot filter → one managed Task
+// Flow per message (gate → deterministic dispatch → config/respond, v3 phase 5).
 // Used by both the real inbound handler (after fetching from /messages/:id) and the
 // synthetic evaluation runner (which builds hydrated message objects from scenario JSON).
 async function handleHydratedWebexMessage({
@@ -76,76 +66,17 @@ async function handleHydratedWebexMessage({
     return;
   }
 
-  // v3 §4 tagging gate — the sole classification call. Awaited: its output
-  // (or `null` on failure) feeds deterministic dispatch (§5) below, replacing
-  // the routing LLM classifier (phase 3). It never throws.
-  const pluginRuntime = getPluginRuntime();
-
-  const tagResult = await dispatchTaggingGate({
-    pluginRuntime,
+  // v3 phase 5: one managed Task Flow per message, gate as its first step,
+  // respond (if triggered) as its second — see flow/run-message-flow.js.
+  await runMessageFlow({
     spaceId,
     threadKey,
     message,
+    botId,
+    account,
     log,
+    sendFn,
   });
-
-  // v3 phase 4: Task Flow API spike, run only when explicitly enabled via
-  // config. Fire-and-forget — never awaited, never touches dispatch below.
-  if (getPluginConfig().taskFlowSpikeEnabled) {
-    runFlowSpike({ pluginRuntime, spaceId, threadKey, message, log }).catch(
-      () => {}
-    );
-  }
-
-  const botIsMentioned =
-    Array.isArray(message.mentionedPeople) && message.mentionedPeople.includes(botId);
-
-  const decision = decideDispatch({ tagResult, botIsMentioned });
-
-  // The one anchor line for understanding this message's outcome without
-  // Control UI visibility into the tagging-gate session itself (it doesn't
-  // appear there — see tagging/dispatch.js). Ties the gate's raw judgment to
-  // the deterministic action actually taken; full gate diagnostics
-  // (toolCallAttempts, reason text) live in the tagging validation log.
-  log?.info?.(
-    `[collab-agent:inbound-message] dispatch decision ${JSON.stringify({
-      spaceId,
-      threadKey,
-      messageId: message.id,
-      gateRan: Boolean(tagResult),
-      gateIsMentioned: tagResult?.messageTags?.isMentioned ?? null,
-      gateConfigRequest: tagResult?.messageTags?.configRequest ?? null,
-      gateReady: tagResult?.pendingThreadWindowDecision?.ready ?? null,
-      botIsMentioned,
-      finalIsMentioned: decision.finalIsMentioned,
-      configRequest: decision.configRequest,
-      shouldProcess: decision.shouldProcess,
-    })}`
-  );
-
-  // Baseline capture: every accepted message still enters the existing batch
-  // pipeline (context/threads-store's pending window is a separate, per-thread
-  // concern from this per-space batch file that processing reads from).
-  await appendPendingMessage({ spaceId, message });
-
-  if (decision.configRequest) {
-    await handleConfigRequest({ spaceId, account, log, sendFn });
-  }
-
-  // v3 §5: mention or ready flushes the thread's pending slice and spawns
-  // processing, immediately — no debounce. Still calls into the existing
-  // batch staging + conv-processing/item-extraction dispatch underneath
-  // (phase 3 replaces only the trigger decision, not that pipeline).
-  if (decision.shouldProcess) {
-    const pendingSlice = await getPendingSlice({ spaceId, threadKey });
-    const messageIds = pendingSlice.map((entry) => entry.id);
-
-    if (messageIds.length > 0) {
-      await markThreadMessagesProcessed({ spaceId, threadKey, messageIds });
-    }
-
-    await handleStagePendingBatchRequest({ spaceId, account, log });
-  }
 }
 
 // *** Inbound Webex Message Handler

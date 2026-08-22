@@ -106,6 +106,19 @@ function taggingValidationLogPath(spaceId, explicitRoot) {
   return path.join(taggingDir(spaceId, explicitRoot), 'validation.jsonl');
 }
 
+// -- .collab/spaces/<spaceId>/jobs/
+// Phase 5 step-level audit trail (one line per flow step attempt), keyed by
+// flowId — the actual eval-grade record of what each step did, since Task
+// Flow's own task-level tracking (runTask) is not used (see v3 migration
+// memory: unreliable for this plugin's runEmbeddedAgent-based spawns).
+function jobsDir(spaceId, explicitRoot) {
+  return path.join(spaceDir(spaceId, explicitRoot), 'jobs');
+}
+
+function jobLogPath(spaceId, flowId, explicitRoot) {
+  return path.join(jobsDir(spaceId, explicitRoot), `${safeSegment(flowId)}.jsonl`);
+}
+
 module.exports = {
   getWorkspaceRoot,
   safeSegment,
@@ -127,4 +140,6 @@ module.exports = {
   threadsPath,
   taggingDir,
   taggingValidationLogPath,
+  jobsDir,
+  jobLogPath,
 };

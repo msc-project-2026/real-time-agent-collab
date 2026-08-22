@@ -49,11 +49,6 @@
         "type": "string",
         "description": "Agent ID used for message routing classification. Configure this agent with a lightweight model in the host openclaw.json. Defaults to 'main'."
       },
-      "taskFlowSpikeEnabled": {
-        "type": "boolean",
-        "default": false,
-        "description": "Phase 4 diagnostic: run the Task Flow API spike alongside the tagging gate. Not for production use."
-      },
       "accessToken": {
         "type": "string",
         "description": "OAuth access token for receiving all space messages"
