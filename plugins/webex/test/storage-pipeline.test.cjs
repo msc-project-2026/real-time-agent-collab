@@ -216,6 +216,12 @@ describe('thread context windows', () => {
       'root-1',
       'reply-1',
     ]);
+    // The backfilled root (human-authored here) is background, not new
+    // content awaiting judgment in this thread — it goes straight to
+    // processed regardless of who sent it, same as a bot-authored root.
+    // Only the actual reply that created the thread is pending.
+    assert.deepEqual(thread.pending.map((message) => message.id), ['reply-1']);
+    assert.deepEqual(thread.processed.map((message) => message.id), ['root-1']);
   });
 
   test('seeds a new reply thread with a bot-authored root directly into processed', async (t) => {

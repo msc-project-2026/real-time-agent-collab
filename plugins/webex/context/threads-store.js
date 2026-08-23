@@ -198,13 +198,16 @@ function applyMessageToPendingWindow({ state, message, botId, threadKeyOverride 
   };
 }
 
-// Bot-authored messages skip pending entirely — they don't need gate
-// judgment (there's nothing to act on in the bot's own words), they're
-// context only. Appended straight to processed (capped, same as a normal
-// flush) so they still count as background for the gate (§4's minContext
-// padding, tagging/dispatch.js) and the respond step's window, without
-// inflating pendingCount/the backstop with the bot's own chatter — those
-// are meant to reflect unaddressed human backlog specifically.
+// For content that's background only, never something awaiting a dispatch
+// decision in this thread: bot-authored messages (nothing to act on in the
+// bot's own words) and a new thread's backfilled root (context for the
+// reply that created the thread, not new content — see the root-backfill
+// call site below). Appended straight to processed (capped, same as a
+// normal flush) so it still counts as background for the gate (§4's
+// minContext padding, tagging/dispatch.js) and the respond step's window,
+// without inflating pendingCount/the backstop — those are meant to reflect
+// unaddressed human backlog specifically, not resurrect something that
+// already triggered its own response elsewhere.
 function applyMessageDirectlyToProcessedWindow({
   state,
   message,
@@ -296,11 +299,18 @@ async function appendMessageToThreadWindow({
             threadKeyOverride: threadKey,
             contextWindowSize,
           });
-          const applyRoot =
-            Boolean(botId) && rootMessage.personId === botId
-              ? applyMessageDirectlyToProcessedWindow
-              : applyMessageToPendingWindow;
-          state = applyRoot({
+          // Always processed, never pending, regardless of who sent it. The
+          // root's only role here is background for the reply that created
+          // this thread — it isn't new content awaiting a dispatch decision
+          // in this thread (that decision, if any, already happened wherever
+          // the root message actually lives — e.g. __main__ — this is a
+          // backfilled copy for context, not the same tracked instance).
+          // Branching this on sender identity was wrong: a human-authored
+          // root that already triggered its own response elsewhere would
+          // otherwise get resurrected as pending here, double-counting it
+          // and inflating pendingCount for a message nobody still needs to
+          // act on.
+          state = applyMessageDirectlyToProcessedWindow({
             state,
             message: rootMessage,
             botId,
