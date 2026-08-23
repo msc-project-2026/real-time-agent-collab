@@ -1,40 +1,27 @@
 // ********* VISIBILITY/SUMMARY.JS *********
 'use strict';
 
-const { getConversations } = require('../context/conversations-store');
-const { getItems } = require('../context/items-store');
+const { getTasks } = require('../context/tasks-store');
 const { getThreads } = require('../context/threads-store');
 const { asArray } = require('../utils/normalise');
 
-function countItems(items, predicate) {
-  return asArray(items).filter(predicate).length;
+function countTasks(tasks, predicate) {
+  return asArray(tasks).filter(predicate).length;
 }
 
-function formatConversationForVisibility(conversation) {
+function formatTaskForVisibility(task) {
   return {
-    id: conversation.id,
-    topic: conversation.topic,
-    summary: conversation.summary,
-    status: conversation.status,
-    threadRootIds: conversation.threadRootIds ?? [],
-    lastMessageIds: conversation.lastMessageIds ?? [],
-    startedAt: conversation.startedAt ?? null,
-    updatedAt: conversation.updatedAt ?? null,
-  };
-}
-
-function formatItemForVisibility(item) {
-  return {
-    id: item.id,
-    type: item.type,
-    status: item.status,
-    title: item.title,
-    description: item.description,
-    owner: item.owner ?? null,
-    conversationIds: item.conversationIds ?? [],
-    evidenceMessageIds: item.evidenceMessageIds ?? [],
-    createdAt: item.createdAt ?? null,
-    updatedAt: item.updatedAt ?? null,
+    id: task.id,
+    title: task.title,
+    description: task.description,
+    type: task.type,
+    status: task.status,
+    assigned: task.assigned ?? null,
+    deadline: task.deadline ?? null,
+    message_ids: task.message_ids ?? [],
+    child_tasks: task.child_tasks ?? [],
+    createdAt: task.createdAt ?? null,
+    updatedAt: task.updatedAt ?? null,
   };
 }
 
@@ -53,13 +40,7 @@ function formatThreadForVisibility(thread) {
 async function buildContextSummary({ spaceId }) {
   if (!spaceId) throw new Error('spaceId is required');
 
-  const conversations = await getConversations({
-    spaceId,
-    statuses: ['active', 'dormant'],
-    limit: 100,
-  });
-
-  const items = await getItems({
+  const tasks = await getTasks({
     spaceId,
     limit: 200,
   });
@@ -73,27 +54,13 @@ async function buildContextSummary({ spaceId }) {
     spaceId,
     generatedAt: new Date().toISOString(),
     counts: {
-      activeConversations: conversations.filter(
-        (conversation) => conversation.status === 'active'
-      ).length,
-      dormantConversations: conversations.filter(
-        (conversation) => conversation.status === 'dormant'
-      ).length,
-      openItems: countItems(items, (item) => item.status === 'open'),
-      inProgressItems: countItems(
-        items,
-        (item) => item.status === 'in_progress'
-      ),
-      blockedItems: countItems(items, (item) => item.status === 'blocked'),
-      resolvedItems: countItems(items, (item) => item.status === 'resolved'),
-      risks: countItems(items, (item) => item.type === 'risk'),
-      decisions: countItems(items, (item) => item.type === 'decision'),
-      questions: countItems(items, (item) => item.type === 'question'),
-      tasks: countItems(items, (item) => item.type === 'task'),
-      issues: countItems(items, (item) => item.type === 'issue'),
+      openTasks: countTasks(tasks, (task) => task.status === 'open'),
+      approvedTasks: countTasks(tasks, (task) => task.status === 'approved'),
+      delegatedTasks: countTasks(tasks, (task) => task.status === 'delegated'),
+      doneTasks: countTasks(tasks, (task) => task.status === 'done'),
+      archivedTasks: countTasks(tasks, (task) => task.status === 'archived'),
     },
-    conversations: conversations.map(formatConversationForVisibility),
-    items: items.map(formatItemForVisibility),
+    tasks: tasks.map(formatTaskForVisibility),
     threads: threads.map(formatThreadForVisibility),
   };
 }

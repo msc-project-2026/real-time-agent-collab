@@ -11,7 +11,7 @@ const { searchTasksTool } = require('./processing/search-tasks-tool');
 
 const { webexPlugin } = require('./channel');
 const { webhookRouter } = require('./webhook/router');
-const { contextRouter } = require('./visibility/context-router');
+const { spaceRouter } = require('./visibility/space-router');
 const { boardRouter } = require('./visibility/board-router');
 const { setPluginRuntime, setPluginConfig } = require('./runtime');
 const { evalRouter } = require('./eval/router');
@@ -51,7 +51,7 @@ function register(api) {
     path: '/webex/collab/',
     auth: 'plugin',
     match: 'prefix',
-    handler: contextRouter,
+    handler: spaceRouter,
   });
 
   // Tools

@@ -1,43 +1,37 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   buildBoardCounts,
-  filterProjectItems,
+  filterTasks,
   formatDate,
-  isWorkItem,
-  normalizeItem,
+  isReviewTask,
+  normalizeTask,
   shortId,
 } from './model.js';
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TYPE_LABELS = {
-  task: 'Task',
-  issue: 'Issue',
-  question: 'Question',
-  decision: 'Decision',
-  risk: 'Risk',
-  dependency: 'Dependency',
+  development: 'Development',
+  design: 'Design',
+  research: 'Research',
   coordination: 'Coordination',
 };
 
+const ALL_TYPES = ['development', 'design', 'research', 'coordination'];
+
 const STATUS_LABELS = {
   open: 'Open',
-  in_progress: 'In Progress',
-  blocked: 'Blocked',
-  resolved: 'Resolved',
-  stale: 'Stale',
+  approved: 'Approved',
+  delegated: 'Delegated',
+  done: 'Done',
+  archived: 'Archived',
 };
 
-const WORK_STATUSES = ['open', 'in_progress', 'blocked', 'resolved', 'stale'];
-const NON_WORK_TYPES = [
-  'question',
-  'decision',
-  'risk',
-  'dependency',
-  'coordination',
-];
+// Review Queue owns `open` — the board's columns are what's already past
+// triage. `archived` is hidden behind a toggle rather than always shown, so
+// the default board view stays focused on live work.
+const KANBAN_STATUSES = ['approved', 'delegated', 'done'];
+const KANBAN_MOVE_TARGETS = ['approved', 'delegated', 'done', 'archived'];
 
 // ─── Badges ──────────────────────────────────────────────────────────────────
 
@@ -48,26 +42,11 @@ function TypeBadge({ type }) {
 }
 
 function StatusBadge({ status }) {
-  const cls = status ? status.replace(/_/g, '-') : 'unknown';
   return (
-    <span className={`badge status-${cls}`}>
+    <span className={`badge status-${status}`}>
       {STATUS_LABELS[status] ?? status ?? '—'}
     </span>
   );
-}
-
-function ApprovalBadge({ status }) {
-  return (
-    <span className={`badge approval-${status ?? 'unknown'}`}>
-      {status ?? '—'}
-    </span>
-  );
-}
-
-function DelegationBadge({ status }) {
-  const cls = status ? status.replace(/_/g, '-') : 'unknown';
-  const label = status ? status.replace(/_/g, ' ') : '—';
-  return <span className={`badge delegation-${cls}`}>{label}</span>;
 }
 
 // ─── Summary Card ─────────────────────────────────────────────────────────────
@@ -83,15 +62,15 @@ function SummaryCard({ label, value, accent }) {
 
 // ─── Edit Form ────────────────────────────────────────────────────────────────
 
-function EditForm({ item, isWorkItem: isWork, onSave, onCancel }) {
-  const [title, setTitle] = useState(item.title ?? '');
-  const [description, setDescription] = useState(item.description ?? '');
-  const [status, setStatus] = useState(item.status ?? 'open');
-  const [assignee, setAssignee] = useState(item.assignee ?? '');
-  const [owner, setOwner] = useState(item.owner ?? '');
+function EditForm({ task, onSave, onCancel }) {
+  const [title, setTitle] = useState(task.title ?? '');
+  const [description, setDescription] = useState(task.description ?? '');
+  const [type, setType] = useState(task.type ?? 'development');
+  const [assigned, setAssigned] = useState(task.assigned ?? '');
+  const [deadline, setDeadline] = useState(task.deadline ?? '');
 
   function handleSave() {
-    onSave({ title, description, status, assignee, owner });
+    onSave({ title, description, type, assigned, deadline });
   }
 
   return (
@@ -110,26 +89,26 @@ function EditForm({ item, isWorkItem: isWork, onSave, onCancel }) {
       </div>
       <div className="edit-form-row">
         <div className="edit-form-field">
-          <label>Status</label>
-          <select value={status} onChange={(e) => setStatus(e.target.value)}>
-            {WORK_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {STATUS_LABELS[s]}
+          <label>Type</label>
+          <select value={type} onChange={(e) => setType(e.target.value)}>
+            {ALL_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {TYPE_LABELS[t]}
               </option>
             ))}
           </select>
         </div>
         <div className="edit-form-field">
-          <label>{isWork ? 'Assignee' : 'Owner'}</label>
-          {isWork ? (
-            <input
-              value={assignee}
-              onChange={(e) => setAssignee(e.target.value)}
-            />
-          ) : (
-            <input value={owner} onChange={(e) => setOwner(e.target.value)} />
-          )}
+          <label>Assigned</label>
+          <input
+            value={assigned}
+            onChange={(e) => setAssigned(e.target.value)}
+          />
         </div>
+      </div>
+      <div className="edit-form-field">
+        <label>Deadline</label>
+        <input value={deadline} onChange={(e) => setDeadline(e.target.value)} />
       </div>
       <div className="edit-form-actions">
         <span className="local-note">⚠ Local only — resets on refresh</span>
@@ -144,66 +123,73 @@ function EditForm({ item, isWorkItem: isWork, onSave, onCancel }) {
   );
 }
 
+// ─── Task Meta (evidence / sub-tasks) ─────────────────────────────────────────
+
+function TaskMeta({ task }) {
+  return (
+    <div className="card-meta">
+      <span className="meta-item">
+        {task.assigned && task.assigned !== 'unknown'
+          ? `👤 ${task.assigned}`
+          : 'Unassigned'}
+      </span>
+      {task.deadline && task.deadline !== 'unknown' && (
+        <span className="meta-item">📅 {task.deadline}</span>
+      )}
+      {task.message_ids.length > 0 && (
+        <span className="meta-item">
+          📎 {task.message_ids.length} evidence
+        </span>
+      )}
+      {task.child_tasks.length > 0 && (
+        <span className="meta-item">
+          🔗 {task.child_tasks.length} sub-task
+          {task.child_tasks.length !== 1 ? 's' : ''}
+        </span>
+      )}
+    </div>
+  );
+}
+
 // ─── Review Card ─────────────────────────────────────────────────────────────
 
 function ReviewCard({
-  item,
+  task,
   editingId,
   onApprove,
-  onReject,
+  onArchive,
   onEdit,
   onEditSave,
   onEditCancel,
 }) {
-  const isEditing = editingId === item.id;
+  const isEditing = editingId === task.id;
 
   return (
     <div className={`card${isEditing ? ' card-editing' : ''}`}>
       <div className="card-header">
         <div className="card-badges">
-          <TypeBadge type={item.type} />
-          <StatusBadge status={item.status} />
+          <TypeBadge type={task.type} />
         </div>
-        {item.updatedAt && (
-          <span className="card-time">{formatDate(item.updatedAt)}</span>
+        {task.updatedAt && (
+          <span className="card-time">{formatDate(task.updatedAt)}</span>
         )}
       </div>
 
       {isEditing ? (
-        <EditForm
-          item={item}
-          isWorkItem
-          onSave={onEditSave}
-          onCancel={onEditCancel}
-        />
+        <EditForm task={task} onSave={onEditSave} onCancel={onEditCancel} />
       ) : (
         <>
-          <h3 className="card-title">{item.title}</h3>
-          {item.description && (
-            <p className="card-description">{item.description}</p>
+          <h3 className="card-title">{task.title}</h3>
+          {task.description && (
+            <p className="card-description">{task.description}</p>
           )}
-          <div className="card-meta">
-            <span className="meta-item">
-              {item.assignee ? `👤 ${item.assignee}` : 'Unassigned'}
-            </span>
-            {item.evidenceMessageIds?.length > 0 && (
-              <span className="meta-item">
-                📎 {item.evidenceMessageIds.length} evidence
-              </span>
-            )}
-            {item.conversationIds?.length > 0 && (
-              <span className="meta-item">
-                💬 {item.conversationIds.length} convo
-                {item.conversationIds.length !== 1 ? 's' : ''}
-              </span>
-            )}
-          </div>
+          <TaskMeta task={task} />
           <div className="card-actions">
             <button className="btn btn-approve" onClick={onApprove}>
               ✓ Approve
             </button>
-            <button className="btn btn-reject" onClick={onReject}>
-              ✗ Reject
+            <button className="btn btn-reject" onClick={onArchive}>
+              ✗ Archive
             </button>
             <button className="btn btn-ghost btn-sm" onClick={onEdit}>
               Edit
@@ -215,59 +201,46 @@ function ReviewCard({
   );
 }
 
-// ─── Work Card ────────────────────────────────────────────────────────────────
+// ─── Kanban Card ──────────────────────────────────────────────────────────────
 
-function WorkCard({
-  item,
+function KanbanCard({
+  task,
   editingId,
   onEdit,
   onEditSave,
   onEditCancel,
   onStatusChange,
-  onDelegate,
-  onMarkResolved,
 }) {
-  const isEditing = editingId === item.id;
+  const isEditing = editingId === task.id;
 
   return (
     <div className={`card${isEditing ? ' card-editing' : ''}`}>
       <div className="card-header">
         <div className="card-badges">
-          <TypeBadge type={item.type} />
-          <ApprovalBadge status={item.approvalStatus} />
+          <TypeBadge type={task.type} />
         </div>
-        {item.updatedAt && (
-          <span className="card-time">{formatDate(item.updatedAt)}</span>
+        {task.updatedAt && (
+          <span className="card-time">{formatDate(task.updatedAt)}</span>
         )}
       </div>
 
       {isEditing ? (
-        <EditForm
-          item={item}
-          isWorkItem
-          onSave={onEditSave}
-          onCancel={onEditCancel}
-        />
+        <EditForm task={task} onSave={onEditSave} onCancel={onEditCancel} />
       ) : (
         <>
-          <h3 className="card-title">{item.title}</h3>
-          <div className="card-meta">
-            <span className="meta-item">
-              {item.assignee ? `👤 ${item.assignee}` : 'Unassigned'}
-            </span>
-            <DelegationBadge status={item.delegationStatus} />
-          </div>
-          {item.description && (
-            <p className="card-description">{item.description}</p>
+          <h3 className="card-title">{task.title}</h3>
+          {task.description && (
+            <p className="card-description">{task.description}</p>
           )}
+          <TaskMeta task={task} />
           <div className="card-actions work-card-actions">
             <div className="card-actions-row">
               <select
                 className="status-select"
-                value={item.status}
+                value={task.status}
                 onChange={(e) => onStatusChange(e.target.value)}
               >
-                {WORK_STATUSES.map((s) => (
+                {KANBAN_MOVE_TARGETS.map((s) => (
                   <option key={s} value={s}>
                     {STATUS_LABELS[s]}
                   </option>
@@ -277,151 +250,9 @@ function WorkCard({
                 Edit
               </button>
             </div>
-            <div className="card-actions-row">
-              {item.delegationStatus === 'not_delegated' ? (
-                <button
-                  className="btn btn-delegate btn-sm"
-                  onClick={onDelegate}
-                >
-                  Queue Delegate (local)
-                </button>
-              ) : (
-                <span className="local-note-inline">
-                  ⏳ Delegation {item.delegationStatus.replace(/_/g, ' ')}{' '}
-                  (local)
-                </span>
-              )}
-              {item.status !== 'resolved' && (
-                <button
-                  className="btn btn-resolve btn-sm"
-                  onClick={onMarkResolved}
-                >
-                  Mark Resolved (local)
-                </button>
-              )}
-            </div>
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-// ─── Project Record ───────────────────────────────────────────────────────────
-
-function ProjectRecord({ items, editingId, onEdit, onEditSave, onEditCancel }) {
-  const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-
-  const filtered = filterProjectItems(items, {
-    search,
-    typeFilter,
-    statusFilter,
-  });
-
-  return (
-    <div>
-      <div className="record-controls">
-        <input
-          className="search-input"
-          type="search"
-          placeholder="Search title, description, owner…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-        >
-          <option value="">All types</option>
-          {NON_WORK_TYPES.map((t) => (
-            <option key={t} value={t}>
-              {TYPE_LABELS[t]}
-            </option>
-          ))}
-        </select>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-        >
-          <option value="">All statuses</option>
-          {WORK_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {STATUS_LABELS[s]}
-            </option>
-          ))}
-        </select>
-        <span className="record-count">
-          {filtered.length} / {items.length} items
-        </span>
-      </div>
-
-      <div className="record-table-wrap">
-        <table className="record-table">
-          <thead>
-            <tr>
-              <th>Type</th>
-              <th>Title</th>
-              <th>Status</th>
-              <th>Owner</th>
-              <th>Updated</th>
-              <th>Evidence</th>
-              <th>Description</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={8} className="table-empty">
-                  {items.length === 0
-                    ? 'No project record items.'
-                    : 'No items match the current filters.'}
-                </td>
-              </tr>
-            )}
-            {filtered.map((item) =>
-              editingId === item.id ? (
-                <tr key={item.id} className="tr-editing">
-                  <td colSpan={8}>
-                    <EditForm
-                      item={item}
-                      isWorkItem={false}
-                      onSave={(form) => onEditSave(item.id, form)}
-                      onCancel={onEditCancel}
-                    />
-                  </td>
-                </tr>
-              ) : (
-                <tr key={item.id}>
-                  <td>
-                    <TypeBadge type={item.type} />
-                  </td>
-                  <td className="td-title">{item.title}</td>
-                  <td>
-                    <StatusBadge status={item.status} />
-                  </td>
-                  <td>{item.owner || '—'}</td>
-                  <td className="td-date">{formatDate(item.updatedAt)}</td>
-                  <td className="td-center">
-                    {item.evidenceMessageIds?.length ?? 0}
-                  </td>
-                  <td className="td-desc">{item.description || '—'}</td>
-                  <td>
-                    <button
-                      className="btn btn-ghost btn-sm"
-                      onClick={() => onEdit(item)}
-                    >
-                      Edit
-                    </button>
-                  </td>
-                </tr>
-              )
-            )}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }
@@ -432,14 +263,17 @@ export default function App() {
   const spaceId =
     new URLSearchParams(window.location.search).get('spaceId') ?? '';
 
-  const [items, setItems] = useState([]);
+  const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [lastLoaded, setLastLoaded] = useState(null);
   const [activeTab, setActiveTab] = useState('review');
   const [editingId, setEditingId] = useState(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
 
-  const fetchItems = useCallback(async () => {
+  const fetchTasks = useCallback(async () => {
     if (!spaceId) {
       setError('No spaceId in URL. Expected: ?spaceId=<id>');
       return;
@@ -448,12 +282,12 @@ export default function App() {
     setError(null);
     setEditingId(null);
     try {
-      const url = `/webex/collab/spaces/${encodeURIComponent(spaceId)}/items`;
+      const url = `/webex/collab/spaces/${encodeURIComponent(spaceId)}/tasks`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       const data = await res.json();
-      const rawItems = Array.isArray(data) ? data : (data.items ?? []);
-      setItems(rawItems.map(normalizeItem));
+      const rawTasks = Array.isArray(data) ? data : (data.tasks ?? []);
+      setTasks(rawTasks.map(normalizeTask));
       setLastLoaded(new Date());
     } catch (e) {
       setError(e.message);
@@ -463,44 +297,35 @@ export default function App() {
   }, [spaceId]);
 
   useEffect(() => {
-    fetchItems();
-  }, [fetchItems]);
+    fetchTasks();
+  }, [fetchTasks]);
 
-  function updateItem(id, patch) {
-    setItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...patch } : item))
+  function updateTask(id, patch) {
+    setTasks((prev) =>
+      prev.map((task) => (task.id === id ? { ...task, ...patch } : task))
     );
   }
 
-  function handleEditSave(id, form, isWork) {
-    const patch = {
-      title: form.title,
-      description: form.description,
-      status: form.status,
-    };
-    if (isWork) {
-      patch.assignee = form.assignee ?? '';
-    } else {
-      patch.owner = form.owner ?? '';
-    }
-    updateItem(id, patch);
+  function handleEditSave(id, form) {
+    updateTask(id, form);
     setEditingId(null);
   }
 
   // Derived slices
-  const workItems = items.filter(isWorkItem);
-  const reviewItems = workItems.filter((i) => i.approvalStatus === 'proposed');
-  const boardItems = workItems.filter((i) => i.approvalStatus === 'approved');
-  const recordItems = items.filter((i) => !isWorkItem(i));
+  const reviewTasks = filterTasks(tasks.filter(isReviewTask), { search, typeFilter });
+  const kanbanStatuses = showArchived
+    ? [...KANBAN_STATUSES, 'archived']
+    : KANBAN_STATUSES;
+  const kanbanTasks = tasks.filter((task) => kanbanStatuses.includes(task.status));
 
-  const counts = buildBoardCounts(items);
+  const counts = buildBoardCounts(tasks);
 
   return (
     <div className="app">
       {/* Header */}
       <header className="app-header">
         <div className="header-left">
-          <h1>Project Items Board</h1>
+          <h1>Task Board</h1>
           {spaceId && (
             <span className="header-spaceid" title={spaceId}>
               Space: {shortId(spaceId)}…
@@ -518,7 +343,7 @@ export default function App() {
           )}
           <button
             className="btn btn-primary"
-            onClick={fetchItems}
+            onClick={fetchTasks}
             disabled={loading}
           >
             {loading ? '⟳ Loading…' : '↺ Refresh'}
@@ -529,33 +354,22 @@ export default function App() {
       {/* Summary bar */}
       <div className="summary-bar">
         <SummaryCard label="Total" value={counts.total} />
-        <SummaryCard
-          label="Proposed"
-          value={counts.proposed}
-          accent="proposed"
-        />
+        <SummaryCard label="Open" value={counts.open} accent="open" />
         <SummaryCard
           label="Approved"
           value={counts.approved}
           accent="approved"
         />
-        <SummaryCard label="Open" value={counts.open} accent="open" />
         <SummaryCard
-          label="In Progress"
-          value={counts.in_progress}
-          accent="inprogress"
+          label="Delegated"
+          value={counts.delegated}
+          accent="delegated"
         />
-        <SummaryCard label="Blocked" value={counts.blocked} accent="blocked" />
+        <SummaryCard label="Done" value={counts.done} accent="done" />
         <SummaryCard
-          label="Resolved"
-          value={counts.resolved}
-          accent="resolved"
-        />
-        <SummaryCard label="Risks" value={counts.risks} accent="risk" />
-        <SummaryCard
-          label="Decisions"
-          value={counts.decisions}
-          accent="decision"
+          label="Archived"
+          value={counts.archived}
+          accent="archived"
         />
       </div>
 
@@ -574,21 +388,16 @@ export default function App() {
           onClick={() => setActiveTab('review')}
         >
           Review Queue
-          <span className="tab-badge">{reviewItems.length}</span>
+          <span className="tab-badge">{counts.open}</span>
         </button>
         <button
-          className={`tab-btn${activeTab === 'work' ? ' active' : ''}`}
-          onClick={() => setActiveTab('work')}
+          className={`tab-btn${activeTab === 'board' ? ' active' : ''}`}
+          onClick={() => setActiveTab('board')}
         >
-          Work Board
-          <span className="tab-badge">{boardItems.length}</span>
-        </button>
-        <button
-          className={`tab-btn${activeTab === 'record' ? ' active' : ''}`}
-          onClick={() => setActiveTab('record')}
-        >
-          Project Record
-          <span className="tab-badge">{recordItems.length}</span>
+          Board
+          <span className="tab-badge">
+            {counts.approved + counts.delegated + counts.done}
+          </span>
         </button>
       </div>
 
@@ -597,27 +406,48 @@ export default function App() {
         {/* Review Queue */}
         {activeTab === 'review' && (
           <div className="review-section">
-            {!loading && reviewItems.length === 0 ? (
+            <div className="record-controls">
+              <input
+                className="search-input"
+                type="search"
+                placeholder="Search title, description, assigned…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+              >
+                <option value="">All types</option>
+                {ALL_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {TYPE_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+              <span className="record-count">
+                {reviewTasks.length} open task
+                {reviewTasks.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+
+            {!loading && reviewTasks.length === 0 ? (
               <div className="empty-state">
-                {items.length === 0
-                  ? 'No items loaded yet.'
-                  : 'No items pending review. All work items have been approved or rejected.'}
+                {tasks.length === 0
+                  ? 'No tasks loaded yet.'
+                  : 'Nothing to review right now.'}
               </div>
             ) : (
               <div className="card-grid">
-                {reviewItems.map((item) => (
+                {reviewTasks.map((task) => (
                   <ReviewCard
-                    key={item.id}
-                    item={item}
+                    key={task.id}
+                    task={task}
                     editingId={editingId}
-                    onApprove={() =>
-                      updateItem(item.id, { approvalStatus: 'approved' })
-                    }
-                    onReject={() =>
-                      updateItem(item.id, { approvalStatus: 'rejected' })
-                    }
-                    onEdit={() => setEditingId(item.id)}
-                    onEditSave={(form) => handleEditSave(item.id, form, true)}
+                    onApprove={() => updateTask(task.id, { status: 'approved' })}
+                    onArchive={() => updateTask(task.id, { status: 'archived' })}
+                    onEdit={() => setEditingId(task.id)}
+                    onEditSave={(form) => handleEditSave(task.id, form)}
                     onEditCancel={() => setEditingId(null)}
                   />
                 ))}
@@ -626,63 +456,57 @@ export default function App() {
           </div>
         )}
 
-        {/* Work Board */}
-        {activeTab === 'work' && (
-          <div className="work-board">
-            {boardItems.length === 0 && !loading && (
-              <div className="empty-state board-empty">
-                No approved items yet. Approve items in the Review Queue to see
-                them here.
-              </div>
-            )}
-            {WORK_STATUSES.map((status) => {
-              const col = boardItems.filter((i) => i.status === status);
-              return (
-                <div key={status} className="board-col">
-                  <div className="col-header">
-                    <StatusBadge status={status} />
-                    <span className="col-count">{col.length}</span>
-                  </div>
-                  {col.length === 0 ? (
-                    <div className="col-empty">—</div>
-                  ) : (
-                    col.map((item) => (
-                      <WorkCard
-                        key={item.id}
-                        item={item}
-                        editingId={editingId}
-                        onEdit={() => setEditingId(item.id)}
-                        onEditSave={(form) =>
-                          handleEditSave(item.id, form, true)
-                        }
-                        onEditCancel={() => setEditingId(null)}
-                        onStatusChange={(v) =>
-                          updateItem(item.id, { status: v })
-                        }
-                        onDelegate={() =>
-                          updateItem(item.id, { delegationStatus: 'queued' })
-                        }
-                        onMarkResolved={() =>
-                          updateItem(item.id, { status: 'resolved' })
-                        }
-                      />
-                    ))
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+        {/* Board */}
+        {activeTab === 'board' && (
+          <div className="board-section">
+            <div className="record-controls">
+              <label className="record-count">
+                <input
+                  type="checkbox"
+                  checked={showArchived}
+                  onChange={(e) => setShowArchived(e.target.checked)}
+                />{' '}
+                Show archived
+              </label>
+            </div>
 
-        {/* Project Record */}
-        {activeTab === 'record' && (
-          <ProjectRecord
-            items={recordItems}
-            editingId={editingId}
-            onEdit={(item) => setEditingId(item.id)}
-            onEditSave={(id, form) => handleEditSave(id, form, false)}
-            onEditCancel={() => setEditingId(null)}
-          />
+            <div className="work-board">
+              {kanbanTasks.length === 0 && !loading && (
+                <div className="empty-state board-empty">
+                  No approved tasks yet. Approve tasks in the Review Queue to
+                  see them here.
+                </div>
+              )}
+              {kanbanStatuses.map((status) => {
+                const col = kanbanTasks.filter((t) => t.status === status);
+                return (
+                  <div key={status} className="board-col">
+                    <div className="col-header">
+                      <StatusBadge status={status} />
+                      <span className="col-count">{col.length}</span>
+                    </div>
+                    {col.length === 0 ? (
+                      <div className="col-empty">—</div>
+                    ) : (
+                      col.map((task) => (
+                        <KanbanCard
+                          key={task.id}
+                          task={task}
+                          editingId={editingId}
+                          onEdit={() => setEditingId(task.id)}
+                          onEditSave={(form) => handleEditSave(task.id, form)}
+                          onEditCancel={() => setEditingId(null)}
+                          onStatusChange={(v) =>
+                            updateTask(task.id, { status: v })
+                          }
+                        />
+                      ))
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         )}
       </main>
     </div>

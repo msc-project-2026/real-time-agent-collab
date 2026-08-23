@@ -32,6 +32,7 @@ describe('write_task tool', () => {
 
     const result = await tool.execute('id-1', {
       spaceId: 'space-1',
+      title: 'Fix login test',
       type: 'development',
       assigned: 'alice',
       message_ids: ['msg-1'],
@@ -43,6 +44,8 @@ describe('write_task tool', () => {
       spaceId: 'space-1',
       id: undefined,
       patch: {
+        title: 'Fix login test',
+        description: undefined,
         type: 'development',
         assigned: 'alice',
         deadline: undefined,
@@ -67,10 +70,21 @@ describe('write_task tool', () => {
     const { writeTaskTool, upsertTask } = loadTool(t);
     const tool = writeTaskTool();
 
-    const result = await tool.execute('id-1', { type: 'development' });
+    const result = await tool.execute('id-1', { title: 'Fix login test', type: 'development' });
 
     assert.equal(result.ok, false);
     assert.ok(result.errors.some((e) => e.includes('spaceId')));
+    assert.equal(upsertTask.mock.callCount(), 0);
+  });
+
+  test('creating without title or id returns a validation error', async (t) => {
+    const { writeTaskTool, upsertTask } = loadTool(t);
+    const tool = writeTaskTool();
+
+    const result = await tool.execute('id-1', { spaceId: 'space-1', type: 'development' });
+
+    assert.equal(result.ok, false);
+    assert.ok(result.errors.some((e) => e.includes('title')));
     assert.equal(upsertTask.mock.callCount(), 0);
   });
 
@@ -78,7 +92,7 @@ describe('write_task tool', () => {
     const { writeTaskTool, upsertTask } = loadTool(t);
     const tool = writeTaskTool();
 
-    const result = await tool.execute('id-1', { spaceId: 'space-1' });
+    const result = await tool.execute('id-1', { spaceId: 'space-1', title: 'Fix login test' });
 
     assert.equal(result.ok, false);
     assert.ok(result.errors.some((e) => e.includes('type')));
@@ -89,7 +103,11 @@ describe('write_task tool', () => {
     const { writeTaskTool } = loadTool(t);
     const tool = writeTaskTool();
 
-    const result = await tool.execute('id-1', { spaceId: 'space-1', type: 'not-a-real-type' });
+    const result = await tool.execute('id-1', {
+      spaceId: 'space-1',
+      title: 'Fix login test',
+      type: 'not-a-real-type',
+    });
 
     assert.equal(result.ok, false);
     assert.ok(result.errors.some((e) => e.includes('type')));
@@ -101,6 +119,7 @@ describe('write_task tool', () => {
 
     const result = await tool.execute('id-1', {
       spaceId: 'space-1',
+      title: 'Fix login test',
       type: 'development',
       status: 'not-a-real-status',
     });
@@ -115,6 +134,7 @@ describe('write_task tool', () => {
 
     const result = await tool.execute('id-1', {
       spaceId: 'space-1',
+      title: 'Fix login test',
       type: 'development',
       message_ids: 'msg-1',
       child_tasks: 'task_2',

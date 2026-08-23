@@ -32,6 +32,14 @@ function writeTaskTool() {
           type: 'string',
           description: 'Existing task id to patch. Omit to create a new task.',
         },
+        title: {
+          type: 'string',
+          description: 'Short human-readable summary. Required when creating a task.',
+        },
+        description: {
+          type: 'string',
+          description: 'Optional longer elaboration.',
+        },
         type: {
           type: 'string',
           enum: [...ALLOWED_TYPES],
@@ -68,6 +76,8 @@ function writeTaskTool() {
       const {
         spaceId,
         id,
+        title,
+        description,
         type,
         assigned,
         deadline,
@@ -80,6 +90,9 @@ function writeTaskTool() {
 
       if (!spaceId || typeof spaceId !== 'string') {
         errors.push('`spaceId` must be a non-empty string.');
+      }
+      if (!id && !title) {
+        errors.push('`title` is required when creating a task (no `id` given).');
       }
       if (!id && !type) {
         errors.push('`type` is required when creating a task (no `id` given).');
@@ -106,6 +119,8 @@ function writeTaskTool() {
           spaceId,
           id,
           patch: {
+            title,
+            description,
             type,
             assigned,
             deadline,

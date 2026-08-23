@@ -120,14 +120,11 @@ input, textarea, select, button {
   white-space: nowrap;
 }
 
-.summary-proposed .summary-val  { color: #a16207; }
-.summary-approved .summary-val  { color: #15803d; }
 .summary-open .summary-val      { color: #1d4ed8; }
-.summary-inprogress .summary-val{ color: #92400e; }
-.summary-blocked .summary-val   { color: #dc2626; }
-.summary-resolved .summary-val  { color: #15803d; }
-.summary-risk .summary-val      { color: #dc2626; }
-.summary-decision .summary-val  { color: #7c3aed; }
+.summary-approved .summary-val  { color: #a16207; }
+.summary-delegated .summary-val { color: #7c3aed; }
+.summary-done .summary-val      { color: #15803d; }
+.summary-archived .summary-val  { color: #6b7280; }
 
 /* ─── Alerts ─────────────────────────────────────────────────────────────────── */
 .alert {
@@ -460,30 +457,17 @@ input, textarea, select, button {
 }
 
 /* Type badges */
-.type-task         { background: #dbeafe; color: #1d4ed8; }
-.type-issue        { background: #ffedd5; color: #c2410c; }
-.type-question     { background: #f3e8ff; color: #7e22ce; }
-.type-decision     { background: #dcfce7; color: #15803d; }
-.type-risk         { background: #fee2e2; color: #991b1b; }
-.type-dependency   { background: #f3f4f6; color: #374151; }
-.type-coordination { background: #ccfbf1; color: #0f766e; }
+.type-development  { background: #dbeafe; color: #1d4ed8; }
+.type-design        { background: #f3e8ff; color: #7e22ce; }
+.type-research       { background: #ccfbf1; color: #0f766e; }
+.type-coordination { background: #ffedd5; color: #c2410c; }
 
-/* Status badges */
-.status-open        { background: #dbeafe; color: #1d4ed8; }
-.status-in-progress { background: #fef3c7; color: #92400e; }
-.status-blocked     { background: #fee2e2; color: #991b1b; }
-.status-resolved    { background: #dcfce7; color: #15803d; }
-.status-stale       { background: #f3f4f6; color: #6b7280; }
-
-/* Approval badges */
-.approval-proposed { background: #fef9c3; color: #a16207; }
-.approval-approved { background: #dcfce7; color: #15803d; }
-.approval-rejected { background: #fee2e2; color: #991b1b; }
-
-/* Delegation badges */
-.delegation-not-delegated { background: #f3f4f6; color: #6b7280; }
-.delegation-queued         { background: #ede9fe; color: #6d28d9; }
-.delegation-delegated      { background: #dcfce7; color: #15803d; }
+/* Status badges (v3 §7c single status axis) */
+.status-open       { background: #dbeafe; color: #1d4ed8; }
+.status-approved   { background: #fef9c3; color: #a16207; }
+.status-delegated  { background: #ede9fe; color: #6d28d9; }
+.status-done       { background: #dcfce7; color: #15803d; }
+.status-archived   { background: #f3f4f6; color: #6b7280; }
 
 /* ─── Edit Form ──────────────────────────────────────────────────────────────── */
 .edit-form {
@@ -550,7 +534,7 @@ input, textarea, select, button {
   min-width: 0;
 }
 
-/* ─── Project Record ─────────────────────────────────────────────────────────── */
+/* ─── Search/filter controls (Review Queue) ─────────────────────────────────── */
 .record-controls {
   display: flex;
   gap: 10px;
@@ -589,88 +573,4 @@ input, textarea, select, button {
   font-size: 12px;
   color: #9ca3af;
   white-space: nowrap;
-}
-
-.record-table-wrap {
-  overflow-x: auto;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-}
-
-.record-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.record-table th {
-  padding: 10px 14px;
-  text-align: left;
-  font-size: 11px;
-  font-weight: 700;
-  color: #6b7280;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  border-bottom: 1px solid #e5e7eb;
-  background: #f9fafb;
-  position: sticky;
-  top: 0;
-}
-
-.record-table td {
-  padding: 10px 14px;
-  border-bottom: 1px solid #f3f4f6;
-  vertical-align: middle;
-  color: #374151;
-}
-
-.record-table tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.record-table tbody tr:hover td {
-  background: #f9fafb;
-}
-
-.td-title {
-  font-weight: 500;
-  color: #111827;
-  max-width: 220px;
-  white-space: normal;
-  min-width: 140px;
-}
-
-.td-desc {
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: #6b7280;
-}
-
-.td-date {
-  color: #9ca3af;
-  font-size: 12px;
-}
-
-.td-center {
-  text-align: center;
-}
-
-.table-empty {
-  text-align: center;
-  padding: 40px;
-  color: #9ca3af;
-  font-size: 14px;
-  white-space: normal;
-}
-
-.tr-editing {
-  background: #eff6ff;
-}
-
-.tr-editing td {
-  padding: 14px;
 }

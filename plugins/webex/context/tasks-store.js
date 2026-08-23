@@ -15,6 +15,11 @@ const { writeJsonFileAtomic } = require('../storage/atomic-write');
 // ** Task shape ** {
 //   schemaVersion: 1,
 //   id: 'task_...',
+//   title: string,                   // short human-readable summary — required.
+//                                     // Corrects a v3 §7c doc gap: a task with no
+//                                     // rendering beyond type/status/assignee isn't
+//                                     // actually reviewable by a person.
+//   description: string,             // optional longer elaboration.
 //   type: string,                    // development | design | research | ... — open
 //                                     // taxonomy; validated against a starter
 //                                     // allowlist at the tool layer (write_task),
@@ -195,10 +200,13 @@ async function upsertTask({ spaceId, id, patch = {}, explicitRoot }) {
 
   if (existingIndex === -1) {
     if (!patch.type) throw new Error('`type` is required to create a task');
+    if (!patch.title) throw new Error('`title` is required to create a task');
 
     task = {
       schemaVersion: 1,
       id: generateTaskId(),
+      title: patch.title,
+      description: patch.description ?? '',
       type: patch.type,
       assigned: patch.assigned ?? 'unknown',
       deadline: patch.deadline ?? 'unknown',
@@ -212,6 +220,8 @@ async function upsertTask({ spaceId, id, patch = {}, explicitRoot }) {
     const existing = tasks[existingIndex];
     task = {
       ...existing,
+      title: patch.title ?? existing.title,
+      description: patch.description ?? existing.description,
       type: patch.type ?? existing.type,
       assigned: patch.assigned ?? existing.assigned,
       deadline: patch.deadline ?? existing.deadline,
@@ -362,7 +372,7 @@ async function searchTasks({ spaceId, explicitRoot, query, includeArchived = tru
 
   return tasks
     .filter((task) => {
-      const haystack = [task.id, task.type, task.assigned]
+      const haystack = [task.id, task.title, task.description, task.type, task.assigned]
         .filter(Boolean)
         .join(' ')
         .toLowerCase();

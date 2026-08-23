@@ -17,36 +17,43 @@ export function formatDate(ts) {
   }
 }
 
-export function isWorkItem(item) {
-  return item.type === 'task' || item.type === 'issue';
-}
-
-export function normalizeItem(item) {
+// v3 §7c task record, normalized for display. Single status axis
+// (open/approved/delegated/done/archived) — no separate approvalStatus or
+// delegationStatus, those were a v2-items-schema simulation of what the
+// task enum already encodes directly.
+export function normalizeTask(task) {
   return {
-    ...item,
-    title: item.title ?? '(untitled)',
-    approvalStatus: item.approvalStatus ?? 'proposed',
-    assignee: item.assignee ?? item.owner ?? '',
-    assigneeType: item.assigneeType ?? null,
-    delegationStatus: item.delegationStatus ?? 'not_delegated',
+    ...task,
+    title: task.title || '(untitled)',
+    description: task.description ?? '',
+    type: task.type ?? 'development',
+    status: task.status ?? 'open',
+    assigned: task.assigned ?? 'unknown',
+    deadline: task.deadline ?? 'unknown',
+    message_ids: task.message_ids ?? [],
+    child_tasks: task.child_tasks ?? [],
   };
 }
 
-export function filterProjectItems(
-  items,
+export function isReviewTask(task) {
+  return task.status === 'open';
+}
+
+export function filterTasks(
+  tasks,
   { search = '', typeFilter = '', statusFilter = '' } = {}
 ) {
   const query = search.toLowerCase();
 
-  return items
-    .filter((item) => {
-      if (typeFilter && item.type !== typeFilter) return false;
-      if (statusFilter && item.status !== statusFilter) return false;
+  return tasks
+    .filter((task) => {
+      if (typeFilter && task.type !== typeFilter) return false;
+      if (statusFilter && task.status !== statusFilter) return false;
       if (query) {
         return (
-          item.title?.toLowerCase().includes(query) ||
-          item.description?.toLowerCase().includes(query) ||
-          item.owner?.toLowerCase().includes(query)
+          task.title?.toLowerCase().includes(query) ||
+          task.description?.toLowerCase().includes(query) ||
+          task.assigned?.toLowerCase().includes(query)
         );
       }
       return true;
@@ -58,16 +65,13 @@ export function filterProjectItems(
     });
 }
 
-export function buildBoardCounts(items) {
+export function buildBoardCounts(tasks) {
   return {
-    total: items.length,
-    proposed: items.filter((item) => item.approvalStatus === 'proposed').length,
-    approved: items.filter((item) => item.approvalStatus === 'approved').length,
-    open: items.filter((item) => item.status === 'open').length,
-    in_progress: items.filter((item) => item.status === 'in_progress').length,
-    blocked: items.filter((item) => item.status === 'blocked').length,
-    resolved: items.filter((item) => item.status === 'resolved').length,
-    risks: items.filter((item) => item.type === 'risk').length,
-    decisions: items.filter((item) => item.type === 'decision').length,
+    total: tasks.length,
+    open: tasks.filter((task) => task.status === 'open').length,
+    approved: tasks.filter((task) => task.status === 'approved').length,
+    delegated: tasks.filter((task) => task.status === 'delegated').length,
+    done: tasks.filter((task) => task.status === 'done').length,
+    archived: tasks.filter((task) => task.status === 'archived').length,
   };
 }

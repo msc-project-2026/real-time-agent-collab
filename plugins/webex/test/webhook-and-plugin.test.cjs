@@ -996,7 +996,7 @@ describe('plugin registration and tool exposure', () => {
   test('registers every main Webex surface exactly once', (t) => {
     const webexPlugin = { id: 'webex' };
     const webhookRouter = t.mock.fn();
-    const contextRouter = t.mock.fn();
+    const spaceRouter = t.mock.fn();
     const boardRouter = t.mock.fn();
     const setPluginRuntime = t.mock.fn();
     const tagTool = { name: 'tag_message' };
@@ -1007,7 +1007,7 @@ describe('plugin registration and tool exposure', () => {
     const loaded = loadWithMocks(require.resolve('../index'), {
       [require.resolve('../channel')]: { webexPlugin },
       [require.resolve('../webhook/router')]: { webhookRouter },
-      [require.resolve('../visibility/context-router')]: { contextRouter },
+      [require.resolve('../visibility/space-router')]: { spaceRouter },
       [require.resolve('../visibility/board-router')]: { boardRouter },
       [require.resolve('../runtime')]: { setPluginRuntime, setPluginConfig: t.mock.fn() },
       [require.resolve('../tagging/tool')]: { tagMessageTool: () => tagTool },

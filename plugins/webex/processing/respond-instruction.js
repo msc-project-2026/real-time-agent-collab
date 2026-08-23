@@ -16,6 +16,7 @@ const { formatWindowSections } = require('./format-window');
 function formatTaskEntry(task) {
   return {
     id: task.id,
+    title: task.title,
     type: task.type,
     status: task.status,
     assigned: task.assigned,

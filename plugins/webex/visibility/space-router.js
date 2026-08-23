@@ -1,9 +1,13 @@
-// ********* VISIBILITY/CONTEXT-ROUTER.JS *********
+// ********* VISIBILITY/SPACE-ROUTER.JS *********
 'use strict';
 
+// Renamed from context-router.js (phase 6) — "context" named this file for
+// its two data sources, context/conversations-store.js and
+// context/items-store.js, both retired (v3 §7c narrows to tasks only). This
+// is the general per-space visibility surface: summary, threads, tasks.
+
 const { buildContextSummary } = require('./summary');
-const { getConversations } = require('../context/conversations-store');
-const { getItems } = require('../context/items-store');
+const { getTasks } = require('../context/tasks-store');
 const { getThreads } = require('../context/threads-store');
 
 // *** Helpers
@@ -26,19 +30,17 @@ function matchSpaceRoute(pathname, suffix) {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
-// *** HTTP context router
+// *** HTTP space router
 
 // Registered at /webex/collab/ (prefix match, auth: plugin).
-async function contextRouter(req, res) {
+async function spaceRouter(req, res) {
   const pathname = getPathname(req);
 
   const summarySpaceId = matchSpaceRoute(pathname, '/summary');
-  const conversationsSpaceId = matchSpaceRoute(pathname, '/conversations');
-  const itemsSpaceId = matchSpaceRoute(pathname, '/items');
+  const tasksSpaceId = matchSpaceRoute(pathname, '/tasks');
   const threadsSpaceId = matchSpaceRoute(pathname, '/threads');
 
-  const matchedSpaceId =
-    summarySpaceId ?? conversationsSpaceId ?? itemsSpaceId ?? threadsSpaceId;
+  const matchedSpaceId = summarySpaceId ?? tasksSpaceId ?? threadsSpaceId;
 
   if (!matchedSpaceId) return false;
 
@@ -62,32 +64,16 @@ async function contextRouter(req, res) {
     return true;
   }
 
-  if (conversationsSpaceId) {
-    const conversations = await getConversations({
-      spaceId: conversationsSpaceId,
-      statuses: ['active', 'dormant'],
-      limit: 100,
-    });
-
-    sendJson(res, 200, {
-      ok: true,
-      spaceId: conversationsSpaceId,
-      conversations,
-    });
-
-    return true;
-  }
-
-  if (itemsSpaceId) {
-    const items = await getItems({
-      spaceId: itemsSpaceId,
+  if (tasksSpaceId) {
+    const tasks = await getTasks({
+      spaceId: tasksSpaceId,
       limit: 200,
     });
 
     sendJson(res, 200, {
       ok: true,
-      spaceId: itemsSpaceId,
-      items,
+      spaceId: tasksSpaceId,
+      tasks,
     });
 
     return true;
@@ -112,5 +98,5 @@ async function contextRouter(req, res) {
 }
 
 module.exports = {
-  contextRouter,
+  spaceRouter,
 };

@@ -15,6 +15,8 @@ const { formatWindowSections } = require('./format-window');
 function formatTaskEntry(task) {
   return {
     id: task.id,
+    title: task.title,
+    description: task.description,
     type: task.type,
     status: task.status,
     assigned: task.assigned,
@@ -68,6 +70,7 @@ You have exactly two tools for this task: \`write_task\`, to create or update a 
 
 For each task-worthy point:
 - Decide whether it's new or an update to one of the active tasks above (or found via \`search_tasks\`). Pass the existing task's \`id\` to update it; omit \`id\` to create a new one.
+- Always include a short \`title\` when creating a task — a few words summarizing what it actually is (e.g. "Fix login test flakiness"), not a restatement of the type. Add \`description\` only if the title alone would leave out something that matters.
 - Always include \`message_ids\` — the specific message id(s) that are direct evidence for this task. Never omit this.
 - Use \`child_tasks\` when the point is naturally a sub-part of an existing task, rather than creating an unrelated duplicate.
 - Set \`assigned\`/\`deadline\` only when the thread actually states them — leave them unset otherwise rather than guessing.
