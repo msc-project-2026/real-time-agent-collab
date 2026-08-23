@@ -36,25 +36,6 @@ async function runRespondStep({
 
   const window = await getThread({ spaceId, threadKey, explicitRoot });
 
-  const instruction = buildRespondInstruction({
-    spaceId,
-    threadKey,
-    window,
-    directive: {
-      addressed: decision?.finalIsMentioned,
-      ready: decision?.ready,
-      reason: decision?.reason,
-    },
-  });
-
-  const agentId = getRoutingAgentId();
-  const sessionKey = `agent:${agentId}:webex:${spaceId}:respond:${safeSegment(threadKey)}`;
-  const runId = `respond-${Date.now()}`;
-
-  const cfg = pluginRuntime.config.current();
-  const workspaceDir = pluginRuntime.agent.resolveAgentWorkspaceDir(cfg, agentId);
-  const agentDir = pluginRuntime.agent.resolveAgentDir(cfg, agentId);
-
   // Replies always go into a thread, never posted bare in the main space —
   // the agent should always be replying under whatever message it understood
   // as addressing it. For a non-main thread, threadKey IS already the Webex
@@ -66,7 +47,35 @@ async function runRespondStep({
   // reply in a thread carries the same parentId as the root, not the
   // immediately-preceding message), so anchoring to the root/triggering
   // message id is correct either way, never a specific mid-thread reply.
+  //
+  // Live-tested: passing this as a context-level default on the
+  // runEmbeddedAgent call (currentThreadTs/messageThreadId) does NOT work —
+  // 3/3 live sends landed in the main space regardless. The message tool's
+  // own parameter schema exposes a model-settable `threadId` (confirmed in
+  // the deployed tools bundle) — that's the actual mechanism, so this value
+  // is passed into the prompt instead (respond-instruction.js), telling the
+  // model to set it explicitly on its own tool call.
   const replyThreadId = threadKey === MAIN_THREAD_KEY ? message?.id : threadKey;
+
+  const instruction = buildRespondInstruction({
+    spaceId,
+    threadKey,
+    window,
+    directive: {
+      addressed: decision?.finalIsMentioned,
+      ready: decision?.ready,
+      reason: decision?.reason,
+    },
+    replyThreadId,
+  });
+
+  const agentId = getRoutingAgentId();
+  const sessionKey = `agent:${agentId}:webex:${spaceId}:respond:${safeSegment(threadKey)}`;
+  const runId = `respond-${Date.now()}`;
+
+  const cfg = pluginRuntime.config.current();
+  const workspaceDir = pluginRuntime.agent.resolveAgentWorkspaceDir(cfg, agentId);
+  const agentDir = pluginRuntime.agent.resolveAgentDir(cfg, agentId);
 
   let tempDir;
   let result;
@@ -89,12 +98,6 @@ async function runRespondStep({
       // to be able to actually send, unlike the gate.
       messageChannel: 'webex',
       currentChannelId: spaceId,
-      // Both fields set defensively — confirmed both flow through to the
-      // native message tool's reply-target resolution (agent-tools bundle),
-      // not confirmed which one Webex's channel adapter actually consults.
-      ...(replyThreadId
-        ? { currentThreadTs: replyThreadId, messageThreadId: replyThreadId }
-        : {}),
       allowEmptyAssistantReplyAsSilent: true,
     });
   } finally {
