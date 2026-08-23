@@ -12,7 +12,6 @@ function formatWindowEntry(entry) {
     content: entry.content ?? '',
     botIsMentioned: Boolean(entry.botIsMentioned),
     datetime: entry.datetime ?? null,
-    status: entry.status,
   };
 }
 

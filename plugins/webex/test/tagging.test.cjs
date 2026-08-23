@@ -702,6 +702,5 @@ describe('pending slice feeding the tagging gate', () => {
 
     assert.equal(slice.length, 1);
     assert.equal(slice[0].content, 'Please fix the failing login test');
-    assert.equal(slice[0].status, 'pending');
   });
 });

@@ -94,6 +94,18 @@ function threadsPath(spaceId, explicitRoot) {
   return path.join(contextDir(spaceId, explicitRoot), 'threads.json');
 }
 
+// v3 §7c task schema (phase 6) — one file per space, same pattern as
+// threads.json (not one file per thread; tasks aren't thread-scoped).
+function tasksPath(spaceId, explicitRoot) {
+  return path.join(contextDir(spaceId, explicitRoot), 'tasks.json');
+}
+
+// Reverse child->parent index, same pattern as the §9 supersession index —
+// parent_tasks is never stored on the task record itself (context/tasks-store.js).
+function taskParentIndexPath(spaceId, explicitRoot) {
+  return path.join(contextDir(spaceId, explicitRoot), 'task-parents.json');
+}
+
 // -- .collab/spaces/<spaceId>/tagging/
 function taggingDir(spaceId, explicitRoot) {
   return path.join(spaceDir(spaceId, explicitRoot), 'tagging');
@@ -138,6 +150,8 @@ module.exports = {
   conversationsPath,
   itemsPath,
   threadsPath,
+  tasksPath,
+  taskParentIndexPath,
   taggingDir,
   taggingValidationLogPath,
   jobsDir,

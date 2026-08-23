@@ -21,7 +21,8 @@ const { completeProcessingBatch } = require('../batch/complete');
 const {
   MAIN_THREAD_KEY,
   appendMessageToThreadWindow,
-  markThreadMessagesProcessed,
+  markThreadMessagesProcessing,
+  finalizeProcessingMessages,
   getPendingSlice,
   getThread,
   getThreads,
@@ -333,9 +334,9 @@ describe('pending/processed thread window', () => {
       content: 'Message 1',
       botIsMentioned: false,
       datetime: '2026-01-01T00:00:00.000Z',
-      status: 'pending',
     });
     assert.equal(thread.pending[3].botIsMentioned, true);
+    assert.deepEqual(thread.processing, []);
     assert.deepEqual(thread.processed, []);
   });
 
@@ -378,7 +379,6 @@ describe('pending/processed thread window', () => {
 
     assert.deepEqual(thread.pending.map((message) => message.id), ['human-1']);
     assert.deepEqual(thread.processed.map((message) => message.id), ['bot-1-reply']);
-    assert.equal(thread.processed[0].status, 'processed');
   });
 
   test('exposes the pending slice directly for the tagging gate', async (t) => {
@@ -397,7 +397,7 @@ describe('pending/processed thread window', () => {
     assert.deepEqual(slice.map((message) => message.id), ['message-1']);
   });
 
-  test('flushes selected messages from pending into a size-capped processed window', async (t) => {
+  test('flushes selected messages from pending into processing, then finalizes into a size-capped processed window', async (t) => {
     const root = await makeTempWorkspace(t);
 
     for (let index = 1; index <= 3; index += 1) {
@@ -408,7 +408,25 @@ describe('pending/processed thread window', () => {
       });
     }
 
-    const thread = await markThreadMessagesProcessed({
+    const flushed = await markThreadMessagesProcessing({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      threadKey: MAIN_THREAD_KEY,
+      messageIds: ['message-1', 'message-2'],
+    });
+
+    // Flush moves the batch into `processing`, not straight to `processed` —
+    // it's claimed by whatever flow triggered the flush, not yet settled.
+    assert.deepEqual(flushed.pending.map((message) => message.id), [
+      'message-3',
+    ]);
+    assert.deepEqual(flushed.processing.map((message) => message.id), [
+      'message-1',
+      'message-2',
+    ]);
+    assert.deepEqual(flushed.processed, []);
+
+    const finalized = await finalizeProcessingMessages({
       spaceId: 'space-1',
       explicitRoot: root,
       threadKey: MAIN_THREAD_KEY,
@@ -416,14 +434,147 @@ describe('pending/processed thread window', () => {
       processedWindowSize: 1,
     });
 
-    assert.deepEqual(thread.pending.map((message) => message.id), [
+    assert.deepEqual(finalized.pending.map((message) => message.id), [
       'message-3',
     ]);
-    // processedWindowSize caps at 1 — only the most recently flushed survives.
-    assert.deepEqual(thread.processed.map((message) => message.id), [
+    assert.deepEqual(finalized.processing, []);
+    // processedWindowSize caps at 1 — only the most recently finalized survives.
+    assert.deepEqual(finalized.processed.map((message) => message.id), [
       'message-2',
     ]);
-    assert.equal(thread.processed[0].status, 'processed');
+  });
+
+  test('finalizing an id already evicted from processing (e.g. by a concurrent flow) is a harmless no-op', async (t) => {
+    const root = await makeTempWorkspace(t);
+
+    await appendMessageToThreadWindow({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      message: { id: 'message-1', text: 'Message 1' },
+    });
+
+    // Nothing was ever flushed into `processing` for 'message-1' — finalizing
+    // it anyway must not throw or fabricate a processed entry.
+    const finalized = await finalizeProcessingMessages({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      threadKey: MAIN_THREAD_KEY,
+      messageIds: ['message-1'],
+    });
+
+    assert.deepEqual(finalized.processed, []);
+  });
+});
+
+// Category: phase-6 concurrency design, layer 1 — threads.json is one file
+// per SPACE (not per thread), so mutators for *different* threads still
+// share the file and need the internal per-space store-write lock
+// (flow/keyed-lock.js) to avoid a lost update. These tests exercise that
+// lock indirectly, through the public threads-store API, with real
+// concurrent (not sequential-await) calls.
+describe('threads-store — concurrent writers to the shared per-space file', () => {
+  test('two concurrent appends for different threads in the same space both survive', async (t) => {
+    const root = await makeTempWorkspace(t);
+
+    // Fired without awaiting between them — genuinely concurrent from the
+    // caller's perspective, racing on the same threads.json.
+    const [resultA, resultB] = await Promise.all([
+      appendMessageToThreadWindow({
+        spaceId: 'space-1',
+        explicitRoot: root,
+        message: { id: 'root-a', text: 'starts thread A' },
+      }),
+      appendMessageToThreadWindow({
+        spaceId: 'space-1',
+        explicitRoot: root,
+        message: { id: 'root-b', text: 'starts thread B', parentId: 'other-root' },
+      }),
+    ]);
+
+    assert.equal(resultA.threadKey, MAIN_THREAD_KEY);
+    assert.equal(resultB.threadKey, 'other-root');
+
+    const threads = await getThreads({ spaceId: 'space-1', explicitRoot: root });
+    const threadKeys = threads.map((thread) => thread.key).sort();
+    assert.deepEqual(threadKeys, [MAIN_THREAD_KEY, 'other-root'].sort());
+
+    const mainThread = await getThread({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      threadKey: MAIN_THREAD_KEY,
+    });
+    assert.deepEqual(mainThread.pending.map((m) => m.id), ['root-a']);
+  });
+
+  test('a burst of concurrent appends across many threads in one space loses none of them', async (t) => {
+    const root = await makeTempWorkspace(t);
+
+    const THREAD_COUNT = 8;
+    await Promise.all(
+      Array.from({ length: THREAD_COUNT }, (_, index) =>
+        appendMessageToThreadWindow({
+          spaceId: 'space-1',
+          explicitRoot: root,
+          message: {
+            id: `msg-${index}`,
+            text: `message ${index}`,
+            parentId: index === 0 ? undefined : `root-${index}`,
+          },
+        })
+      )
+    );
+
+    const threads = await getThreads({ spaceId: 'space-1', explicitRoot: root, limit: 100 });
+    assert.equal(threads.length, THREAD_COUNT);
+
+    const allPendingIds = threads.flatMap((thread) => thread.pending.map((m) => m.id));
+    assert.equal(allPendingIds.length, THREAD_COUNT);
+  });
+});
+
+// Atomic writes (phase 6) — a reader concurrent with a write must never see
+// a torn/partial JSON file. writeThreadsState now writes-temp-then-renames
+// (storage/atomic-write.js) instead of writing the target file in place.
+describe('threads-store — atomic writes', () => {
+  test('a read racing many concurrent writes never observes a corrupt file', async (t) => {
+    const root = await makeTempWorkspace(t);
+
+    await appendMessageToThreadWindow({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      message: { id: 'seed', text: 'seed message' },
+    });
+
+    const WRITE_COUNT = 20;
+    const writes = Array.from({ length: WRITE_COUNT }, (_, index) =>
+      appendMessageToThreadWindow({
+        spaceId: 'space-1',
+        explicitRoot: root,
+        message: { id: `burst-${index}`, text: `burst ${index}` },
+      })
+    );
+
+    // Interleave reads with the in-flight writes — readThreadsState does a
+    // bare fs.readFile + JSON.parse with no lock; it must never throw on a
+    // half-written file.
+    const reads = Array.from({ length: WRITE_COUNT }, () =>
+      getThread({ spaceId: 'space-1', explicitRoot: root, threadKey: MAIN_THREAD_KEY })
+    );
+
+    const results = await Promise.all([...writes, ...reads]);
+    // Every read call resolved to a thread record (never rejected with a
+    // JSON.parse error) — asserting on the shape is enough to prove no read
+    // ever saw a torn file.
+    for (const result of results) {
+      assert.ok(result && typeof result === 'object');
+    }
+
+    const finalThread = await getThread({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      threadKey: MAIN_THREAD_KEY,
+    });
+    assert.equal(finalThread.pending.length, WRITE_COUNT + 1);
   });
 });
 

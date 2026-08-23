@@ -51,7 +51,8 @@ function loadFlow(t, overrides = {}) {
     })),
     handleConfigRequest: t.mock.fn(async () => undefined),
     getPendingSlice: t.mock.fn(async () => [{ id: 'message-1' }]),
-    markThreadMessagesProcessed: t.mock.fn(async () => undefined),
+    markThreadMessagesProcessing: t.mock.fn(async () => undefined),
+    finalizeProcessingMessages: t.mock.fn(async () => undefined),
     runRespondStep: t.mock.fn(async () => ({
       outcome: 'success',
       error: null,
@@ -77,7 +78,8 @@ function loadFlow(t, overrides = {}) {
     },
     [require.resolve('../context/threads-store')]: {
       getPendingSlice: collaborators.getPendingSlice,
-      markThreadMessagesProcessed: collaborators.markThreadMessagesProcessed,
+      markThreadMessagesProcessing: collaborators.markThreadMessagesProcessing,
+      finalizeProcessingMessages: collaborators.finalizeProcessingMessages,
       DEFAULT_PENDING_BACKSTOP_SIZE: 50,
     },
     [require.resolve('../processing/respond')]: {
@@ -186,12 +188,24 @@ describe('runMessageFlow — shouldProcess', () => {
 
     await runMessageFlow(baseParams(t));
 
-    assert.equal(collaborators.markThreadMessagesProcessed.mock.callCount(), 1);
-    assert.deepEqual(collaborators.markThreadMessagesProcessed.mock.calls[0].arguments[0], {
+    const expectedFlushArgs = {
       spaceId: 'space-1',
       threadKey: '__main__',
       messageIds: ['message-1'],
-    });
+    };
+    assert.equal(collaborators.markThreadMessagesProcessing.mock.callCount(), 1);
+    assert.deepEqual(
+      collaborators.markThreadMessagesProcessing.mock.calls[0].arguments[0],
+      expectedFlushArgs
+    );
+    // Temporary bridge (see run-message-flow.js) — flush is immediately
+    // followed by finalize until the real gate+flush lock and extract step
+    // land; both get the same messageIds.
+    assert.equal(collaborators.finalizeProcessingMessages.mock.callCount(), 1);
+    assert.deepEqual(
+      collaborators.finalizeProcessingMessages.mock.calls[0].arguments[0],
+      expectedFlushArgs
+    );
     assert.equal(resumeSpy.mock.callCount(), 1);
     assert.equal(resumeSpy.mock.calls[0].arguments[0].currentStep, 'respond');
     assert.equal(collaborators.runRespondStep.mock.callCount(), 1);
@@ -204,7 +218,7 @@ describe('runMessageFlow — shouldProcess', () => {
     );
   });
 
-  test('skips markThreadMessagesProcessed when the pending slice is empty', async (t) => {
+  test('skips markThreadMessagesProcessing/finalizeProcessingMessages when the pending slice is empty', async (t) => {
     const { runMessageFlow, collaborators } = loadFlow(t, {
       dispatchTaggingGate: (async () => ({
         messageTags: { isMentioned: true, configRequest: false },
@@ -215,7 +229,8 @@ describe('runMessageFlow — shouldProcess', () => {
 
     await runMessageFlow(baseParams(t));
 
-    assert.equal(collaborators.markThreadMessagesProcessed.mock.callCount(), 0);
+    assert.equal(collaborators.markThreadMessagesProcessing.mock.callCount(), 0);
+    assert.equal(collaborators.finalizeProcessingMessages.mock.callCount(), 0);
     assert.equal(collaborators.runRespondStep.mock.callCount(), 1);
   });
 

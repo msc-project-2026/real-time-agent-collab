@@ -4,6 +4,8 @@
 const fs = require('node:fs/promises');
 
 const { contextDir, threadsPath } = require('../storage/paths');
+const { writeJsonFileAtomic } = require('../storage/atomic-write');
+const { withLock } = require('../flow/keyed-lock');
 
 const MAIN_THREAD_KEY = '__main__';
 const DEFAULT_CONTEXT_WINDOW_SIZE = 10;
@@ -12,6 +14,10 @@ const DEFAULT_PROCESSED_WINDOW_SIZE = 10;
 // stored, must survive regardless of what tagging/dispatch later decide). This is
 // exported for the dispatch layer to compare against when deciding to force a flush.
 const DEFAULT_PENDING_BACKSTOP_SIZE = 50;
+
+function storeWriteLockKey(spaceId) {
+  return `store-write:${spaceId}`;
+}
 
 function defaultThreadsState() {
   return {
@@ -36,8 +42,12 @@ function formatMessageForContextWindow(message) {
   };
 }
 
-// v3 §3 message metadata shape, used by the pending/processed thread window.
-function formatMessageForThreadWindow({ message, botId, status }) {
+// v3 §3 message metadata shape, used by the pending/processing/processed
+// thread window. No `status` field — which array an entry lives in (pending /
+// processing / processed) is its status; a redundant per-entry field pointing
+// at the same information was flagged as two sources of truth for one fact
+// during phase-6 review and dropped in favor of array membership alone.
+function formatMessageForThreadWindow({ message, botId }) {
   const botIsMentioned =
     Boolean(botId) &&
     Array.isArray(message.mentionedPeople) &&
@@ -52,7 +62,6 @@ function formatMessageForThreadWindow({ message, botId, status }) {
     content: message.text ?? '',
     botIsMentioned,
     datetime: message.created ?? null,
-    status,
   };
 }
 
@@ -67,6 +76,7 @@ function createThreadRecordFromKey({ key }) {
     rootMessageId: isMainThread ? null : key,
     contextWindow: [],
     pending: [],
+    processing: [],
     processed: [],
     updatedAt: null,
   };
@@ -106,11 +116,7 @@ async function writeThreadsState({ spaceId, state, explicitRoot }) {
     recursive: true,
   });
 
-  await fs.writeFile(
-    threadsPath(spaceId, explicitRoot),
-    `${JSON.stringify(record, null, 2)}\n`,
-    'utf8'
-  );
+  await writeJsonFileAtomic(threadsPath(spaceId, explicitRoot), record);
 
   return record;
 }
@@ -178,7 +184,7 @@ function applyMessageToPendingWindow({ state, message, botId, threadKeyOverride 
   // is a signal for the dispatch layer to force a flush, not a storage eviction.
   const pending = [
     ...existingPending.filter((entry) => entry.id !== message.id),
-    formatMessageForThreadWindow({ message, botId, status: 'pending' }),
+    formatMessageForThreadWindow({ message, botId }),
   ];
 
   return {
@@ -188,6 +194,9 @@ function applyMessageToPendingWindow({ state, message, botId, threadKeyOverride 
       [key]: {
         ...existingThread,
         pending,
+        processing: Array.isArray(existingThread.processing)
+          ? existingThread.processing
+          : [],
         processed: Array.isArray(existingThread.processed)
           ? existingThread.processed
           : [],
@@ -204,10 +213,10 @@ function applyMessageToPendingWindow({ state, message, botId, threadKeyOverride 
 // reply that created the thread, not new content — see the root-backfill
 // call site below). Appended straight to processed (capped, same as a
 // normal flush) so it still counts as background for the gate (§4's
-// minContext padding, tagging/dispatch.js) and the respond step's window,
-// without inflating pendingCount/the backstop — those are meant to reflect
-// unaddressed human backlog specifically, not resurrect something that
-// already triggered its own response elsewhere.
+// minContext padding, tagging/dispatch.js) and the respond/extract steps'
+// window, without inflating pendingCount/the backstop — those are meant to
+// reflect unaddressed human backlog specifically, not resurrect something
+// that already triggered its own response elsewhere.
 function applyMessageDirectlyToProcessedWindow({
   state,
   message,
@@ -233,7 +242,7 @@ function applyMessageDirectlyToProcessedWindow({
 
   const processed = [
     ...existingProcessed.filter((entry) => entry.id !== message.id),
-    formatMessageForThreadWindow({ message, botId, status: 'processed' }),
+    formatMessageForThreadWindow({ message, botId }),
   ].slice(-processedWindowSize);
 
   return {
@@ -245,6 +254,9 @@ function applyMessageDirectlyToProcessedWindow({
         pending: Array.isArray(existingThread.pending)
           ? existingThread.pending
           : [],
+        processing: Array.isArray(existingThread.processing)
+          ? existingThread.processing
+          : [],
         processed,
         updatedAt: now,
       },
@@ -253,6 +265,13 @@ function applyMessageDirectlyToProcessedWindow({
   };
 }
 
+// Layer 1 (phase-6 concurrency design) — every mutator below wraps its own
+// read-modify-write in this per-space lock. threads.json is one file per
+// SPACE (not per thread, see storage/paths.js), so two flows touching
+// *different* threads in the same space still share this file and need this
+// to avoid a lost update, even though higher-level ordering (the per-thread
+// gate+flush lock, per-space extract lock — both in flow/run-message-flow.js)
+// is scoped more narrowly than "every writer to this file."
 async function appendMessageToThreadWindow({
   spaceId,
   explicitRoot,
@@ -265,110 +284,170 @@ async function appendMessageToThreadWindow({
   if (!spaceId) throw new Error('spaceId is required');
   if (!message?.id) throw new Error('message.id is required');
 
-  const threadKey = getThreadKey(message);
+  return withLock(storeWriteLockKey(spaceId), async () => {
+    const threadKey = getThreadKey(message);
 
-  let state = await readThreadsState({
-    spaceId,
-    explicitRoot,
-  });
+    let state = await readThreadsState({
+      spaceId,
+      explicitRoot,
+    });
 
-  const threadExists = Boolean(state.threads?.[threadKey]);
+    const threadExists = Boolean(state.threads?.[threadKey]);
 
-  if (threadKey !== MAIN_THREAD_KEY && !threadExists) {
-    if (typeof fetchMessageById === 'function') {
-      try {
-        const rootMessage = await fetchMessageById(message.parentId);
+    if (threadKey !== MAIN_THREAD_KEY && !threadExists) {
+      if (typeof fetchMessageById === 'function') {
+        try {
+          const rootMessage = await fetchMessageById(message.parentId);
 
-        log?.info?.(
-          `[webex] fetched thread root message ${JSON.stringify({
-            spaceId,
-            parentId: message.parentId,
-            hasRootMessage: Boolean(rootMessage),
-            rootMessageKeys:
-              rootMessage && typeof rootMessage === 'object'
-                ? Object.keys(rootMessage)
-                : null,
-            rootMessageId: rootMessage?.id ?? null,
-          })}`
-        );
+          log?.info?.(
+            `[webex] fetched thread root message ${JSON.stringify({
+              spaceId,
+              parentId: message.parentId,
+              hasRootMessage: Boolean(rootMessage),
+              rootMessageKeys:
+                rootMessage && typeof rootMessage === 'object'
+                  ? Object.keys(rootMessage)
+                  : null,
+              rootMessageId: rootMessage?.id ?? null,
+            })}`
+          );
 
-        if (rootMessage?.id) {
-          state = applyMessageToThreadContextWindow({
-            state,
-            message: rootMessage,
-            threadKeyOverride: threadKey,
-            contextWindowSize,
-          });
-          // Always processed, never pending, regardless of who sent it. The
-          // root's only role here is background for the reply that created
-          // this thread — it isn't new content awaiting a dispatch decision
-          // in this thread (that decision, if any, already happened wherever
-          // the root message actually lives — e.g. __main__ — this is a
-          // backfilled copy for context, not the same tracked instance).
-          // Branching this on sender identity was wrong: a human-authored
-          // root that already triggered its own response elsewhere would
-          // otherwise get resurrected as pending here, double-counting it
-          // and inflating pendingCount for a message nobody still needs to
-          // act on.
-          state = applyMessageDirectlyToProcessedWindow({
-            state,
-            message: rootMessage,
-            botId,
-            threadKeyOverride: threadKey,
-          });
-        } else {
+          if (rootMessage?.id) {
+            state = applyMessageToThreadContextWindow({
+              state,
+              message: rootMessage,
+              threadKeyOverride: threadKey,
+              contextWindowSize,
+            });
+            // Always processed, never pending, regardless of who sent it. The
+            // root's only role here is background for the reply that created
+            // this thread — it isn't new content awaiting a dispatch decision
+            // in this thread (that decision, if any, already happened wherever
+            // the root message actually lives — e.g. __main__ — this is a
+            // backfilled copy for context, not the same tracked instance).
+            // Branching this on sender identity was wrong: a human-authored
+            // root that already triggered its own response elsewhere would
+            // otherwise get resurrected as pending here, double-counting it
+            // and inflating pendingCount for a message nobody still needs to
+            // act on.
+            state = applyMessageDirectlyToProcessedWindow({
+              state,
+              message: rootMessage,
+              botId,
+              threadKeyOverride: threadKey,
+            });
+          } else {
+            log?.warn?.(
+              `[webex] root message fetch returned invalid message ${JSON.stringify(
+                {
+                  spaceId,
+                  parentId: message.parentId,
+                  rootMessage,
+                }
+              )}`
+            );
+          }
+        } catch (err) {
           log?.warn?.(
-            `[webex] root message fetch returned invalid message ${JSON.stringify(
-              {
-                spaceId,
-                parentId: message.parentId,
-                rootMessage,
-              }
-            )}`
+            `[webex] failed to seed thread root message ${JSON.stringify({
+              spaceId,
+              parentId: message.parentId,
+              error: err?.message ?? String(err),
+            })}`
           );
         }
-      } catch (err) {
-        log?.warn?.(
-          `[webex] failed to seed thread root message ${JSON.stringify({
-            spaceId,
-            parentId: message.parentId,
-            error: err?.message ?? String(err),
-          })}`
-        );
       }
     }
-  }
 
-  let newState = applyMessageToThreadContextWindow({
-    state,
-    message,
-    contextWindowSize,
-  });
-  const applyMessage =
-    Boolean(botId) && message.personId === botId
-      ? applyMessageDirectlyToProcessedWindow
-      : applyMessageToPendingWindow;
-  newState = applyMessage({
-    state: newState,
-    message,
-    botId,
-  });
+    let newState = applyMessageToThreadContextWindow({
+      state,
+      message,
+      contextWindowSize,
+    });
+    const applyMessage =
+      Boolean(botId) && message.personId === botId
+        ? applyMessageDirectlyToProcessedWindow
+        : applyMessageToPendingWindow;
+    newState = applyMessage({
+      state: newState,
+      message,
+      botId,
+    });
 
-  await writeThreadsState({
-    spaceId,
-    state: newState,
-    explicitRoot,
-  });
+    await writeThreadsState({
+      spaceId,
+      state: newState,
+      explicitRoot,
+    });
 
-  return {
-    threadKey,
-    pendingCount: newState.threads[threadKey].pending.length,
-  };
+    return {
+      threadKey,
+      pendingCount: newState.threads[threadKey].pending.length,
+    };
+  });
 }
 
-// Moves the given message ids from a thread's pending window into its processed
-// window (v3 §2 flush). The processed window is size-capped; pending is not.
-async function markThreadMessagesProcessed({
+// Moves the given message ids from a thread's pending window into its
+// processing window (v3 §2 flush) — the batch a flow has just claimed, not
+// yet finalized. No size cap here (processing is a transient, bounded-by-one-
+// flush buffer, not a rolling history window like processed).
+async function markThreadMessagesProcessing({
+  spaceId,
+  threadKey,
+  messageIds,
+  explicitRoot,
+}) {
+  if (!spaceId) throw new Error('spaceId is required');
+  if (!threadKey) throw new Error('threadKey is required');
+  if (!Array.isArray(messageIds) || messageIds.length === 0) {
+    throw new Error('messageIds must be a non-empty array');
+  }
+
+  return withLock(storeWriteLockKey(spaceId), async () => {
+    const state = await readThreadsState({ spaceId, explicitRoot });
+    const existingThread =
+      state.threads?.[threadKey] ?? createThreadRecordFromKey({ key: threadKey });
+
+    const idsToFlush = new Set(messageIds);
+    const existingPending = Array.isArray(existingThread.pending)
+      ? existingThread.pending
+      : [];
+    const existingProcessing = Array.isArray(existingThread.processing)
+      ? existingThread.processing
+      : [];
+
+    const flushed = existingPending.filter((entry) => idsToFlush.has(entry.id));
+
+    const now = new Date().toISOString();
+
+    const newState = {
+      ...state,
+      threads: {
+        ...(state.threads ?? {}),
+        [threadKey]: {
+          ...existingThread,
+          pending: existingPending.filter((entry) => !idsToFlush.has(entry.id)),
+          processing: [
+            ...existingProcessing.filter((entry) => !idsToFlush.has(entry.id)),
+            ...flushed,
+          ],
+          updatedAt: now,
+        },
+      },
+      updatedAt: now,
+    };
+
+    await writeThreadsState({ spaceId, state: newState, explicitRoot });
+
+    return getThreadFromState({ state: newState, threadKey });
+  });
+}
+
+// Moves the given message ids from a thread's processing window into its
+// processed window, once whatever flow claimed them (extract/respond) has
+// settled. Processed is size-capped; a processing entry evicted by the cap
+// before finalization runs is a harmless no-op for that id.
+async function finalizeProcessingMessages({
   spaceId,
   threadKey,
   messageIds,
@@ -381,44 +460,48 @@ async function markThreadMessagesProcessed({
     throw new Error('messageIds must be a non-empty array');
   }
 
-  const state = await readThreadsState({ spaceId, explicitRoot });
-  const existingThread =
-    state.threads?.[threadKey] ?? createThreadRecordFromKey({ key: threadKey });
+  return withLock(storeWriteLockKey(spaceId), async () => {
+    const state = await readThreadsState({ spaceId, explicitRoot });
+    const existingThread =
+      state.threads?.[threadKey] ?? createThreadRecordFromKey({ key: threadKey });
 
-  const idsToFlush = new Set(messageIds);
-  const existingPending = Array.isArray(existingThread.pending)
-    ? existingThread.pending
-    : [];
-  const existingProcessed = Array.isArray(existingThread.processed)
-    ? existingThread.processed
-    : [];
+    const idsToFinalize = new Set(messageIds);
+    const existingProcessing = Array.isArray(existingThread.processing)
+      ? existingThread.processing
+      : [];
+    const existingProcessed = Array.isArray(existingThread.processed)
+      ? existingThread.processed
+      : [];
 
-  const flushed = existingPending
-    .filter((entry) => idsToFlush.has(entry.id))
-    .map((entry) => ({ ...entry, status: 'processed' }));
+    const finalized = existingProcessing.filter((entry) =>
+      idsToFinalize.has(entry.id)
+    );
 
-  const now = new Date().toISOString();
+    const now = new Date().toISOString();
 
-  const newState = {
-    ...state,
-    threads: {
-      ...(state.threads ?? {}),
-      [threadKey]: {
-        ...existingThread,
-        pending: existingPending.filter((entry) => !idsToFlush.has(entry.id)),
-        processed: [
-          ...existingProcessed.filter((entry) => !idsToFlush.has(entry.id)),
-          ...flushed,
-        ].slice(-processedWindowSize),
-        updatedAt: now,
+    const newState = {
+      ...state,
+      threads: {
+        ...(state.threads ?? {}),
+        [threadKey]: {
+          ...existingThread,
+          processing: existingProcessing.filter(
+            (entry) => !idsToFinalize.has(entry.id)
+          ),
+          processed: [
+            ...existingProcessed.filter((entry) => !idsToFinalize.has(entry.id)),
+            ...finalized,
+          ].slice(-processedWindowSize),
+          updatedAt: now,
+        },
       },
-    },
-    updatedAt: now,
-  };
+      updatedAt: now,
+    };
 
-  await writeThreadsState({ spaceId, state: newState, explicitRoot });
+    await writeThreadsState({ spaceId, state: newState, explicitRoot });
 
-  return getThreadFromState({ state: newState, threadKey });
+    return getThreadFromState({ state: newState, threadKey });
+  });
 }
 
 // The thread's pending slice (v3 §4 tagging-gate context), in arrival order.
@@ -449,6 +532,7 @@ function getThreadFromState({ state, threadKey, excludeMessageIds = [] } = {}) {
       rootMessageId: isMainThread ? null : threadKey,
       contextWindow: [],
       pending: [],
+      processing: [],
       processed: [],
       updatedAt: null,
     };
@@ -461,6 +545,9 @@ function getThreadFromState({ state, threadKey, excludeMessageIds = [] } = {}) {
       : [],
     pending: Array.isArray(thread.pending)
       ? thread.pending.filter((entry) => !excluded.has(entry.id))
+      : [],
+    processing: Array.isArray(thread.processing)
+      ? thread.processing.filter((entry) => !excluded.has(entry.id))
       : [],
     processed: Array.isArray(thread.processed)
       ? thread.processed.filter((entry) => !excluded.has(entry.id))
@@ -521,7 +608,8 @@ module.exports = {
 
   getThreadKey,
   appendMessageToThreadWindow,
-  markThreadMessagesProcessed,
+  markThreadMessagesProcessing,
+  finalizeProcessingMessages,
   getPendingSlice,
   getThread,
   getThreads,

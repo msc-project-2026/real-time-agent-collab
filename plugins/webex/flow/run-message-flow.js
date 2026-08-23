@@ -18,7 +18,8 @@ const { decideDispatch } = require('../tagging/decide');
 const { handleConfigRequest } = require('../config/handle-request');
 const {
   getPendingSlice,
-  markThreadMessagesProcessed,
+  markThreadMessagesProcessing,
+  finalizeProcessingMessages,
   DEFAULT_PENDING_BACKSTOP_SIZE,
 } = require('../context/threads-store');
 const { runRespondStep } = require('../processing/respond');
@@ -173,8 +174,16 @@ async function runMessageFlow({
     })}`
   );
 
+  // TEMPORARY BRIDGE (phase 6, foundation chunk): flush straight through to
+  // finalize, back to back, preserving today's exact timing/behavior. This
+  // is not the target design — the real gate+flush lock (layer 2a) and the
+  // extract step that finalize is actually meant to wait on both land in the
+  // next chunk (see plan: Concurrency, Wiring). Splitting the rename from
+  // the real wiring keeps this commit's tests green without a half-built
+  // locking story in between.
   if (messageIds.length > 0) {
-    await markThreadMessagesProcessed({ spaceId, threadKey, messageIds });
+    await markThreadMessagesProcessing({ spaceId, threadKey, messageIds });
+    await finalizeProcessingMessages({ spaceId, threadKey, messageIds });
   }
 
   const resumed = safeMutate('resume', bound, log, {

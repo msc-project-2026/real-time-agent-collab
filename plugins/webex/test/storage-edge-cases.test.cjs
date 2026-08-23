@@ -192,6 +192,7 @@ describe('context state defaults and filtering', () => {
       rootMessageId: null,
       contextWindow: [],
       pending: [],
+      processing: [],
       processed: [],
       updatedAt: null,
     });
