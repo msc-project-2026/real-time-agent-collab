@@ -28,11 +28,11 @@ describe('runExtractStep', () => {
       ...overrides,
     };
 
-    const loaded = loadWithMocks(require.resolve('../processing/extract'), {
-      [require.resolve('../context/threads-store')]: {
+    const loaded = loadWithMocks(require.resolve('../processing/extract/dispatch'), {
+      [require.resolve('../storage/threads-store')]: {
         getThread: collaborators.getThread,
       },
-      [require.resolve('../context/tasks-store')]: {
+      [require.resolve('../storage/tasks-store')]: {
         getActiveTasks: collaborators.getActiveTasks,
       },
       [require.resolve('../runtime')]: {

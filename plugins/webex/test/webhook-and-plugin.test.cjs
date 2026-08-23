@@ -1002,26 +1002,18 @@ describe('plugin registration and tool exposure', () => {
     const tagTool = { name: 'tag_message' };
     const writeTaskToolStub = { name: 'write_task' };
     const searchTasksToolStub = { name: 'search_tasks' };
-    const loadTool = { name: 'load' };
-    const completeTool = { name: 'complete' };
     const loaded = loadWithMocks(require.resolve('../index'), {
       [require.resolve('../channel')]: { webexPlugin },
       [require.resolve('../webhook/router')]: { webhookRouter },
       [require.resolve('../visibility/space-router')]: { spaceRouter },
       [require.resolve('../visibility/board-router')]: { boardRouter },
       [require.resolve('../runtime')]: { setPluginRuntime, setPluginConfig: t.mock.fn() },
-      [require.resolve('../tagging/tool')]: { tagMessageTool: () => tagTool },
-      [require.resolve('../processing/write-task-tool')]: {
+      [require.resolve('../processing/gate/tool')]: { tagMessageTool: () => tagTool },
+      [require.resolve('../processing/extract/tool')]: {
         writeTaskTool: () => writeTaskToolStub,
       },
       [require.resolve('../processing/search-tasks-tool')]: {
         searchTasksTool: () => searchTasksToolStub,
-      },
-      [require.resolve('../tools/load-processing-batch')]: {
-        loadProcessingBatchTool: () => loadTool,
-      },
-      [require.resolve('../tools/complete-processing-batch')]: {
-        completeProcessingBatchTool: () => completeTool,
       },
     });
     t.after(loaded.restore);
@@ -1045,52 +1037,7 @@ describe('plugin registration and tool exposure', () => {
     );
     assert.deepEqual(
       api.registerTool.mock.calls.map((call) => call.arguments[0]),
-      [tagTool, writeTaskToolStub, searchTasksToolStub, loadTool, completeTool]
+      [tagTool, writeTaskToolStub, searchTasksToolStub]
     );
-  });
-
-  test('delegates load and complete tool execution to batch storage', async (t) => {
-    t.mock.method(console, 'info', () => undefined);
-    const loadProcessingBatch = t.mock.fn(async () => ({
-      messageCount: 1,
-      messages: [{ id: 'message-1' }],
-    }));
-    const completeProcessingBatch = t.mock.fn(async () => ({
-      completedAt: '2026-01-01T00:00:00Z',
-    }));
-    const loadModule = loadWithMocks(
-      require.resolve('../tools/load-processing-batch'),
-      {
-        [require.resolve('../batch/load')]: { loadProcessingBatch },
-      }
-    );
-    const completeModule = loadWithMocks(
-      require.resolve('../tools/complete-processing-batch'),
-      {
-        [require.resolve('../batch/complete')]: { completeProcessingBatch },
-      }
-    );
-    t.after(loadModule.restore);
-    t.after(completeModule.restore);
-
-    await loadModule.subject.loadProcessingBatchTool().execute('tool-1', {
-      spaceId: 'space-1',
-      batchId: 'batch-1',
-    });
-    await completeModule.subject.completeProcessingBatchTool().execute('tool-2', {
-      spaceId: 'space-1',
-      batchId: 'batch-1',
-      result: { ok: true },
-    });
-
-    assert.deepEqual(loadProcessingBatch.mock.calls[0].arguments[0], {
-      spaceId: 'space-1',
-      batchId: 'batch-1',
-    });
-    assert.deepEqual(completeProcessingBatch.mock.calls[0].arguments[0], {
-      spaceId: 'space-1',
-      batchId: 'batch-1',
-      result: { ok: true },
-    });
   });
 });

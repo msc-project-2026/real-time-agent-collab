@@ -6,7 +6,7 @@
 // thread outside this run's window). Read-only, no pending-result map needed
 // — returns its result directly.
 
-const { searchTasks } = require('../context/tasks-store');
+const { searchTasks } = require('../storage/tasks-store');
 
 function searchTasksTool() {
   return {

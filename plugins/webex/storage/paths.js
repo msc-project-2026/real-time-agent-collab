@@ -82,14 +82,6 @@ function contextDir(spaceId, explicitRoot) {
   return path.join(spaceDir(spaceId, explicitRoot), 'context');
 }
 
-function conversationsPath(spaceId, explicitRoot) {
-  return path.join(contextDir(spaceId, explicitRoot), 'conversations.json');
-}
-
-function itemsPath(spaceId, explicitRoot) {
-  return path.join(contextDir(spaceId, explicitRoot), 'items.json');
-}
-
 function threadsPath(spaceId, explicitRoot) {
   return path.join(contextDir(spaceId, explicitRoot), 'threads.json');
 }
@@ -147,8 +139,6 @@ module.exports = {
   configDir,
   activeConfigPath,
   contextDir,
-  conversationsPath,
-  itemsPath,
   threadsPath,
   tasksPath,
   taskParentIndexPath,

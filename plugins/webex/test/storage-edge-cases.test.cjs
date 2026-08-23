@@ -7,35 +7,15 @@ const { describe, test } = require('node:test');
 
 const {
   getWorkspaceRoot,
-  pendingBatchStatePath,
-  processingBatchPath,
-  conversationsPath,
-  itemsPath,
   threadsPath,
   activeConfigPath,
 } = require('../storage/paths');
-const { readPendingBatchState } = require('../batch/state');
-const { appendPendingMessage } = require('../batch/append');
-const { stagePendingBatch } = require('../batch/stage');
-const { loadProcessingBatch } = require('../batch/load');
-const { completeProcessingBatch } = require('../batch/complete');
 const {
   MAIN_THREAD_KEY,
   appendMessageToThreadWindow,
   getThread,
   getThreads,
-} = require('../context/threads-store');
-const {
-  readConversationsState,
-  writeConversationsState,
-  getConversations,
-} = require('../context/conversations-store');
-const {
-  readItemsState,
-  writeItemsState,
-  getCandidateItems,
-  getItems,
-} = require('../context/items-store');
+} = require('../storage/threads-store');
 const { readActiveConfig, writeActiveConfig } = require('../config/store');
 const { makeLog, makeTempWorkspace, mockCalls } = require('./helpers.cjs');
 
@@ -48,40 +28,7 @@ async function writeMalformed(filePath) {
 // These tests ensure invalid logical identifiers are rejected before touching disk,
 // so callers receive stable domain errors instead of incidental filesystem errors.
 describe('storage input contracts', () => {
-  test('rejects missing batch identifiers and payloads', async () => {
-    await assert.rejects(appendPendingMessage({ message: {} }), /spaceId is required/);
-    await assert.rejects(
-      appendPendingMessage({ spaceId: 'space-1' }),
-      /message is required/
-    );
-    await assert.rejects(stagePendingBatch({}), /spaceId is required/);
-    await assert.rejects(
-      loadProcessingBatch({ batchId: 'batch-1' }),
-      /spaceId is required/
-    );
-    await assert.rejects(
-      loadProcessingBatch({ spaceId: 'space-1' }),
-      /batchId is required/
-    );
-    await assert.rejects(
-      completeProcessingBatch({ batchId: 'batch-1' }),
-      /spaceId is required/
-    );
-    await assert.rejects(
-      completeProcessingBatch({ spaceId: 'space-1' }),
-      /batchId is required/
-    );
-    await assert.rejects(readPendingBatchState(), /spaceId is required/);
-  });
-
   test('rejects missing context and configuration inputs', async () => {
-    await assert.rejects(readConversationsState(), /spaceId is required/);
-    await assert.rejects(writeConversationsState({ spaceId: 'space-1' }), /state object is required/);
-    await assert.rejects(getConversations(), /spaceId is required/);
-    await assert.rejects(readItemsState(), /spaceId is required/);
-    await assert.rejects(writeItemsState({ spaceId: 'space-1' }), /state object is required/);
-    await assert.rejects(getCandidateItems(), /spaceId is required/);
-    await assert.rejects(getItems(), /spaceId is required/);
     await assert.rejects(getThread(), /spaceId is required/);
     await assert.rejects(getThreads(), /spaceId is required/);
     await assert.rejects(
@@ -114,14 +61,11 @@ describe('storage input contracts', () => {
 
 // Category: Corrupt durable state.
 // These tests verify malformed persisted data is surfaced instead of silently reset,
-// avoiding unnoticed context or batch loss.
+// avoiding unnoticed context loss.
 describe('corrupt durable state', () => {
   test('propagates malformed JSON from every JSON state store', async (t) => {
     const root = await makeTempWorkspace(t);
     const cases = [
-      [pendingBatchStatePath('space-1', root), () => readPendingBatchState('space-1', root)],
-      [conversationsPath('space-1', root), () => readConversationsState({ spaceId: 'space-1', explicitRoot: root })],
-      [itemsPath('space-1', root), () => readItemsState({ spaceId: 'space-1', explicitRoot: root })],
       [threadsPath('space-1', root), () => getThreads({ spaceId: 'space-1', explicitRoot: root })],
       [activeConfigPath('space-1', root), () => readActiveConfig({ spaceId: 'space-1', explicitRoot: root })],
     ];
@@ -131,49 +75,12 @@ describe('corrupt durable state', () => {
       await assert.rejects(read(), SyntaxError);
     }
   });
-
-  test('rejects malformed JSONL processing batches', async (t) => {
-    const root = await makeTempWorkspace(t);
-    const batchPath = processingBatchPath('space-1', 'batch-1', root);
-    await fs.mkdir(path.dirname(batchPath), { recursive: true });
-    await fs.writeFile(batchPath, '{"id":"message-1"}\n{bad\n', 'utf8');
-
-    await assert.rejects(
-      loadProcessingBatch({
-        spaceId: 'space-1',
-        batchId: 'batch-1',
-        explicitRoot: root,
-      }),
-      SyntaxError
-    );
-  });
 });
 
 // Category: Context state defaults and filtering.
-// These tests verify malformed in-memory collection shapes are normalised on write,
-// missing threads have a stable shape, and empty filters do not accidentally hide data.
+// These tests verify missing threads have a stable shape and root-seeding
+// failures don't drop the triggering reply.
 describe('context state defaults and filtering', () => {
-  test('normalises invalid persisted collection shapes to empty arrays', async (t) => {
-    const root = await makeTempWorkspace(t);
-    const conversations = await writeConversationsState({
-      spaceId: 'space-1',
-      explicitRoot: root,
-      state: { schemaVersion: null, conversations: 'invalid', updatedAt: null },
-    });
-    const items = await writeItemsState({
-      spaceId: 'space-1',
-      explicitRoot: root,
-      state: { schemaVersion: null, items: {}, updatedAt: null },
-    });
-
-    assert.deepEqual(conversations.conversations, []);
-    assert.deepEqual(items.items, []);
-    assert.equal(conversations.schemaVersion, 1);
-    assert.equal(items.schemaVersion, 1);
-    assert.match(conversations.updatedAt, /^\d{4}-\d{2}-\d{2}T/);
-    assert.match(items.updatedAt, /^\d{4}-\d{2}-\d{2}T/);
-  });
-
   test('returns a stable missing-thread record and treats empty filters as unrestricted', async (t) => {
     const root = await makeTempWorkspace(t);
     const missingMain = await getThread({
@@ -190,7 +97,6 @@ describe('context state defaults and filtering', () => {
       key: MAIN_THREAD_KEY,
       kind: 'main',
       rootMessageId: null,
-      contextWindow: [],
       pending: [],
       processing: [],
       processed: [],
@@ -198,45 +104,10 @@ describe('context state defaults and filtering', () => {
     });
     assert.equal(missingReply.kind, 'webex_thread');
     assert.equal(missingReply.rootMessageId, 'root-1');
-
-    await writeConversationsState({
-      spaceId: 'space-1',
-      explicitRoot: root,
-      state: { conversations: [{ id: 'conv-1', status: 'closed' }] },
-    });
-    await writeItemsState({
-      spaceId: 'space-1',
-      explicitRoot: root,
-      state: { items: [{ id: 'item-1', status: 'stale', type: 'risk' }] },
-    });
-    assert.equal(
-      (await getConversations({ spaceId: 'space-1', explicitRoot: root, statuses: [] })).length,
-      1
-    );
-    assert.equal(
-      (await getItems({
-        spaceId: 'space-1',
-        explicitRoot: root,
-        statuses: [],
-        types: [],
-        conversationIds: [],
-      })).length,
-      1
-    );
   });
 
-  test('orders unfiltered item and thread collections by most recent activity', async (t) => {
+  test('orders unfiltered thread collections by most recent activity', async (t) => {
     const root = await makeTempWorkspace(t);
-    await writeItemsState({
-      spaceId: 'space-1',
-      explicitRoot: root,
-      state: {
-        items: [
-          { id: 'old', createdAt: '2026-01-01T00:00:00.000Z' },
-          { id: 'new', updatedAt: '2026-01-02T00:00:00.000Z' },
-        ],
-      },
-    });
     await appendMessageToThreadWindow({
       spaceId: 'space-1',
       explicitRoot: root,
@@ -249,10 +120,6 @@ describe('context state defaults and filtering', () => {
       message: { id: 'reply-message', parentId: 'root-1' },
     });
 
-    assert.deepEqual(
-      (await getItems({ spaceId: 'space-1', explicitRoot: root })).map((item) => item.id),
-      ['new', 'old']
-    );
     assert.deepEqual(
       (await getThreads({ spaceId: 'space-1', explicitRoot: root })).map((thread) => thread.key),
       ['root-1', MAIN_THREAD_KEY]
@@ -280,9 +147,13 @@ describe('context state defaults and filtering', () => {
         explicitRoot: root,
         threadKey: rootId,
       });
-      assert.deepEqual(thread.contextWindow.map((message) => message.id), [
+      // The reply survives even when root seeding fails/is invalid — it
+      // still lands in pending (no personId here, so not bot-authored),
+      // and no broken root entry gets added anywhere.
+      assert.deepEqual(thread.pending.map((message) => message.id), [
         `reply-${rootId}`,
       ]);
+      assert.deepEqual(thread.processed, []);
     }
     assert.ok(
       mockCalls(log.warn).some(([text]) => text.includes('returned invalid message'))

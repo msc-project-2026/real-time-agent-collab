@@ -12,7 +12,7 @@ const {
   searchTasks,
   getParentTasks,
   wouldCreateCycle,
-} = require('../context/tasks-store');
+} = require('../storage/tasks-store');
 
 // ---------------------------------------------------------------------------
 // v3 §7c task schema (phase 6). Covers create/update round-trip via the

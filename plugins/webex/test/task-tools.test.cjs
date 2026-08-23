@@ -19,8 +19,8 @@ describe('write_task tool', () => {
   function loadTool(t, overrides = {}) {
     const upsertTask =
       overrides.upsertTask ?? t.mock.fn(async () => ({ id: 'task_abc', type: 'development' }));
-    const loaded = loadWithMocks(require.resolve('../processing/write-task-tool'), {
-      [require.resolve('../context/tasks-store')]: { upsertTask },
+    const loaded = loadWithMocks(require.resolve('../processing/extract/tool'), {
+      [require.resolve('../storage/tasks-store')]: { upsertTask },
     });
     t.after(loaded.restore);
     return { ...loaded.subject, upsertTask };
@@ -170,7 +170,7 @@ describe('search_tasks tool', () => {
       overrides.searchTasks ??
       t.mock.fn(async () => [{ id: 'task_abc', type: 'development' }]);
     const loaded = loadWithMocks(require.resolve('../processing/search-tasks-tool'), {
-      [require.resolve('../context/tasks-store')]: { searchTasks },
+      [require.resolve('../storage/tasks-store')]: { searchTasks },
     });
     t.after(loaded.restore);
     return { ...loaded.subject, searchTasks };

@@ -1,0 +1,161 @@
+{
+  "scenarioId": "scenario-01-release-readiness",
+  "startedAt": "2026-08-17T11:41:38.244Z",
+  "completedAt": "2026-08-17T11:50:26.448Z",
+  "totalMs": 528204,
+  "rounds": [
+    {
+      "round": 1,
+      "messages": [
+        {
+          "number": 1,
+          "id": "scenario-01-release-readiness-msg-1",
+          "durationMs": 5924
+        },
+        {
+          "number": 2,
+          "id": "scenario-01-release-readiness-msg-2",
+          "durationMs": 7955
+        },
+        {
+          "number": 3,
+          "id": "scenario-01-release-readiness-msg-3",
+          "durationMs": 14051
+        },
+        {
+          "number": 4,
+          "id": "scenario-01-release-readiness-msg-4",
+          "durationMs": 17749
+        },
+        {
+          "number": 5,
+          "id": "scenario-01-release-readiness-msg-5",
+          "durationMs": 18665
+        },
+        {
+          "number": 6,
+          "id": "scenario-01-release-readiness-msg-6",
+          "durationMs": 17331
+        },
+        {
+          "number": 7,
+          "id": "scenario-01-release-readiness-msg-7",
+          "durationMs": 28352
+        },
+        {
+          "number": 8,
+          "id": "scenario-01-release-readiness-msg-8",
+          "durationMs": 18017
+        }
+      ],
+      "stagingDurationMs": 20414,
+      "totalRoundMs": 148466
+    },
+    {
+      "round": 2,
+      "messages": [
+        {
+          "number": 9,
+          "id": "scenario-01-release-readiness-msg-9",
+          "durationMs": 4496
+        },
+        {
+          "number": 10,
+          "id": "scenario-01-release-readiness-msg-10",
+          "durationMs": 12211
+        },
+        {
+          "number": 11,
+          "id": "scenario-01-release-readiness-msg-11",
+          "durationMs": 20117
+        },
+        {
+          "number": 12,
+          "id": "scenario-01-release-readiness-msg-12",
+          "durationMs": 28188
+        },
+        {
+          "number": 13,
+          "id": "scenario-01-release-readiness-msg-13",
+          "durationMs": 19098
+        },
+        {
+          "number": 14,
+          "id": "scenario-01-release-readiness-msg-14",
+          "durationMs": 28666
+        },
+        {
+          "number": 15,
+          "id": "scenario-01-release-readiness-msg-15",
+          "durationMs": 19225
+        }
+      ],
+      "stagingDurationMs": 9,
+      "totalRoundMs": 132017
+    },
+    {
+      "round": 3,
+      "messages": [
+        {
+          "number": 16,
+          "id": "scenario-01-release-readiness-msg-16",
+          "durationMs": 31759
+        },
+        {
+          "number": 17,
+          "id": "scenario-01-release-readiness-msg-17",
+          "durationMs": 23794
+        },
+        {
+          "number": 18,
+          "id": "scenario-01-release-readiness-msg-18",
+          "durationMs": 9242
+        },
+        {
+          "number": 19,
+          "id": "scenario-01-release-readiness-msg-19",
+          "durationMs": 10877
+        },
+        {
+          "number": 20,
+          "id": "scenario-01-release-readiness-msg-20",
+          "durationMs": 19956
+        },
+        {
+          "number": 21,
+          "id": "scenario-01-release-readiness-msg-21",
+          "durationMs": 43652
+        },
+        {
+          "number": 22,
+          "id": "scenario-01-release-readiness-msg-22",
+          "durationMs": 23623
+        }
+      ],
+      "stagingDurationMs": 16348,
+      "totalRoundMs": 179259
+    },
+    {
+      "round": 4,
+      "messages": [
+        {
+          "number": 23,
+          "id": "scenario-01-release-readiness-msg-23",
+          "durationMs": 20331
+        },
+        {
+          "number": 24,
+          "id": "scenario-01-release-readiness-msg-24",
+          "durationMs": 11608
+        },
+        {
+          "number": 25,
+          "id": "scenario-01-release-readiness-msg-25",
+          "durationMs": 11388
+        }
+      ],
+      "stagingDurationMs": 9602,
+      "totalRoundMs": 52932
+    }
+  ]
+}

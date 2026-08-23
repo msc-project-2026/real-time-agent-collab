@@ -7,8 +7,8 @@
 // is the general per-space visibility surface: summary, threads, tasks.
 
 const { buildContextSummary } = require('./summary');
-const { getTasks } = require('../context/tasks-store');
-const { getThreads } = require('../context/threads-store');
+const { getTasks } = require('../storage/tasks-store');
+const { getThreads } = require('../storage/threads-store');
 
 // *** Helpers
 

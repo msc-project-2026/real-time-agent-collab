@@ -6,10 +6,10 @@ const { describe, test } = require('node:test');
 
 const { loadWithMocks, makeLog, makeTempWorkspace } = require('./helpers.cjs');
 const { taggingValidationLogPath } = require('../storage/paths');
-const { buildTaggingInstruction } = require('../tagging/instruction');
+const { buildTaggingInstruction } = require('../processing/gate/instruction');
 const {
   appendMessageToThreadWindow,
-} = require('../context/threads-store');
+} = require('../storage/threads-store');
 
 // ---------------------------------------------------------------------------
 // Category: tag_message tool validation.
@@ -19,7 +19,7 @@ const {
 
 describe('tag_message tool validation', () => {
   function loadTool() {
-    const resolved = require.resolve('../tagging/tool');
+    const resolved = require.resolve('../processing/gate/tool');
     delete require.cache[resolved];
     return require(resolved);
   }
@@ -247,14 +247,14 @@ describe('dispatchTaggingGate', () => {
       ...overrides,
     };
 
-    const loaded = loadWithMocks(require.resolve('../tagging/dispatch'), {
-      [require.resolve('../context/threads-store')]: {
+    const loaded = loadWithMocks(require.resolve('../processing/gate/dispatch'), {
+      [require.resolve('../storage/threads-store')]: {
         getThread: collaborators.getThread,
       },
-      [require.resolve('../tagging/tool')]: {
+      [require.resolve('../processing/gate/tool')]: {
         takePendingTagResult: collaborators.takePendingTagResult,
       },
-      [require.resolve('../tagging/validation-log')]: {
+      [require.resolve('../processing/gate/validation-log')]: {
         appendTaggingValidationRecord: collaborators.appendTaggingValidationRecord,
       },
       [require.resolve('../runtime')]: {
@@ -495,7 +495,7 @@ describe('dispatchTaggingGate', () => {
 // ---------------------------------------------------------------------------
 
 describe('decideDispatch', () => {
-  const { decideDispatch } = require('../tagging/decide');
+  const { decideDispatch } = require('../processing/gate/decide');
 
   test('neither mentioned, ready, nor configRequest: no dispatch', () => {
     const decision = decideDispatch({
@@ -605,7 +605,7 @@ describe('decideDispatch', () => {
 describe('appendTaggingValidationRecord', () => {
   test('appends one JSON line per call under the space tagging dir', async (t) => {
     const root = await makeTempWorkspace(t);
-    const { appendTaggingValidationRecord } = require('../tagging/validation-log');
+    const { appendTaggingValidationRecord } = require('../processing/gate/validation-log');
 
     await appendTaggingValidationRecord({
       spaceId: 'space-1',
@@ -653,7 +653,7 @@ describe('appendTaggingValidationRecord', () => {
 describe('pending slice feeding the tagging gate', () => {
   test('a message appended to the thread window appears in its pending slice', async (t) => {
     const root = await makeTempWorkspace(t);
-    const { getPendingSlice } = require('../context/threads-store');
+    const { getPendingSlice } = require('../storage/threads-store');
 
     await appendMessageToThreadWindow({
       spaceId: 'space-1',

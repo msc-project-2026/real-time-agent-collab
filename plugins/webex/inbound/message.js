@@ -4,7 +4,7 @@
 // Inbound message filtering, membership checks, and agent pipeline dispatch.
 const { webexFetch } = require('../api');
 const { getAccessToken } = require('../token');
-const { appendMessageToThreadWindow } = require('../context/threads-store');
+const { appendMessageToThreadWindow } = require('../storage/threads-store');
 const { runMessageFlow } = require('../flow/run-message-flow');
 
 // 30-second deduplication window — Webex may deliver the same webhook event twice.

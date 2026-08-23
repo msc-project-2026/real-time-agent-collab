@@ -81,22 +81,22 @@ function loadFlow(t, overrides = {}) {
       getPluginRuntime: collaborators.getPluginRuntime,
       getRoutingAgentId: collaborators.getRoutingAgentId,
     },
-    [require.resolve('../tagging/dispatch')]: {
+    [require.resolve('../processing/gate/dispatch')]: {
       dispatchTaggingGate: collaborators.dispatchTaggingGate,
     },
     [require.resolve('../config/handle-request')]: {
       handleConfigRequest: collaborators.handleConfigRequest,
     },
-    [require.resolve('../context/threads-store')]: {
+    [require.resolve('../storage/threads-store')]: {
       getPendingSlice: collaborators.getPendingSlice,
       markThreadMessagesProcessing: collaborators.markThreadMessagesProcessing,
       finalizeProcessingMessages: collaborators.finalizeProcessingMessages,
       DEFAULT_PENDING_BACKSTOP_SIZE: 50,
     },
-    [require.resolve('../processing/respond')]: {
+    [require.resolve('../processing/respond/dispatch')]: {
       runRespondStep: collaborators.runRespondStep,
     },
-    [require.resolve('../processing/extract')]: {
+    [require.resolve('../processing/extract/dispatch')]: {
       runExtractStep: collaborators.runExtractStep,
     },
     [require.resolve('../flow/job-log')]: {

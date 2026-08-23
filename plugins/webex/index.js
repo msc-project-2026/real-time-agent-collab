@@ -1,12 +1,8 @@
 // Entry point: registers the Webex channel plugin, HTTP route, and plugin tools with the OpenClaw plugin API.
 'use strict';
 
-const { loadProcessingBatchTool } = require('./tools/load-processing-batch');
-const {
-  completeProcessingBatchTool,
-} = require('./tools/complete-processing-batch');
-const { tagMessageTool } = require('./tagging/tool');
-const { writeTaskTool } = require('./processing/write-task-tool');
+const { tagMessageTool } = require('./processing/gate/tool');
+const { writeTaskTool } = require('./processing/extract/tool');
 const { searchTasksTool } = require('./processing/search-tasks-tool');
 
 const { webexPlugin } = require('./channel');
@@ -55,16 +51,9 @@ function register(api) {
   });
 
   // Tools
-  // route_message (routing/tool.js) is no longer registered — deterministic
-  // dispatch (tagging/decide.js, phase 3) replaced the routing LLM classifier
-  // that was its only caller. The module survives for now as a plain function
-  // still exercised by processing-pipeline tests; full removal is routing/*'s
-  // formal retirement (v3 migration phase 5+).
   api.registerTool(tagMessageTool());
   api.registerTool(writeTaskTool());
   api.registerTool(searchTasksTool());
-  api.registerTool(loadProcessingBatchTool());
-  api.registerTool(completeProcessingBatchTool());
 }
 
 module.exports = register;

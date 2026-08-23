@@ -42,14 +42,16 @@ describe('collaboration visibility summary', () => {
         key: 'root-1',
         kind: 'webex_thread',
         rootMessageId: 'root-1',
-        contextWindow: [{ id: 'message-1' }, { id: 'message-2' }],
+        pending: [{ id: 'message-1' }],
+        processing: [{ id: 'message-2' }],
+        processed: [{ id: 'message-3' }, { id: 'message-4' }],
         updatedAt: '2026-08-02T00:00:00.000Z',
       },
-      { key: '__main__', kind: 'main', contextWindow: null },
+      { key: '__main__', kind: 'main', pending: null, processing: null, processed: null },
     ]);
     const loaded = loadWithMocks(require.resolve('../visibility/summary'), {
-      [require.resolve('../context/tasks-store')]: { getTasks },
-      [require.resolve('../context/threads-store')]: { getThreads },
+      [require.resolve('../storage/tasks-store')]: { getTasks },
+      [require.resolve('../storage/threads-store')]: { getThreads },
     });
     t.after(loaded.restore);
 
@@ -77,8 +79,12 @@ describe('collaboration visibility summary', () => {
       createdAt: null,
       updatedAt: null,
     });
-    assert.equal(summary.threads[0].contextWindowSize, 2);
-    assert.equal(summary.threads[1].contextWindowSize, 0);
+    assert.equal(summary.threads[0].pendingCount, 1);
+    assert.equal(summary.threads[0].processingCount, 1);
+    assert.equal(summary.threads[0].processedCount, 2);
+    assert.equal(summary.threads[1].pendingCount, 0);
+    assert.equal(summary.threads[1].processingCount, 0);
+    assert.equal(summary.threads[1].processedCount, 0);
     assert.equal(summary.threads[1].rootMessageId, null);
     assert.deepEqual(getTasks.mock.calls[0].arguments[0], {
       spaceId: 'space-1',
@@ -106,8 +112,8 @@ function loadSpaceRouter(t) {
     [require.resolve('../visibility/summary')]: {
       buildContextSummary: collaborators.buildContextSummary,
     },
-    [require.resolve('../context/tasks-store')]: { getTasks: collaborators.getTasks },
-    [require.resolve('../context/threads-store')]: {
+    [require.resolve('../storage/tasks-store')]: { getTasks: collaborators.getTasks },
+    [require.resolve('../storage/threads-store')]: {
       getThreads: collaborators.getThreads,
     },
   });

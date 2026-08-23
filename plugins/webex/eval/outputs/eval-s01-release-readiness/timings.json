@@ -1,0 +1,169 @@
+{
+  "scenarioId": "eval-s01-release-readiness",
+  "startedAt": "2026-08-17T22:18:02.632Z",
+  "completedAt": "2026-08-17T22:23:39.189Z",
+  "totalMs": 336557,
+  "rounds": [
+    {
+      "round": 1,
+      "messages": [
+        {
+          "number": 1,
+          "id": "eval-s01-release-readiness-msg-1",
+          "durationMs": 3752
+        },
+        {
+          "number": 2,
+          "id": "eval-s01-release-readiness-msg-2",
+          "durationMs": 8526
+        },
+        {
+          "number": 3,
+          "id": "eval-s01-release-readiness-msg-3",
+          "durationMs": 11806
+        },
+        {
+          "number": 4,
+          "id": "eval-s01-release-readiness-msg-4",
+          "durationMs": 16647
+        },
+        {
+          "number": 5,
+          "id": "eval-s01-release-readiness-msg-5",
+          "durationMs": 18166
+        },
+        {
+          "number": 6,
+          "id": "eval-s01-release-readiness-msg-6",
+          "durationMs": 11771
+        },
+        {
+          "number": 7,
+          "id": "eval-s01-release-readiness-msg-7",
+          "durationMs": 13084
+        },
+        {
+          "number": 8,
+          "id": "eval-s01-release-readiness-msg-8",
+          "durationMs": 12591
+        }
+      ],
+      "routingIdleMs": 6819,
+      "stagingDurationMs": 4180,
+      "processingIdleMs": 2002,
+      "totalRoundMs": 109358
+    },
+    {
+      "round": 2,
+      "messages": [
+        {
+          "number": 9,
+          "id": "eval-s01-release-readiness-msg-9",
+          "durationMs": 6418
+        },
+        {
+          "number": 10,
+          "id": "eval-s01-release-readiness-msg-10",
+          "durationMs": 5892
+        },
+        {
+          "number": 11,
+          "id": "eval-s01-release-readiness-msg-11",
+          "durationMs": 6210
+        },
+        {
+          "number": 12,
+          "id": "eval-s01-release-readiness-msg-12",
+          "durationMs": 6859
+        },
+        {
+          "number": 13,
+          "id": "eval-s01-release-readiness-msg-13",
+          "durationMs": 13999
+        },
+        {
+          "number": 14,
+          "id": "eval-s01-release-readiness-msg-14",
+          "durationMs": 16117
+        },
+        {
+          "number": 15,
+          "id": "eval-s01-release-readiness-msg-15",
+          "durationMs": 13734
+        }
+      ],
+      "routingIdleMs": 10523,
+      "stagingDurationMs": 6211,
+      "processingIdleMs": 9042,
+      "totalRoundMs": 95018
+    },
+    {
+      "round": 3,
+      "messages": [
+        {
+          "number": 16,
+          "id": "eval-s01-release-readiness-msg-16",
+          "durationMs": 6904
+        },
+        {
+          "number": 17,
+          "id": "eval-s01-release-readiness-msg-17",
+          "durationMs": 7299
+        },
+        {
+          "number": 18,
+          "id": "eval-s01-release-readiness-msg-18",
+          "durationMs": 6411
+        },
+        {
+          "number": 19,
+          "id": "eval-s01-release-readiness-msg-19",
+          "durationMs": 6574
+        },
+        {
+          "number": 20,
+          "id": "eval-s01-release-readiness-msg-20",
+          "durationMs": 7716
+        },
+        {
+          "number": 21,
+          "id": "eval-s01-release-readiness-msg-21",
+          "durationMs": 7161
+        },
+        {
+          "number": 22,
+          "id": "eval-s01-release-readiness-msg-22",
+          "durationMs": 15822
+        }
+      ],
+      "routingIdleMs": 21644,
+      "stagingDurationMs": 9948,
+      "processingIdleMs": 5422,
+      "totalRoundMs": 94914
+    },
+    {
+      "round": 4,
+      "messages": [
+        {
+          "number": 23,
+          "id": "eval-s01-release-readiness-msg-23",
+          "durationMs": 7264
+        },
+        {
+          "number": 24,
+          "id": "eval-s01-release-readiness-msg-24",
+          "durationMs": 6533
+        },
+        {
+          "number": 25,
+          "id": "eval-s01-release-readiness-msg-25",
+          "durationMs": 4973
+        }
+      ],
+      "routingIdleMs": 2002,
+      "stagingDurationMs": 8728,
+      "processingIdleMs": 7755,
+      "totalRoundMs": 37264
+    }
+  ]
+}

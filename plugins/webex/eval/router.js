@@ -5,18 +5,25 @@
 // when WEBEX_EVAL_ROUTES_ENABLED=true.
 //
 // Endpoints:
-//   POST /webex/collab/eval/run              — start a background run, return runId
+//   POST /webex/collab/eval/run              — retired, see below
 //   GET  /webex/collab/eval/runs/:runId      — poll run status
 //   GET  /webex/collab/eval/runs/:runId/result — fetch completed result
 //
 // Auth: all endpoints require x-webex-eval-secret matching WEBEX_EVAL_SECRET.
 //
 // Job state is held in-memory and lost on restart.
-
-const { randomUUID } = require('node:crypto');
-const { runScenario } = require('../scripts/eval/run-scenario');
-
-const MAX_BODY_BYTES = 10 * 1024 * 1024;
+//
+// RUN IS RETIRED (phase 6 deletion pass): the old scripts/eval/run-scenario.js and
+// the pre-v3 batch/processing pipeline it drove (staging-handler,
+// processing-handler, items/conversations stores, etc.) have been deleted —
+// entirely superseded by run-message-flow.js, and non-functional against it
+// regardless (round-grouping and staging assumptions baked into the old
+// runner don't hold under deterministic dispatch, per its own now-removed
+// comments). POST /run returns 501 rather than trying to call something
+// that no longer exists. Status/result polling stay wired — harmless no-ops
+// until a new scenario runner is built against the v3 pipeline and starts
+// populating `runs` again. The client script (eval/post-scenario.js) is
+// untouched — it's a plain HTTP client with no dependency on any of this.
 
 // In-memory job store: runId → run record
 const runs = new Map();
@@ -33,17 +40,6 @@ function sendJson(res, statusCode, body) {
 
 function getPathname(req) {
   return new URL(req.url ?? '/', 'http://x').pathname;
-}
-
-async function readBody(req) {
-  const chunks = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += chunk.length;
-    if (size > MAX_BODY_BYTES) return null;
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks);
 }
 
 function isSecretValid(req) {
@@ -66,90 +62,12 @@ async function handleRunPost(req, res) {
     return;
   }
 
-  let rawBody;
-  try {
-    rawBody = await readBody(req);
-  } catch {
-    sendJson(res, 400, { ok: false, error: 'Failed to read request body' });
-    return;
-  }
-
-  if (!rawBody) {
-    sendJson(res, 413, { ok: false, error: 'Payload Too Large' });
-    return;
-  }
-
-  let body;
-  try {
-    body = JSON.parse(rawBody.toString('utf-8'));
-  } catch {
-    sendJson(res, 400, { ok: false, error: 'Invalid JSON' });
-    return;
-  }
-
-  const { scenario, options } = body;
-
-  if (!scenario?.id) {
-    sendJson(res, 400, { ok: false, error: 'scenario.id is required' });
-    return;
-  }
-  if (!scenario.spaceId) {
-    sendJson(res, 400, { ok: false, error: 'scenario.spaceId is required' });
-    return;
-  }
-  if (!Array.isArray(scenario.participants)) {
-    sendJson(res, 400, { ok: false, error: 'scenario.participants must be an array' });
-    return;
-  }
-  if (!Array.isArray(scenario.messages)) {
-    sendJson(res, 400, { ok: false, error: 'scenario.messages must be an array' });
-    return;
-  }
-
-  const runId = randomUUID();
-  const startedAt = new Date().toISOString();
-
-  const run = {
-    runId,
-    scenarioId: scenario.id,
-    status: 'running',
-    startedAt,
-    completedAt: null,
-    error: null,
-    result: null,
-  };
-  runs.set(runId, run);
-
-  console.log(
-    `[eval:${runId}] run started — scenario: ${scenario.id}, messages: ${scenario.messages.length}`
-  );
-
-  const log = {
-    info: (msg, meta) => console.log(`[eval:${runId}]`, msg, meta != null ? meta : ''),
-    warn: (msg, meta) => console.warn(`[eval:${runId}:warn]`, msg, meta != null ? meta : ''),
-    error: (msg, meta) => console.error(`[eval:${runId}:error]`, msg, meta != null ? meta : ''),
-  };
-
-  runScenario({ scenario, options, log })
-    .then((result) => {
-      run.status = 'complete';
-      run.completedAt = new Date().toISOString();
-      run.result = result;
-      const durationMs = new Date(run.completedAt) - new Date(startedAt);
-      console.log(
-        `[eval:${runId}] run complete — duration: ${durationMs}ms,` +
-        ` items: ${result.items.length}, conversations: ${result.conversations.length}`
-      );
-    })
-    .catch((err) => {
-      run.status = 'failed';
-      run.completedAt = new Date().toISOString();
-      run.error = { message: err?.message ?? String(err), stack: err?.stack ?? null };
-      console.error(`[eval:${runId}] run failed — ${err?.message ?? err}`);
-      if (err?.stack) console.error(err.stack);
-    });
-
-  sendJson(res, 202, { ok: true, runId, scenarioId: scenario.id, status: 'running' });
+  sendJson(res, 501, {
+    ok: false,
+    error:
+      'Scenario running is retired pending a rewrite against the v3 pipeline (run-message-flow.js). ' +
+      'The old runner and the pipeline it drove were removed in the phase-6 deletion pass.',
+  });
 }
 
 // ---------------------------------------------------------------------------

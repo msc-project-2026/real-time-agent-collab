@@ -1,8 +1,8 @@
 // ********* VISIBILITY/SUMMARY.JS *********
 'use strict';
 
-const { getTasks } = require('../context/tasks-store');
-const { getThreads } = require('../context/threads-store');
+const { getTasks } = require('../storage/tasks-store');
+const { getThreads } = require('../storage/threads-store');
 const { asArray } = require('../utils/normalise');
 
 function countTasks(tasks, predicate) {
@@ -30,9 +30,9 @@ function formatThreadForVisibility(thread) {
     key: thread.key,
     kind: thread.kind,
     rootMessageId: thread.rootMessageId ?? null,
-    contextWindowSize: Array.isArray(thread.contextWindow)
-      ? thread.contextWindow.length
-      : 0,
+    pendingCount: Array.isArray(thread.pending) ? thread.pending.length : 0,
+    processingCount: Array.isArray(thread.processing) ? thread.processing.length : 0,
+    processedCount: Array.isArray(thread.processed) ? thread.processed.length : 0,
     updatedAt: thread.updatedAt ?? null,
   };
 }

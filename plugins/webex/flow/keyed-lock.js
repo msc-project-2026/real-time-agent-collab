@@ -4,12 +4,12 @@
 // Generic in-process serialization primitive — a Map<key, Promise> chain.
 // Reused across the plugin wherever two async operations that touch the same
 // keyed resource must not interleave: per-thread gate+flush, per-space
-// extraction, per-space store writes (see context/threads-store.js,
-// context/tasks-store.js, flow/run-message-flow.js). Valid because the
+// extraction, per-space store writes (see storage/threads-store.js,
+// storage/tasks-store.js, flow/run-message-flow.js). Valid because the
 // Gateway is a single process — no cross-process coordination needed.
 //
 // Was previously duplicated ad hoc as `taggingQueues`/`enqueueTaggingDispatch`
-// in tagging/dispatch.js (phase 3) for exactly the per-thread-gate case; that
+// in gate/dispatch.js (phase 3) for exactly the per-thread-gate case; that
 // call site now uses this shared module instead, widened to also cover the
 // flush that follows the gate decision (see run-message-flow.js).
 

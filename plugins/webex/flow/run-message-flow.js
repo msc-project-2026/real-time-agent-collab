@@ -36,17 +36,17 @@
 // decideDispatch -> handleStagePendingBatchRequest) and the phase-4
 // tagging/flow-spike.js probe, now superseded.
 
-const { dispatchTaggingGate } = require('../tagging/dispatch');
-const { decideDispatch } = require('../tagging/decide');
+const { dispatchTaggingGate } = require('../processing/gate/dispatch');
+const { decideDispatch } = require('../processing/gate/decide');
 const { handleConfigRequest } = require('../config/handle-request');
 const {
   getPendingSlice,
   markThreadMessagesProcessing,
   finalizeProcessingMessages,
   DEFAULT_PENDING_BACKSTOP_SIZE,
-} = require('../context/threads-store');
-const { runRespondStep } = require('../processing/respond');
-const { runExtractStep } = require('../processing/extract');
+} = require('../storage/threads-store');
+const { runRespondStep } = require('../processing/respond/dispatch');
+const { runExtractStep } = require('../processing/extract/dispatch');
 const { appendJobLogEntry } = require('./job-log');
 const { withLock } = require('./keyed-lock');
 const { safeSegment } = require('../storage/paths');

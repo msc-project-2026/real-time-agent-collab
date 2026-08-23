@@ -307,7 +307,7 @@ The harness should not mock the model, bypass the tagging gate, or call private 
 Each evaluation execution should get a unique `evalRunId`. Past runs for the same scenario should be archived, not overwritten, so changes in prompts, step granularity, agent identities, and model choice can be compared over time. A typical archive layout can be:
 
 ```text
-plugins/webex/evaluation/outputs/<scenario-id>/<evalRunId>/
+plugins/webex/eval/outputs/<scenario-id>/<evalRunId>/
 ```
 
 Each archived run should export at least:

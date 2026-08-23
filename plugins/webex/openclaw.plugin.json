@@ -7,9 +7,7 @@
     "tools": [
       "tag_message",
       "write_task",
-      "search_tasks",
-      "collab_load_processing_batch",
-      "collab_complete_processing_batch"
+      "search_tasks"
     ]
   },
   "configSchema": {

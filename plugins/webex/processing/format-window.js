@@ -2,7 +2,7 @@
 'use strict';
 
 // Shared by respond-instruction.js and extract-instruction.js — both need
-// the same two-part rendering of a thread window (context/threads-store.js):
+// the same two-part rendering of a thread window (storage/threads-store.js):
 // settled history (`processed`, unfiltered — legitimate background
 // regardless of which flow produced it) and this run's own batch, filtered
 // out of `processing` by the caller's own `messageIds`.

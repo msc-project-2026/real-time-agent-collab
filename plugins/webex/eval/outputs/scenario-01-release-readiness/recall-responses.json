@@ -1,0 +1,62 @@
+[
+  {
+    "ts": "2026-08-17T11:42:37.688Z",
+    "to": "scenario-01-release-readiness",
+    "markdown": "Good catch, Noah. That label mismatch will cause confusion in a demo — CS leads expecting a full export and getting only the filtered view is an awkward moment.\n\nQuick question before fixing it: is full-account export something the CS leads actually need, or is filtered-only fine and it just needs a clearer label like \"Export filtered results\"?",
+    "parentId": "scenario-01-release-readiness-msg-4"
+  },
+  {
+    "ts": "2026-08-17T11:43:22.484Z",
+    "to": "scenario-01-release-readiness",
+    "markdown": "That's a significant one, Ben — CS leads seeing each other's accounts in a live walkthrough would undermine trust in the product before it's even launched.\n\nTwo things worth pinning down:\n- Is this a demo environment config issue, or does the permission model not exist in the product yet?\n- Should access be scoped by account owner, region, or team?\n\nThe answer shapes whether it's a quick env fix this week or something bigger that might need to be flagged as a risk for the timeline.",
+    "parentId": "scenario-01-release-readiness-msg-6"
+  },
+  {
+    "ts": "2026-08-17T11:44:17.603Z",
+    "to": "scenario-01-release-readiness",
+    "markdown": "Good to have that confirmed, Maya — keeps the scope clean.\n\nPilot priorities: account health, recent usage, owner filter. Dark mode and full export are out.\n\nThat leaves three open items before the walkthrough:\n1. **Empty state cleanup**\n2. **Export button rename** — \"export filtered results\"\n3. **Permissions** — restrict each manager to their own accounts\n\nAll three still need owners. Who's picking up what?",
+    "parentId": "scenario-01-release-readiness-msg-9"
+  },
+  {
+    "ts": "2026-08-17T11:45:05.868Z",
+    "to": "scenario-01-release-readiness",
+    "markdown": "Important flag, Aisha — account health is one of the three things CS leads are specifically coming to see, so mock data there carries real risk.\n\nKey question: is the mock directionally correct, or could it surface scores that look obviously off and invite awkward questions? If there's any doubt, a \"preview data\" label on the score is a safe fallback.\n\nWho owns the health score calculation — is there a path to getting the final formula in before the walkthrough, or is that blocked on something external?",
+    "parentId": "scenario-01-release-readiness-msg-11"
+  },
+  {
+    "ts": "2026-08-17T11:45:54.599Z",
+    "to": "scenario-01-release-readiness",
+    "markdown": "Endpoint tomorrow with no contract yet is a real dependency risk, Ben. If the shape isn't confirmed, you can't safely integrate even if it lands.\n\nSomeone should chase the analytics team for the contract today — otherwise the \"preview data\" fallback is the safer path for the walkthrough. Who has the best contact there?",
+    "parentId": "scenario-01-release-readiness-msg-13"
+  },
+  {
+    "ts": "2026-08-17T11:47:09.392Z",
+    "to": "scenario-01-release-readiness",
+    "markdown": "Nice one, Aisha — empty state is done.\n\nStill open:\n- **Permissions** — restrict each manager to their own accounts (no owner yet)\n- **Export button rename** — \"export filtered results\"\n- **Analytics contract** — Noah following up; \"preview data\" fallback if it doesn't land in time\n\nGood momentum. Permissions is the one that needs someone to pick it up.",
+    "parentId": "scenario-01-release-readiness-msg-16"
+  },
+  {
+    "ts": "2026-08-17T11:47:28.895Z",
+    "to": "scenario-01-release-readiness",
+    "markdown": "Friday shape + walkthrough next week is tight but the \"preview data\" fallback is already agreed, so that path is clear.\n\nPractical question: if the shape lands Friday, is there enough time to integrate and test before the demo? What day is the walkthrough?",
+    "parentId": "scenario-01-release-readiness-msg-18"
+  },
+  {
+    "ts": "2026-08-17T11:48:53.569Z",
+    "to": "scenario-01-release-readiness",
+    "markdown": "Agreed, Aisha — permissions is the last real blocker. Everything else is either done or has a fallback.\n\nWho's picking it up? And is it an environment config fix or does it need a code change to enforce account-level filtering?",
+    "parentId": "scenario-01-release-readiness-msg-21"
+  },
+  {
+    "ts": "2026-08-17T11:49:44.060Z",
+    "to": "scenario-01-release-readiness",
+    "markdown": "Nice, Ben — export button done.\n\nPermissions is the only thing still open. Does it need an owner, or is someone already on it?",
+    "parentId": "scenario-01-release-readiness-msg-23"
+  },
+  {
+    "ts": "2026-08-17T11:49:54.861Z",
+    "to": "scenario-01-release-readiness",
+    "markdown": "Good one, Noah — that sets clear expectations for the CS leads on the health score.\n\nPermissions is still the only open item. Anyone picking it up?",
+    "parentId": "scenario-01-release-readiness-msg-24"
+  }
+]

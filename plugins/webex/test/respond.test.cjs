@@ -27,12 +27,12 @@ describe('runRespondStep', () => {
       ...overrides,
     };
 
-    const loaded = loadWithMocks(require.resolve('../processing/respond'), {
-      [require.resolve('../context/threads-store')]: {
+    const loaded = loadWithMocks(require.resolve('../processing/respond/dispatch'), {
+      [require.resolve('../storage/threads-store')]: {
         getThread: collaborators.getThread,
         MAIN_THREAD_KEY: '__main__',
       },
-      [require.resolve('../context/tasks-store')]: {
+      [require.resolve('../storage/tasks-store')]: {
         getActiveTasks: collaborators.getActiveTasks,
       },
       [require.resolve('../runtime')]: {
