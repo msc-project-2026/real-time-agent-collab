@@ -48,13 +48,19 @@ async function runRespondStep({
   // immediately-preceding message), so anchoring to the root/triggering
   // message id is correct either way, never a specific mid-thread reply.
   //
-  // Live-tested: passing this as a context-level default on the
-  // runEmbeddedAgent call (currentThreadTs/messageThreadId) does NOT work —
-  // 3/3 live sends landed in the main space regardless. The message tool's
-  // own parameter schema exposes a model-settable `threadId` (confirmed in
-  // the deployed tools bundle) — that's the actual mechanism, so this value
-  // is passed into the prompt instead (respond-instruction.js), telling the
-  // model to set it explicitly on its own tool call.
+  // Threading has been wrong twice in a row from static bundle reading alone
+  // (once mis-attributing a cron-tool field as the message tool's, once
+  // over-trusting a plausible-looking passthrough for currentThreadTs that
+  // was never actually confirmed against a live test — neither
+  // currentThreadTs/messageThreadId alone nor an explicit prompt instruction
+  // alone has ever worked in isolation). Deliberately NOT restoring the
+  // context-level params this time — they'd confound the experiment. The
+  // only thing kept is the explicit, model-facing instruction
+  // (respond-instruction.js) to set `threadId`/`replyTo` on the tool call
+  // itself, since that's a real, schema-confirmed mechanism. channel.js's
+  // sendText/sendMedia now log the raw replyToId they receive, which will
+  // show directly whether this works — read that before changing anything
+  // else here.
   const replyThreadId = threadKey === MAIN_THREAD_KEY ? message?.id : threadKey;
 
   const instruction = buildRespondInstruction({
@@ -116,6 +122,16 @@ async function runRespondStep({
       sessionKey,
       toolCalls,
       didSend: Boolean(result?.didSendViaMessagingTool),
+      // Diagnostic only — ground truth for what the model actually sent and
+      // where, since we've now guessed wrong twice about which field
+      // controls Webex thread targeting, plus a way to tell a genuine
+      // silent decision apart from a run that errored/timed out without
+      // ever reaching a tool call. Remove once both are confirmed working
+      // live and no longer need this to diagnose them.
+      stopReason: result?.meta?.stopReason ?? null,
+      payloadCount: Array.isArray(result?.payloads) ? result.payloads.length : null,
+      messagingToolSentTargets: result?.messagingToolSentTargets ?? null,
+      messagingToolSentTexts: result?.messagingToolSentTexts ?? null,
     })}`
   );
 

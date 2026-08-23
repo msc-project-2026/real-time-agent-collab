@@ -198,6 +198,58 @@ function applyMessageToPendingWindow({ state, message, botId, threadKeyOverride 
   };
 }
 
+// Bot-authored messages skip pending entirely — they don't need gate
+// judgment (there's nothing to act on in the bot's own words), they're
+// context only. Appended straight to processed (capped, same as a normal
+// flush) so they still count as background for the gate (§4's minContext
+// padding, tagging/dispatch.js) and the respond step's window, without
+// inflating pendingCount/the backstop with the bot's own chatter — those
+// are meant to reflect unaddressed human backlog specifically.
+function applyMessageDirectlyToProcessedWindow({
+  state,
+  message,
+  botId,
+  threadKeyOverride,
+  processedWindowSize = DEFAULT_PROCESSED_WINDOW_SIZE,
+}) {
+  if (!state || typeof state !== 'object') {
+    throw new Error('state object is required');
+  }
+
+  if (!message?.id) throw new Error('message.id is required');
+
+  const now = new Date().toISOString();
+  const key = threadKeyOverride ?? getThreadKey(message);
+
+  const existingThread =
+    state.threads?.[key] ?? createThreadRecordFromKey({ key });
+
+  const existingProcessed = Array.isArray(existingThread.processed)
+    ? existingThread.processed
+    : [];
+
+  const processed = [
+    ...existingProcessed.filter((entry) => entry.id !== message.id),
+    formatMessageForThreadWindow({ message, botId, status: 'processed' }),
+  ].slice(-processedWindowSize);
+
+  return {
+    ...state,
+    threads: {
+      ...(state.threads ?? {}),
+      [key]: {
+        ...existingThread,
+        pending: Array.isArray(existingThread.pending)
+          ? existingThread.pending
+          : [],
+        processed,
+        updatedAt: now,
+      },
+    },
+    updatedAt: now,
+  };
+}
+
 async function appendMessageToThreadWindow({
   spaceId,
   explicitRoot,
@@ -244,7 +296,11 @@ async function appendMessageToThreadWindow({
             threadKeyOverride: threadKey,
             contextWindowSize,
           });
-          state = applyMessageToPendingWindow({
+          const applyRoot =
+            Boolean(botId) && rootMessage.personId === botId
+              ? applyMessageDirectlyToProcessedWindow
+              : applyMessageToPendingWindow;
+          state = applyRoot({
             state,
             message: rootMessage,
             botId,
@@ -278,7 +334,11 @@ async function appendMessageToThreadWindow({
     message,
     contextWindowSize,
   });
-  newState = applyMessageToPendingWindow({
+  const applyMessage =
+    Boolean(botId) && message.personId === botId
+      ? applyMessageDirectlyToProcessedWindow
+      : applyMessageToPendingWindow;
+  newState = applyMessage({
     state: newState,
     message,
     botId,

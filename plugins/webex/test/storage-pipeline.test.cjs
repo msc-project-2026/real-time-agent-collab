@@ -218,6 +218,39 @@ describe('thread context windows', () => {
     ]);
   });
 
+  test('seeds a new reply thread with a bot-authored root directly into processed', async (t) => {
+    const root = await makeTempWorkspace(t);
+    const fetchMessageById = t.mock.fn(async () => ({
+      id: 'bot-root-1',
+      text: 'Hey! How can I help?',
+      personId: 'bot-1',
+    }));
+
+    await appendMessageToThreadWindow({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      botId: 'bot-1',
+      message: {
+        id: 'reply-1',
+        parentId: 'bot-root-1',
+        text: 'Great, are you well?',
+        personId: 'person-1',
+      },
+      fetchMessageById,
+      log: { info: t.mock.fn(), warn: t.mock.fn() },
+    });
+
+    const thread = await getThread({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      threadKey: 'bot-root-1',
+    });
+    // The root (bot's own prior message) is background, not something to
+    // judge — it lands in processed. Only the human's reply is pending.
+    assert.deepEqual(thread.pending.map((message) => message.id), ['reply-1']);
+    assert.deepEqual(thread.processed.map((message) => message.id), ['bot-root-1']);
+  });
+
   test('filters and orders thread listings', async (t) => {
     const root = await makeTempWorkspace(t);
     await appendMessageToThreadWindow({
@@ -298,6 +331,48 @@ describe('pending/processed thread window', () => {
     });
     assert.equal(thread.pending[3].botIsMentioned, true);
     assert.deepEqual(thread.processed, []);
+  });
+
+  test('routes bot-authored messages straight into processed, never pending', async (t) => {
+    const root = await makeTempWorkspace(t);
+
+    await appendMessageToThreadWindow({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      botId: 'bot-1',
+      message: {
+        id: 'human-1',
+        text: 'Are you there?',
+        personId: 'person-1',
+        personEmail: 'dev@example.com',
+        created: '2026-01-01T00:00:00.000Z',
+      },
+    });
+    const result = await appendMessageToThreadWindow({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      botId: 'bot-1',
+      message: {
+        id: 'bot-1-reply',
+        text: 'Yes, I am here.',
+        personId: 'bot-1',
+        created: '2026-01-01T00:00:05.000Z',
+      },
+    });
+
+    // The bot's own message never counts toward pendingCount — it's not
+    // unaddressed human backlog, so it shouldn't inflate the backstop either.
+    assert.equal(result.pendingCount, 1);
+
+    const thread = await getThread({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      threadKey: MAIN_THREAD_KEY,
+    });
+
+    assert.deepEqual(thread.pending.map((message) => message.id), ['human-1']);
+    assert.deepEqual(thread.processed.map((message) => message.id), ['bot-1-reply']);
+    assert.equal(thread.processed[0].status, 'processed');
   });
 
   test('exposes the pending slice directly for the tagging gate', async (t) => {

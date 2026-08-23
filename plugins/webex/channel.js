@@ -215,6 +215,15 @@ const webexPlugin = {
       accountId = DEFAULT_ACCOUNT,
       replyToId,
     }) => {
+      // Diagnostic only — direct ground truth for whether the message tool
+      // actually threads the send, since this is the one place upstream
+      // params unambiguously have to land for it to matter at all. Remove
+      // once threading is confirmed working live.
+      console.log('[collab-agent:channel-send] sendText replyToId', {
+        to,
+        replyToId: replyToId ?? null,
+      });
+
       const resolvedAccount = account ?? resolveAccount(cfg, accountId);
 
       if (!resolvedAccount?.config?.token) {
@@ -251,6 +260,12 @@ const webexPlugin = {
       accountId = DEFAULT_ACCOUNT,
       replyToId,
     }) => {
+      // Diagnostic only — see sendText's identical note above.
+      console.log('[collab-agent:channel-send] sendMedia replyToId', {
+        to,
+        replyToId: replyToId ?? null,
+      });
+
       const resolvedAccount = account ?? resolveAccount(cfg, accountId);
 
       if (!resolvedAccount?.config?.token) {

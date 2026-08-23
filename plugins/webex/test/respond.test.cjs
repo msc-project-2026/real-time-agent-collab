@@ -84,11 +84,12 @@ describe('runRespondStep', () => {
     assert.equal(params.disableMessageTool, undefined);
     assert.match(params.prompt, /addressed: true/);
     assert.match(params.prompt, /Ada/);
-    // The model must be explicitly told to set threadId on its own tool
-    // call — context-level currentThreadTs/messageThreadId alone were
-    // confirmed live NOT to be enough (3/3 sends landed in the main space
-    // without this instruction).
-    assert.match(params.prompt, /threadId.*parameter to `msg-1`/);
+    // No context-level currentThreadTs/messageThreadId — deliberately not
+    // set, to avoid confounding the diagnostic test with an unconfirmed
+    // mechanism. The model is told to set threadId/replyTo itself instead.
+    assert.equal(params.currentThreadTs, undefined);
+    assert.equal(params.messageThreadId, undefined);
+    assert.match(params.prompt, /threadId.*and `replyTo`.*parameters to `msg-1`/);
 
     assert.equal(result.outcome, 'success');
     assert.equal(result.toolCalls, 1);
@@ -115,12 +116,9 @@ describe('runRespondStep', () => {
       log: makeLog(t),
     });
 
-    // No context-level currentThreadTs/messageThreadId params — confirmed
-    // live those alone don't work. The model is told to set threadId itself
-    // via the prompt instead (asserted in the first test above).
     assert.equal(runCalls[0].currentThreadTs, undefined);
     assert.equal(runCalls[0].messageThreadId, undefined);
-    assert.match(runCalls[0].prompt, /threadId.*parameter to `msg-1`/);
+    assert.match(runCalls[0].prompt, /threadId.*and `replyTo`.*parameters to `msg-1`/);
   });
 
   test('targets the reply thread for a non-main thread, so it does not land in the main space', async (t) => {
@@ -143,7 +141,7 @@ describe('runRespondStep', () => {
 
     assert.equal(runCalls[0].currentThreadTs, undefined);
     assert.equal(runCalls[0].messageThreadId, undefined);
-    assert.match(runCalls[0].prompt, /threadId.*parameter to `thread-root-message-1`/);
+    assert.match(runCalls[0].prompt, /threadId.*and `replyTo`.*parameters to `thread-root-message-1`/);
   });
 
   test('reports didSend false and toolCalls 0 for a silent "done" reply', async (t) => {
