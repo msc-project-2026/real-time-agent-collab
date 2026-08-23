@@ -481,39 +481,12 @@ describe('dispatchTaggingGate', () => {
     assert.equal(collaborators.appendTaggingValidationRecord.mock.callCount(), 0);
   });
 
-  test('serialises concurrent runs for the same thread so tag results cannot race', async (t) => {
-    let concurrent = 0;
-    let maxConcurrent = 0;
-    const runEmbeddedAgent = t.mock.fn(async () => {
-      concurrent += 1;
-      maxConcurrent = Math.max(maxConcurrent, concurrent);
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      concurrent -= 1;
-      return { payloads: [] };
-    });
-    const pluginRuntime = makeAgentRuntime(t, { runEmbeddedAgent });
-
-    const { dispatchTaggingGate } = loadDispatch(t);
-
-    await Promise.all([
-      dispatchTaggingGate({
-        pluginRuntime,
-        spaceId: 'space-1',
-        threadKey: '__main__',
-        message: { id: 'msg-1' },
-        log: makeLog(t),
-      }),
-      dispatchTaggingGate({
-        pluginRuntime,
-        spaceId: 'space-1',
-        threadKey: '__main__',
-        message: { id: 'msg-2' },
-        log: makeLog(t),
-      }),
-    ]);
-
-    assert.equal(maxConcurrent, 1);
-  });
+  // dispatchTaggingGate no longer serializes concurrent runs itself (phase 6
+  // removed the module-local taggingQueues) — the caller now wraps the gate
+  // call together with the flush that follows it in one per-thread lock
+  // (flow/keyed-lock.js's `gate:${spaceId}:${threadKey}`), a strictly wider
+  // guarantee than the old gate-only queue gave. See
+  // flow-orchestration.test.cjs for the serialization test at that level.
 });
 
 // ---------------------------------------------------------------------------

@@ -23,9 +23,14 @@ function deferred() {
 }
 
 describe('keyed-lock — withLock', () => {
-  test('calls on the same key run strictly one after another (FIFO)', async () => {
+  test('calls on the same key run strictly one after another (FIFO)', async (t) => {
     const order = [];
     const gate = deferred();
+    // Safety net: an assertion throwing before the manual resolve() below
+    // would otherwise leave `first`/`second` permanently pending and hang
+    // the test runner (this bit a similarly-shaped test in
+    // flow-orchestration.test.cjs — see that file for the full story).
+    t.after(() => gate.resolve());
 
     const first = withLock('key-a', async () => {
       order.push('first-start');
@@ -53,9 +58,10 @@ describe('keyed-lock — withLock', () => {
     assert.deepEqual(order, ['first-start', 'first-end', 'second-start']);
   });
 
-  test('independent keys run concurrently, never block each other', async () => {
+  test('independent keys run concurrently, never block each other', async (t) => {
     const order = [];
     const gateA = deferred();
+    t.after(() => gateA.resolve());
 
     const a = withLock('key-a', async () => {
       order.push('a-start');

@@ -16,11 +16,13 @@ describe('runRespondStep', () => {
   function loadRespond(t, overrides = {}) {
     const collaborators = {
       getThread: t.mock.fn(async () => ({
-        pending: [
-          { id: 'msg-1', senderName: 'Ada', content: 'hi', botIsMentioned: false, datetime: null, status: 'pending' },
+        pending: [],
+        processing: [
+          { id: 'msg-1', senderName: 'Ada', content: 'hi', botIsMentioned: false, datetime: null },
         ],
         processed: [],
       })),
+      getActiveTasks: t.mock.fn(async () => []),
       getRoutingAgentId: t.mock.fn(() => 'main'),
       ...overrides,
     };
@@ -29,6 +31,9 @@ describe('runRespondStep', () => {
       [require.resolve('../context/threads-store')]: {
         getThread: collaborators.getThread,
         MAIN_THREAD_KEY: '__main__',
+      },
+      [require.resolve('../context/tasks-store')]: {
+        getActiveTasks: collaborators.getActiveTasks,
       },
       [require.resolve('../runtime')]: {
         getRoutingAgentId: collaborators.getRoutingAgentId,
@@ -68,6 +73,7 @@ describe('runRespondStep', () => {
       spaceId: 'space-1',
       threadKey: '__main__',
       message: { id: 'msg-1' },
+      messageIds: ['msg-1'],
       decision: { finalIsMentioned: true, ready: false, reason: 'Addressed.' },
       log: makeLog(t),
     });
@@ -112,6 +118,7 @@ describe('runRespondStep', () => {
       spaceId: 'space-1',
       threadKey: '__main__',
       message: { id: 'msg-1' },
+      messageIds: ['msg-1'],
       decision: { finalIsMentioned: false, ready: true, reason: 'Ready.' },
       log: makeLog(t),
     });
@@ -135,6 +142,7 @@ describe('runRespondStep', () => {
       spaceId: 'space-1',
       threadKey: 'thread-root-message-1',
       message: { id: 'msg-1' },
+      messageIds: ['msg-1'],
       decision: { finalIsMentioned: true, ready: false, reason: 'Addressed.' },
       log: makeLog(t),
     });
@@ -159,6 +167,7 @@ describe('runRespondStep', () => {
       spaceId: 'space-1',
       threadKey: '__main__',
       message: { id: 'msg-1' },
+      messageIds: ['msg-1'],
       decision: { finalIsMentioned: false, ready: true, reason: 'Ready but not addressed.' },
       log: makeLog(t),
     });
@@ -182,6 +191,7 @@ describe('runRespondStep', () => {
         spaceId: 'space-1',
         threadKey: '__main__',
         message: { id: 'msg-1' },
+      messageIds: ['msg-1'],
         decision: { finalIsMentioned: true, ready: false, reason: 'Addressed.' },
         log: makeLog(t),
       }),
@@ -206,6 +216,7 @@ describe('runRespondStep', () => {
       spaceId: 'space-1',
       threadKey: '__main__',
       message: { id: 'msg-1' },
+      messageIds: ['msg-1'],
       decision: { finalIsMentioned: true, ready: false, reason: 'Addressed.' },
       log: makeLog(t),
     });

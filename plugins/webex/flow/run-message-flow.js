@@ -9,6 +9,29 @@
 // runEmbeddedAgent-driven spawns this plugin uses. Step-level detail instead
 // goes to the job log (flow/job-log.js).
 //
+// Phase 6 adds a second step, extract (v3 §7c task extraction), as a sibling
+// to respond rather than a chained predecessor — see the concurrency design
+// below and the phase-6 plan for why. Both settle independently; neither
+// blocks or fails the other, "maintain service" per that plan's failure-
+// handling section — the flow always reaches `finish`, with any per-step
+// error captured in `stateJson` for later inspection rather than surfaced as
+// a flow-level failure.
+//
+// Concurrency (phase 6 plan, "Concurrency — full design"): two lock layers
+// on top of threads-store.js's own internal per-space write lock (layer 1).
+// - Layer 2a: gate's LLM call + dispatch decision + flush, all inside one
+//   per-thread lock (`gate:${spaceId}:${threadKey}`) — a thread's next
+//   message can't start gating until this one's gate-and-flush has fully
+//   landed. This also subsumes what tagging/dispatch.js's now-removed
+//   taggingQueues used to guarantee (gate-call-only), widened to cover the
+//   flush too.
+// - Layer 2b: the whole extract step (spawn + every write_task call) inside
+//   one per-space lock (`extract:${spaceId}`) — tasks.json/task-parents.json
+//   are space-scoped files (storage/paths.js), not thread-scoped, so
+//   extraction must serialize space-wide, not just per thread.
+// - respond acquires neither lock — genuinely unconstrained, best effort
+//   with whatever's readable at call time.
+//
 // Replaces the old sequence in inbound/message.js (dispatchTaggingGate ->
 // decideDispatch -> handleStagePendingBatchRequest) and the phase-4
 // tagging/flow-spike.js probe, now superseded.
@@ -23,7 +46,9 @@ const {
   DEFAULT_PENDING_BACKSTOP_SIZE,
 } = require('../context/threads-store');
 const { runRespondStep } = require('../processing/respond');
+const { runExtractStep } = require('../processing/extract');
 const { appendJobLogEntry } = require('./job-log');
+const { withLock } = require('./keyed-lock');
 const { safeSegment } = require('../storage/paths');
 const { getPluginRuntime, getRoutingAgentId } = require('../runtime');
 
@@ -43,6 +68,11 @@ function safeMutate(fnName, bound, log, params) {
     );
     return null;
   }
+}
+
+function errorMessage(err) {
+  if (!err) return null;
+  return err.message ?? String(err);
 }
 
 async function runMessageFlow({
@@ -88,16 +118,75 @@ async function runMessageFlow({
   const flowId = flow?.flowId ?? null;
   let revision = flow?.revision ?? null;
 
-  // -- gate step (v3 §4) — unchanged call into tagging/dispatch.js.
+  // -- gate + flush (layer 2a) — one critical section per thread. --
   const gateStartedAt = new Date().toISOString();
-  const tagResult = await dispatchTaggingGate({
-    pluginRuntime,
-    spaceId,
-    threadKey,
-    message,
-    botId,
-    log,
+
+  let tagResult = null;
+  let decision = null;
+  let backstopTriggered = false;
+  let shouldProcess = false;
+  let messageIds = [];
+
+  await withLock(`gate:${spaceId}:${threadKey}`, async () => {
+    tagResult = await dispatchTaggingGate({
+      pluginRuntime,
+      spaceId,
+      threadKey,
+      message,
+      botId,
+      log,
+    });
+
+    const botIsMentioned =
+      Array.isArray(message.mentionedPeople) && message.mentionedPeople.includes(botId);
+
+    decision = decideDispatch({ tagResult, botIsMentioned });
+
+    // v3 §2 backstop: a thread that never gets addressed and never gets
+    // judged "ready" would otherwise accumulate pending messages
+    // indefinitely (pending has no storage cap — see threads-store.js).
+    // Forces a flush past this size regardless of the gate's judgment. Not
+    // a primary trigger — the gate still runs and its judgment still
+    // stands for everything except shouldProcess.
+    backstopTriggered = pendingCount >= DEFAULT_PENDING_BACKSTOP_SIZE;
+    shouldProcess = decision.shouldProcess || backstopTriggered;
+
+    if (!shouldProcess) return;
+
+    const pendingSlice = await getPendingSlice({ spaceId, threadKey });
+    messageIds = pendingSlice.map((entry) => entry.id);
+
+    log?.info?.(
+      `${LOG_PREFIX} flushing pending slice ${JSON.stringify({
+        spaceId,
+        threadKey,
+        flowId,
+        pendingCount: messageIds.length,
+      })}`
+    );
+
+    if (messageIds.length > 0) {
+      await markThreadMessagesProcessing({ spaceId, threadKey, messageIds });
+    }
+
+    const resumed = safeMutate('resume', bound, log, {
+      flowId,
+      expectedRevision: revision,
+      currentStep: 'process',
+      stateJson: {
+        directive: {
+          addressed: decision.finalIsMentioned,
+          ready: decision.ready,
+          reason: decision.reason,
+        },
+        pendingCount: messageIds.length,
+        backstopTriggered,
+        messageIds,
+      },
+    });
+    revision = resumed?.flow?.revision ?? revision;
   });
+
   const gateEndedAt = new Date().toISOString();
 
   if (flowId) {
@@ -112,21 +201,8 @@ async function runMessageFlow({
     }).catch(() => {});
   }
 
-  const botIsMentioned =
-    Array.isArray(message.mentionedPeople) && message.mentionedPeople.includes(botId);
-
-  const decision = decideDispatch({ tagResult, botIsMentioned });
-
-  // v3 §2 backstop: a thread that never gets addressed and never gets judged
-  // "ready" would otherwise accumulate pending messages indefinitely (pending
-  // has no storage cap — see threads-store.js). Forces a flush past this size
-  // regardless of the gate's judgment. Not a primary trigger — the gate still
-  // runs and its judgment still stands for everything except shouldProcess.
-  const backstopTriggered = pendingCount >= DEFAULT_PENDING_BACKSTOP_SIZE;
-  const shouldProcess = decision.shouldProcess || backstopTriggered;
-
   // Anchor line for understanding this message's outcome from logs alone —
-  // same shape as before phase 5, just moved here from inbound/message.js.
+  // same shape as before phase 5/6, just moved here from inbound/message.js.
   log?.info?.(
     `${LOG_PREFIX} dispatch decision ${JSON.stringify({
       spaceId,
@@ -137,7 +213,6 @@ async function runMessageFlow({
       gateIsMentioned: tagResult?.messageTags?.isMentioned ?? null,
       gateConfigRequest: tagResult?.messageTags?.configRequest ?? null,
       gateReady: tagResult?.pendingThreadWindowDecision?.ready ?? null,
-      botIsMentioned,
       finalIsMentioned: decision.finalIsMentioned,
       configRequest: decision.configRequest,
       pendingCount: pendingCount ?? null,
@@ -147,7 +222,10 @@ async function runMessageFlow({
   );
 
   // configRequest and shouldProcess are independent (both can fire for the
-  // same message) — preserve that, matches pre-phase-5 behavior.
+  // same message) — preserve that, matches pre-phase-5 behavior. Not part
+  // of the gate lock: it's a side effect against Webex, not thread state,
+  // and holding the lock for that network call would needlessly delay the
+  // next message's gate cycle for this thread.
   if (decision.configRequest) {
     await handleConfigRequest({ spaceId, account, log, sendFn });
   }
@@ -162,66 +240,51 @@ async function runMessageFlow({
     return;
   }
 
-  const pendingSlice = await getPendingSlice({ spaceId, threadKey });
-  const messageIds = pendingSlice.map((entry) => entry.id);
-
-  log?.info?.(
-    `${LOG_PREFIX} flushing pending slice ${JSON.stringify({
-      spaceId,
-      threadKey,
-      flowId,
-      pendingCount: messageIds.length,
-    })}`
-  );
-
-  // TEMPORARY BRIDGE (phase 6, foundation chunk): flush straight through to
-  // finalize, back to back, preserving today's exact timing/behavior. This
-  // is not the target design — the real gate+flush lock (layer 2a) and the
-  // extract step that finalize is actually meant to wait on both land in the
-  // next chunk (see plan: Concurrency, Wiring). Splitting the rename from
-  // the real wiring keeps this commit's tests green without a half-built
-  // locking story in between.
-  if (messageIds.length > 0) {
-    await markThreadMessagesProcessing({ spaceId, threadKey, messageIds });
-    await finalizeProcessingMessages({ spaceId, threadKey, messageIds });
-  }
-
-  const resumed = safeMutate('resume', bound, log, {
-    flowId,
-    expectedRevision: revision,
-    currentStep: 'respond',
-    stateJson: {
-      directive: {
-        addressed: decision.finalIsMentioned,
-        ready: decision.ready,
-        reason: decision.reason,
-      },
-      pendingCount: messageIds.length,
-      backstopTriggered,
-    },
-  });
-  revision = resumed?.flow?.revision ?? revision;
-
+  // -- extract (layer 2b) + respond (unlocked), run together, not chained. --
+  const extractStartedAt = new Date().toISOString();
   const respondStartedAt = new Date().toISOString();
-  let respondResult = null;
-  let respondError = null;
 
-  try {
-    respondResult = await runRespondStep({
+  const [extractSettled, respondSettled] = await Promise.allSettled([
+    withLock(`extract:${spaceId}`, () =>
+      runExtractStep({ pluginRuntime, spaceId, threadKey, messageIds, log })
+    ),
+    runRespondStep({
       pluginRuntime,
       spaceId,
       threadKey,
       message,
       decision,
+      messageIds,
       log,
-    });
-  } catch (err) {
-    respondError = err;
-  }
+    }),
+  ]);
 
+  const extractEndedAt = new Date().toISOString();
   const respondEndedAt = new Date().toISOString();
 
+  const extractResult = extractSettled.status === 'fulfilled' ? extractSettled.value : null;
+  const extractError = extractSettled.status === 'rejected' ? extractSettled.reason : null;
+  const respondResult = respondSettled.status === 'fulfilled' ? respondSettled.value : null;
+  const respondError = respondSettled.status === 'rejected' ? respondSettled.reason : null;
+
   if (flowId) {
+    await appendJobLogEntry({
+      spaceId,
+      flowId,
+      step: 'extract',
+      runId: extractResult?.runId ?? null,
+      sessionKey: extractResult?.sessionKey ?? null,
+      startedAt: extractStartedAt,
+      endedAt: extractEndedAt,
+      outcome: extractError ? 'error' : 'success',
+      error: errorMessage(extractError),
+      toolCalls: extractResult?.toolCalls ?? null,
+      inputSummary: {
+        messageId: message?.id ?? null,
+        pendingCount: messageIds.length,
+      },
+    }).catch(() => {});
+
     await appendJobLogEntry({
       spaceId,
       flowId,
@@ -231,7 +294,7 @@ async function runMessageFlow({
       startedAt: respondStartedAt,
       endedAt: respondEndedAt,
       outcome: respondError ? 'error' : 'success',
-      error: respondError ? (respondError.message ?? String(respondError)) : null,
+      error: errorMessage(respondError),
       toolCalls: respondResult?.toolCalls ?? null,
       inputSummary: {
         messageId: message?.id ?? null,
@@ -242,28 +305,46 @@ async function runMessageFlow({
     }).catch(() => {});
   }
 
+  if (extractError) {
+    log?.error?.(
+      `${LOG_PREFIX} extract step failed ${JSON.stringify({
+        spaceId,
+        threadKey,
+        flowId,
+        error: errorMessage(extractError),
+      })}`
+    );
+  }
+
   if (respondError) {
     log?.error?.(
       `${LOG_PREFIX} respond step failed ${JSON.stringify({
         spaceId,
         threadKey,
         flowId,
-        error: respondError.message ?? String(respondError),
+        error: errorMessage(respondError),
       })}`
     );
-    safeMutate('fail', bound, log, {
-      flowId,
-      expectedRevision: revision,
-      stateJson: { outcome: 'respond-failed' },
-      blockedSummary: String(respondError.message ?? respondError).slice(0, 200),
-    });
-    return;
+  }
+
+  // Finalize regardless of either step's outcome — the batch was already
+  // claimed at flush time (now sitting in `processing`); leaving it there
+  // forever on a step failure would just strand it. "Maintain service": the
+  // flow always reaches `finish`, never `fail`, with per-step errors
+  // captured in stateJson for later inspection instead of halting anything.
+  if (messageIds.length > 0) {
+    await finalizeProcessingMessages({ spaceId, threadKey, messageIds });
   }
 
   safeMutate('finish', bound, log, {
     flowId,
     expectedRevision: revision,
-    stateJson: { outcome: 'respond-complete', didSend: Boolean(respondResult?.didSend) },
+    stateJson: {
+      outcome: 'process-complete',
+      extractError: Boolean(extractError),
+      respondError: Boolean(respondError),
+      didSend: Boolean(respondResult?.didSend),
+    },
   });
 }
 

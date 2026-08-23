@@ -40,32 +40,6 @@ const DEFAULT_WAIT_TIMEOUT_MS = 15_000;
 // access (`processed` is already storage-capped at 10 — see threads-store.js).
 const DEFAULT_MIN_CONTEXT_SIZE = 5;
 
-// Serialise gate runs per thread so a thread's pending tag result (keyed by
-// spaceId+threadKey in tagging/tool.js) can never be raced by two concurrent
-// gate calls for the same thread.
-const taggingQueues = new Map();
-
-function enqueueTaggingDispatch(queueKey, job) {
-  const previous = taggingQueues.get(queueKey) ?? Promise.resolve();
-
-  const next = previous.catch(() => {}).then(job);
-
-  taggingQueues.set(queueKey, next);
-  // Separate branch for cleanup so it doesn't affect what `next` resolves/
-  // rejects with; catch here so a job failure doesn't surface as an
-  // unhandled rejection on this branch (the caller still observes it via
-  // the returned `next` promise).
-  next
-    .catch(() => {})
-    .finally(() => {
-      if (taggingQueues.get(queueKey) === next) {
-        taggingQueues.delete(queueKey);
-      }
-    });
-
-  return next;
-}
-
 async function runTaggingGate({
   pluginRuntime,
   spaceId,
@@ -181,8 +155,17 @@ function readToolCallCount(result) {
 
 // Entry point. Never throws — resolves to the tag result on success, or
 // `null` if the gate is unavailable, fails, or never calls tag_message. The
-// caller (inbound/message.js) awaits this and feeds the result into
+// caller (flow/run-message-flow.js) awaits this and feeds the result into
 // deterministic dispatch (tagging/decide.js).
+//
+// No per-thread locking here (phase 6 removed the queue this module used to
+// own) — the caller now wraps this call together with the flush that
+// follows it (markThreadMessagesProcessing) in one `withLock('gate:...')`
+// critical section (flow/keyed-lock.js), so a thread's pending tag result
+// (tagging/tool.js) still can't be raced by a second concurrent gate call,
+// and the flush that acts on this result can't race a second gate decision
+// for the same thread either — a strictly wider guarantee than the old
+// gate-only queue gave.
 async function dispatchTaggingGate({
   pluginRuntime,
   spaceId,
@@ -203,21 +186,17 @@ async function dispatchTaggingGate({
     return null;
   }
 
-  const queueKey = `${spaceId}::${threadKey}`;
-
   try {
-    return await enqueueTaggingDispatch(queueKey, () =>
-      runTaggingGate({
-        pluginRuntime,
-        spaceId,
-        threadKey,
-        message,
-        botId,
-        log,
-        waitTimeoutMs,
-        explicitRoot,
-      })
-    );
+    return await runTaggingGate({
+      pluginRuntime,
+      spaceId,
+      threadKey,
+      message,
+      botId,
+      log,
+      waitTimeoutMs,
+      explicitRoot,
+    });
   } catch (err) {
     log?.error?.(
       `[collab-agent:tagging-dispatch] tagging gate spawn failed ${JSON.stringify({

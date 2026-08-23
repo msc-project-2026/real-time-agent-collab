@@ -6,6 +6,8 @@ const {
   completeProcessingBatchTool,
 } = require('./tools/complete-processing-batch');
 const { tagMessageTool } = require('./tagging/tool');
+const { writeTaskTool } = require('./processing/write-task-tool');
+const { searchTasksTool } = require('./processing/search-tasks-tool');
 
 const { webexPlugin } = require('./channel');
 const { webhookRouter } = require('./webhook/router');
@@ -59,6 +61,8 @@ function register(api) {
   // still exercised by processing-pipeline tests; full removal is routing/*'s
   // formal retirement (v3 migration phase 5+).
   api.registerTool(tagMessageTool());
+  api.registerTool(writeTaskTool());
+  api.registerTool(searchTasksTool());
   api.registerTool(loadProcessingBatchTool());
   api.registerTool(completeProcessingBatchTool());
 }

@@ -3,32 +3,47 @@
 
 // v3 phase 5 respond step. Unlike the tagging gate (narrow: pending slice
 // only), this step gets the full thread window — it needs enough context to
-// actually decide what, if anything, to say.
+// actually decide what, if anything, to say. Phase 6 adds the active-tasks
+// injection (so a reply can reference a task from a prior turn's extraction)
+// and the search_tasks tool for anything outside that set — task *writing*
+// stays extract's job; respond never gets write_task (see phase-6 plan:
+// Concurrency / tool visibility — no per-step tool allowlist exists, so the
+// only lever here is telling the model exactly which tools are its job,
+// the same pattern tag_message's own description already relies on).
 
-function formatWindowEntry(entry) {
+const { formatWindowSections } = require('./format-window');
+
+function formatTaskEntry(task) {
   return {
-    id: entry.id,
-    senderName: entry.senderName ?? null,
-    content: entry.content ?? '',
-    botIsMentioned: Boolean(entry.botIsMentioned),
-    datetime: entry.datetime ?? null,
+    id: task.id,
+    type: task.type,
+    status: task.status,
+    assigned: task.assigned,
+    deadline: task.deadline,
   };
 }
 
-function buildRespondInstruction({ spaceId, threadKey, window, directive, replyThreadId }) {
+function buildRespondInstruction({
+  spaceId,
+  threadKey,
+  window,
+  messageIds,
+  directive,
+  replyThreadId,
+  activeTasks,
+}) {
   if (!spaceId) throw new Error('spaceId is required');
   if (!threadKey) throw new Error('threadKey is required');
 
-  const pending = Array.isArray(window?.pending) ? window.pending : [];
-  const processed = Array.isArray(window?.processed) ? window.processed : [];
-  const combined = [...processed, ...pending].map(formatWindowEntry);
+  const sections = formatWindowSections({ window, messageIds });
+  const tasks = (Array.isArray(activeTasks) ? activeTasks : []).map(formatTaskEntry);
 
   return `
 ## Task
 
-You are the agent's response step for one Webex thread. You have the thread's recent activity below and one directive explaining why you were triggered. Decide whether a response is warranted, and if so, send it using the available message tool. If not, do not call the message tool at all.
+You are the agent's response step for one Webex thread. You have the thread's recent history and the new message(s) below, plus one directive explaining why you were triggered. Decide whether a response is warranted, and if so, send it using the message tool. If not, do not call the message tool at all.
 
-You are not limited to a single message. The pending portion below may contain more than one distinct point worth addressing — if so, call the message tool as many times as genuinely warranted, one call per message, the same way a person would send a couple of short messages in a row rather than cramming unrelated replies into one wall of text. Don't call it repeatedly for no reason, though — most turns still warrant exactly one reply, or none.
+You are not limited to a single message. The new messages below may contain more than one distinct point worth addressing — if so, call the message tool as many times as genuinely warranted, one call per message, the same way a person would send a couple of short messages in a row rather than cramming unrelated replies into one wall of text. Don't call it repeatedly for no reason, though — most turns still warrant exactly one reply, or none.
 
 ### Directive
 
@@ -38,13 +53,29 @@ You are not limited to a single message. The pending portion below may contain m
 
 If \`addressed\` is true, you should respond — someone is actively talking to you and expecting a reply, the same as if they'd spoken to you directly in person. Do not withhold a reply just because the message itself doesn't look like a formal question or request — a casual remark aimed at you (e.g. "you there?", "are you free?") still gets a reply, the same way a person would answer rather than stay silent. If only \`ready\` is true (not addressed), respond only if a reply is genuinely warranted — staying silent is the common case for a thread that wasn't talking to you.
 
-### Thread window
-
-Already-processed history followed by the newly-flushed pending portion that triggered this run, in arrival order.
+### Recent history
 
 \`\`\`json
-${JSON.stringify(combined, null, 2)}
+${JSON.stringify(sections.history, null, 2)}
 \`\`\`
+
+### New messages
+
+\`\`\`json
+${JSON.stringify(sections.batch, null, 2)}
+\`\`\`
+
+### Active tasks
+
+Tasks currently tracked for this space, most recently updated first. You may reference one of these by name in your reply if relevant.
+
+\`\`\`json
+${JSON.stringify(tasks, null, 2)}
+\`\`\`
+
+### Tools available to you
+
+You have exactly two tools for this task: the message tool, to send a reply, and \`search_tasks\`, to look up a task that's referenced but isn't listed above. Use only these.
 
 ### How to respond
 

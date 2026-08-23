@@ -15,6 +15,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { getThread, MAIN_THREAD_KEY } = require('../context/threads-store');
+const { getActiveTasks } = require('../context/tasks-store');
 const { safeSegment } = require('../storage/paths');
 const { buildRespondInstruction } = require('./respond-instruction');
 const { getRoutingAgentId } = require('../runtime');
@@ -27,14 +28,17 @@ async function runRespondStep({
   threadKey,
   message,
   decision,
+  messageIds,
   log,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   explicitRoot,
 }) {
   if (!spaceId) throw new Error('spaceId is required');
   if (!threadKey) throw new Error('threadKey is required');
+  if (!Array.isArray(messageIds)) throw new Error('messageIds array is required');
 
   const window = await getThread({ spaceId, threadKey, explicitRoot });
+  const activeTasks = await getActiveTasks({ spaceId, explicitRoot });
 
   // Replies always go into a thread, never posted bare in the main space —
   // the agent should always be replying under whatever message it understood
@@ -67,12 +71,14 @@ async function runRespondStep({
     spaceId,
     threadKey,
     window,
+    messageIds,
     directive: {
       addressed: decision?.finalIsMentioned,
       ready: decision?.ready,
       reason: decision?.reason,
     },
     replyThreadId,
+    activeTasks,
   });
 
   const agentId = getRoutingAgentId();

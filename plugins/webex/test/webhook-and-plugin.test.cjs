@@ -1000,6 +1000,8 @@ describe('plugin registration and tool exposure', () => {
     const boardRouter = t.mock.fn();
     const setPluginRuntime = t.mock.fn();
     const tagTool = { name: 'tag_message' };
+    const writeTaskToolStub = { name: 'write_task' };
+    const searchTasksToolStub = { name: 'search_tasks' };
     const loadTool = { name: 'load' };
     const completeTool = { name: 'complete' };
     const loaded = loadWithMocks(require.resolve('../index'), {
@@ -1009,6 +1011,12 @@ describe('plugin registration and tool exposure', () => {
       [require.resolve('../visibility/board-router')]: { boardRouter },
       [require.resolve('../runtime')]: { setPluginRuntime, setPluginConfig: t.mock.fn() },
       [require.resolve('../tagging/tool')]: { tagMessageTool: () => tagTool },
+      [require.resolve('../processing/write-task-tool')]: {
+        writeTaskTool: () => writeTaskToolStub,
+      },
+      [require.resolve('../processing/search-tasks-tool')]: {
+        searchTasksTool: () => searchTasksToolStub,
+      },
       [require.resolve('../tools/load-processing-batch')]: {
         loadProcessingBatchTool: () => loadTool,
       },
@@ -1037,7 +1045,7 @@ describe('plugin registration and tool exposure', () => {
     );
     assert.deepEqual(
       api.registerTool.mock.calls.map((call) => call.arguments[0]),
-      [tagTool, loadTool, completeTool]
+      [tagTool, writeTaskToolStub, searchTasksToolStub, loadTool, completeTool]
     );
   });
 
