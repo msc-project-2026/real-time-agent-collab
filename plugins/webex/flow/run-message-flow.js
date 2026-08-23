@@ -19,6 +19,7 @@ const { handleConfigRequest } = require('../config/handle-request');
 const {
   getPendingSlice,
   markThreadMessagesProcessed,
+  DEFAULT_PENDING_BACKSTOP_SIZE,
 } = require('../context/threads-store');
 const { runRespondStep } = require('../processing/respond');
 const { appendJobLogEntry } = require('./job-log');
@@ -48,6 +49,7 @@ async function runMessageFlow({
   threadKey,
   message,
   botId,
+  pendingCount,
   account,
   log,
   sendFn,
@@ -92,6 +94,7 @@ async function runMessageFlow({
     spaceId,
     threadKey,
     message,
+    botId,
     log,
   });
   const gateEndedAt = new Date().toISOString();
@@ -113,6 +116,14 @@ async function runMessageFlow({
 
   const decision = decideDispatch({ tagResult, botIsMentioned });
 
+  // v3 §2 backstop: a thread that never gets addressed and never gets judged
+  // "ready" would otherwise accumulate pending messages indefinitely (pending
+  // has no storage cap — see threads-store.js). Forces a flush past this size
+  // regardless of the gate's judgment. Not a primary trigger — the gate still
+  // runs and its judgment still stands for everything except shouldProcess.
+  const backstopTriggered = pendingCount >= DEFAULT_PENDING_BACKSTOP_SIZE;
+  const shouldProcess = decision.shouldProcess || backstopTriggered;
+
   // Anchor line for understanding this message's outcome from logs alone —
   // same shape as before phase 5, just moved here from inbound/message.js.
   log?.info?.(
@@ -128,7 +139,9 @@ async function runMessageFlow({
       botIsMentioned,
       finalIsMentioned: decision.finalIsMentioned,
       configRequest: decision.configRequest,
-      shouldProcess: decision.shouldProcess,
+      pendingCount: pendingCount ?? null,
+      backstopTriggered,
+      shouldProcess,
     })}`
   );
 
@@ -138,7 +151,7 @@ async function runMessageFlow({
     await handleConfigRequest({ spaceId, account, log, sendFn });
   }
 
-  if (!decision.shouldProcess) {
+  if (!shouldProcess) {
     const finished = safeMutate('finish', bound, log, {
       flowId,
       expectedRevision: revision,
@@ -150,6 +163,15 @@ async function runMessageFlow({
 
   const pendingSlice = await getPendingSlice({ spaceId, threadKey });
   const messageIds = pendingSlice.map((entry) => entry.id);
+
+  log?.info?.(
+    `${LOG_PREFIX} flushing pending slice ${JSON.stringify({
+      spaceId,
+      threadKey,
+      flowId,
+      pendingCount: messageIds.length,
+    })}`
+  );
 
   if (messageIds.length > 0) {
     await markThreadMessagesProcessed({ spaceId, threadKey, messageIds });
@@ -165,6 +187,8 @@ async function runMessageFlow({
         ready: decision.ready,
         reason: decision.reason,
       },
+      pendingCount: messageIds.length,
+      backstopTriggered,
     },
   });
   revision = resumed?.flow?.revision ?? revision;
@@ -204,6 +228,7 @@ async function runMessageFlow({
         messageId: message?.id ?? null,
         addressed: decision.finalIsMentioned,
         ready: decision.ready,
+        pendingCount: messageIds.length,
       },
     }).catch(() => {});
   }

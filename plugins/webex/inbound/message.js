@@ -50,7 +50,7 @@ async function handleHydratedWebexMessage({
 
   // Thread handling — the message is durably stored as `pending` before
   // anything downstream runs (v3 §3), regardless of what dispatch decides.
-  const { threadKey } = await appendMessageToThreadWindow({
+  const { threadKey, pendingCount } = await appendMessageToThreadWindow({
     spaceId,
     message,
     botId,
@@ -73,6 +73,7 @@ async function handleHydratedWebexMessage({
     threadKey,
     message,
     botId,
+    pendingCount,
     account,
     log,
     sendFn,

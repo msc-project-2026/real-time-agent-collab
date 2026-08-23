@@ -78,6 +78,7 @@ function loadFlow(t, overrides = {}) {
     [require.resolve('../context/threads-store')]: {
       getPendingSlice: collaborators.getPendingSlice,
       markThreadMessagesProcessed: collaborators.markThreadMessagesProcessed,
+      DEFAULT_PENDING_BACKSTOP_SIZE: 50,
     },
     [require.resolve('../processing/respond')]: {
       runRespondStep: collaborators.runRespondStep,
@@ -97,6 +98,7 @@ function baseParams(t, overrides = {}) {
     threadKey: '__main__',
     message: { id: 'message-1', mentionedPeople: [] },
     botId: 'bot-1',
+    pendingCount: 1,
     account: { accountId: 'default' },
     log: makeLog(t),
     sendFn: undefined,
@@ -116,6 +118,39 @@ describe('runMessageFlow — nothing warranted', () => {
     assert.equal(collaborators.runRespondStep.mock.callCount(), 0);
     assert.equal(finishSpy.mock.callCount(), 1);
     assert.equal(finishSpy.mock.calls[0].arguments[0].flowId, 'flow-1');
+  });
+});
+
+describe('runMessageFlow — pending backstop (v3 §2)', () => {
+  test('forces shouldProcess once pendingCount reaches the backstop size, even when the gate says neither addressed nor ready', async (t) => {
+    const { runMessageFlow, collaborators } = loadFlow(t);
+
+    await runMessageFlow(baseParams(t, { pendingCount: 50 }));
+
+    assert.equal(collaborators.runRespondStep.mock.callCount(), 1);
+  });
+
+  test('does not force shouldProcess below the backstop size', async (t) => {
+    const { runMessageFlow, collaborators } = loadFlow(t);
+
+    await runMessageFlow(baseParams(t, { pendingCount: 49 }));
+
+    assert.equal(collaborators.runRespondStep.mock.callCount(), 0);
+  });
+
+  test('logs backstopTriggered on the dispatch-decision line', async (t) => {
+    const { runMessageFlow, collaborators } = loadFlow(t);
+    const log = makeLog(t);
+
+    await runMessageFlow(baseParams(t, { pendingCount: 62, log }));
+
+    const decisionLine = mockCalls(log.info).find(([text]) =>
+      text.includes('dispatch decision')
+    );
+    const payload = JSON.parse(decisionLine[0].slice(decisionLine[0].indexOf('{')));
+    assert.equal(payload.backstopTriggered, true);
+    assert.equal(payload.pendingCount, 62);
+    assert.equal(payload.shouldProcess, true);
   });
 });
 

@@ -23,7 +23,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 
-const { getPendingSlice } = require('../context/threads-store');
+const { getThread } = require('../context/threads-store');
 const { safeSegment } = require('../storage/paths');
 const { buildTaggingInstruction } = require('./instruction');
 const { takePendingTagResult } = require('./tool');
@@ -31,6 +31,14 @@ const { appendTaggingValidationRecord } = require('./validation-log');
 const { getRoutingAgentId } = require('../runtime');
 
 const DEFAULT_WAIT_TIMEOUT_MS = 15_000;
+// The gate's context is deliberately narrow (§4: pending slice only, cheap,
+// no accumulated history) — but a short/empty pending slice on its own can
+// leave the gate with zero surrounding context (e.g. a one-word reply in an
+// ongoing thread whose prior messages already flushed to `processed`). Pad
+// with a small, bounded tail of already-processed messages so the gate has
+// at least this many messages of background, without re-opening full-window
+// access (`processed` is already storage-capped at 10 — see threads-store.js).
+const DEFAULT_MIN_CONTEXT_SIZE = 5;
 
 // Serialise gate runs per thread so a thread's pending tag result (keyed by
 // spaceId+threadKey in tagging/tool.js) can never be raced by two concurrent
@@ -63,16 +71,23 @@ async function runTaggingGate({
   spaceId,
   threadKey,
   message,
+  botId,
   log,
   waitTimeoutMs = DEFAULT_WAIT_TIMEOUT_MS,
+  minContextSize = DEFAULT_MIN_CONTEXT_SIZE,
   explicitRoot,
 }) {
-  const pendingSlice = await getPendingSlice({ spaceId, threadKey });
+  const thread = await getThread({ spaceId, threadKey, explicitRoot });
+  const pendingSlice = Array.isArray(thread.pending) ? thread.pending : [];
+  const processed = Array.isArray(thread.processed) ? thread.processed : [];
+  const recentProcessed = processed.slice(-minContextSize);
 
   const instruction = buildTaggingInstruction({
     spaceId,
     threadKey,
     pendingSlice,
+    recentProcessed,
+    botId,
   });
 
   const agentId = getRoutingAgentId();
@@ -173,6 +188,7 @@ async function dispatchTaggingGate({
   spaceId,
   threadKey,
   message,
+  botId,
   log,
   waitTimeoutMs,
   explicitRoot,
@@ -196,6 +212,7 @@ async function dispatchTaggingGate({
         spaceId,
         threadKey,
         message,
+        botId,
         log,
         waitTimeoutMs,
         explicitRoot,

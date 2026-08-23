@@ -171,6 +171,58 @@ describe('buildTaggingInstruction', () => {
 
     assert.match(instruction, /\[\]/);
   });
+
+  test('flags entries sent by the bot itself as fromAgent, so the model can recognize its own prior messages', () => {
+    const pendingSlice = [
+      {
+        id: 'msg-1',
+        senderId: 'bot-1',
+        senderName: 'collab-agent@webex.bot',
+        content: "Hey! Yes, I'm here. How can I help?",
+        botIsMentioned: false,
+        datetime: '2026-08-22T21:37:59.455Z',
+      },
+      {
+        id: 'msg-2',
+        senderId: 'person-1',
+        senderName: 'Ada',
+        content: 'Great, are you well?',
+        botIsMentioned: false,
+        datetime: '2026-08-22T21:41:34.635Z',
+      },
+    ];
+
+    const instruction = buildTaggingInstruction({
+      spaceId: 'space-1',
+      threadKey: 'thread-1',
+      pendingSlice,
+      botId: 'bot-1',
+    });
+
+    const sliceJson = instruction.slice(
+      instruction.indexOf('```json') + 7,
+      instruction.lastIndexOf('```')
+    );
+    const parsed = JSON.parse(sliceJson);
+
+    assert.equal(parsed[0].fromAgent, true);
+    assert.equal(parsed[1].fromAgent, false);
+    assert.match(instruction, /fromAgent/);
+  });
+
+  test('treats every entry as not-from-agent when botId is omitted', () => {
+    const instruction = buildTaggingInstruction({
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      pendingSlice: [{ id: 'msg-1', senderId: 'bot-1', senderName: 'bot', content: 'hi' }],
+    });
+
+    const sliceJson = instruction.slice(
+      instruction.indexOf('```json') + 7,
+      instruction.lastIndexOf('```')
+    );
+    assert.equal(JSON.parse(sliceJson)[0].fromAgent, false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -180,9 +232,12 @@ describe('buildTaggingInstruction', () => {
 describe('dispatchTaggingGate', () => {
   function loadDispatch(t, overrides = {}) {
     const collaborators = {
-      getPendingSlice: t.mock.fn(async () => [
-        { id: 'msg-1', senderName: 'Ada', content: 'hi', botIsMentioned: false, datetime: null },
-      ]),
+      getThread: t.mock.fn(async () => ({
+        pending: [
+          { id: 'msg-1', senderName: 'Ada', content: 'hi', botIsMentioned: false, datetime: null },
+        ],
+        processed: [],
+      })),
       takePendingTagResult: t.mock.fn(() => ({
         messageTags: { isMentioned: true, configRequest: false },
         pendingThreadWindowDecision: { ready: true, reason: 'Complete ask.' },
@@ -194,7 +249,7 @@ describe('dispatchTaggingGate', () => {
 
     const loaded = loadWithMocks(require.resolve('../tagging/dispatch'), {
       [require.resolve('../context/threads-store')]: {
-        getPendingSlice: collaborators.getPendingSlice,
+        getThread: collaborators.getThread,
       },
       [require.resolve('../tagging/tool')]: {
         takePendingTagResult: collaborators.takePendingTagResult,
@@ -264,6 +319,43 @@ describe('dispatchTaggingGate', () => {
     assert.equal(record.pendingSliceSize, 1);
     assert.equal(record.toolCallAttempts, 1);
     assert.deepEqual(record.tagResult.messageTags, { isMentioned: true, configRequest: false });
+  });
+
+  test('passes botId through so the gate can recognize its own prior messages', async (t) => {
+    const runCalls = [];
+    const runEmbeddedAgent = t.mock.fn(async (params) => {
+      runCalls.push(params);
+      return { payloads: [{ text: 'done' }] };
+    });
+    const pluginRuntime = makeAgentRuntime(t, { runEmbeddedAgent });
+
+    const { dispatchTaggingGate } = loadDispatch(t, {
+      getThread: t.mock.fn(async () => ({
+        pending: [
+          { id: 'msg-1', senderId: 'bot-1', senderName: 'bot', content: 'Hi there', botIsMentioned: false, datetime: null },
+          { id: 'msg-2', senderId: 'person-1', senderName: 'Ada', content: 'Great, thanks', botIsMentioned: false, datetime: null },
+        ],
+        processed: [],
+      })),
+    });
+
+    await dispatchTaggingGate({
+      pluginRuntime,
+      spaceId: 'space-1',
+      threadKey: 'thread-1',
+      message: { id: 'msg-2' },
+      botId: 'bot-1',
+      log: makeLog(t),
+    });
+
+    const promptSlice = JSON.parse(
+      runCalls[0].prompt.slice(
+        runCalls[0].prompt.indexOf('```json') + 7,
+        runCalls[0].prompt.lastIndexOf('```')
+      )
+    );
+    assert.equal(promptSlice[0].fromAgent, true);
+    assert.equal(promptSlice[1].fromAgent, false);
   });
 
   test('reads a multi-attempt count from meta.toolSummary.calls (retried tag_message calls)', async (t) => {
@@ -344,7 +436,7 @@ describe('dispatchTaggingGate', () => {
       log,
     });
 
-    assert.equal(collaborators.getPendingSlice.mock.callCount(), 0);
+    assert.equal(collaborators.getThread.mock.callCount(), 0);
     assert.equal(log.warn.mock.callCount(), 1);
   });
 

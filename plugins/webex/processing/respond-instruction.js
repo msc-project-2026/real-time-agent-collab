@@ -47,7 +47,11 @@ ${JSON.stringify(combined, null, 2)}
 
 ### How to respond
 
-If you decide to reply, use the message tool. Keep it natural — you're a participant in this Webex space, not a system announcing an action.
+This conversation is happening in ${
+    threadKey === '__main__'
+      ? 'the main space (not an existing threaded reply)'
+      : `a threaded reply (thread root message id: ${threadKey})`
+  }. If you decide to reply, use the message tool — where it lands is handled automatically, not something you need to specify. Keep it natural — you're a participant in this Webex space, not a system announcing an action.
 
 If you decide not to reply, don't call the message tool at all. Once you've made your decision (and sent a message if warranted), respond with exactly the word \`done\` and nothing else — no explanation, no punctuation.
 `.trim();

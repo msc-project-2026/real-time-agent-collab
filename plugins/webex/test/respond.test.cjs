@@ -28,6 +28,7 @@ describe('runRespondStep', () => {
     const loaded = loadWithMocks(require.resolve('../processing/respond'), {
       [require.resolve('../context/threads-store')]: {
         getThread: collaborators.getThread,
+        MAIN_THREAD_KEY: '__main__',
       },
       [require.resolve('../runtime')]: {
         getRoutingAgentId: collaborators.getRoutingAgentId,
@@ -89,6 +90,50 @@ describe('runRespondStep', () => {
     assert.equal(result.didSend, true);
     assert.equal(result.sessionKey, params.sessionKey);
     assert.equal(result.runId, params.runId);
+  });
+
+  test('threads a main-space reply under the triggering message, never posts bare to main', async (t) => {
+    const runCalls = [];
+    const runEmbeddedAgent = t.mock.fn(async (params) => {
+      runCalls.push(params);
+      return { payloads: [] };
+    });
+    const pluginRuntime = makeAgentRuntime(t, { runEmbeddedAgent });
+    const { runRespondStep } = loadRespond(t);
+
+    await runRespondStep({
+      pluginRuntime,
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      message: { id: 'msg-1' },
+      decision: { finalIsMentioned: false, ready: true, reason: 'Ready.' },
+      log: makeLog(t),
+    });
+
+    assert.equal(runCalls[0].currentThreadTs, 'msg-1');
+    assert.equal(runCalls[0].messageThreadId, 'msg-1');
+  });
+
+  test('targets the reply thread for a non-main thread, so it does not land in the main space', async (t) => {
+    const runCalls = [];
+    const runEmbeddedAgent = t.mock.fn(async (params) => {
+      runCalls.push(params);
+      return { payloads: [] };
+    });
+    const pluginRuntime = makeAgentRuntime(t, { runEmbeddedAgent });
+    const { runRespondStep } = loadRespond(t);
+
+    await runRespondStep({
+      pluginRuntime,
+      spaceId: 'space-1',
+      threadKey: 'thread-root-message-1',
+      message: { id: 'msg-1' },
+      decision: { finalIsMentioned: true, ready: false, reason: 'Addressed.' },
+      log: makeLog(t),
+    });
+
+    assert.equal(runCalls[0].currentThreadTs, 'thread-root-message-1');
+    assert.equal(runCalls[0].messageThreadId, 'thread-root-message-1');
   });
 
   test('reports didSend false and toolCalls 0 for a silent "done" reply', async (t) => {

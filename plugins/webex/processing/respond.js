@@ -14,7 +14,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 
-const { getThread } = require('../context/threads-store');
+const { getThread, MAIN_THREAD_KEY } = require('../context/threads-store');
 const { safeSegment } = require('../storage/paths');
 const { buildRespondInstruction } = require('./respond-instruction');
 const { getRoutingAgentId } = require('../runtime');
@@ -55,6 +55,19 @@ async function runRespondStep({
   const workspaceDir = pluginRuntime.agent.resolveAgentWorkspaceDir(cfg, agentId);
   const agentDir = pluginRuntime.agent.resolveAgentDir(cfg, agentId);
 
+  // Replies always go into a thread, never posted bare in the main space —
+  // the agent should always be replying under whatever message it understood
+  // as addressing it. For a non-main thread, threadKey IS already the Webex
+  // message id the thread is rooted at (context/threads-store.js's
+  // getThreadKey), the exact value Webex needs as parentId. For a main-space
+  // message, there's no existing thread to anchor to, so the reply threads
+  // under the triggering message's own id instead, starting a new one —
+  // confirmed against live thread data that Webex threading is flat (every
+  // reply in a thread carries the same parentId as the root, not the
+  // immediately-preceding message), so anchoring to the root/triggering
+  // message id is correct either way, never a specific mid-thread reply.
+  const replyThreadId = threadKey === MAIN_THREAD_KEY ? message?.id : threadKey;
+
   let tempDir;
   let result;
   try {
@@ -76,6 +89,12 @@ async function runRespondStep({
       // to be able to actually send, unlike the gate.
       messageChannel: 'webex',
       currentChannelId: spaceId,
+      // Both fields set defensively — confirmed both flow through to the
+      // native message tool's reply-target resolution (agent-tools bundle),
+      // not confirmed which one Webex's channel adapter actually consults.
+      ...(replyThreadId
+        ? { currentThreadTs: replyThreadId, messageThreadId: replyThreadId }
+        : {}),
       allowEmptyAssistantReplyAsSilent: true,
     });
   } finally {
