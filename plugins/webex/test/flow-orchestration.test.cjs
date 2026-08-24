@@ -234,6 +234,11 @@ describe('runMessageFlow — shouldProcess', () => {
     // (see processing/format-window.js).
     assert.deepEqual(collaborators.runExtractStep.mock.calls[0].arguments[0].messageIds, ['message-1']);
     assert.deepEqual(collaborators.runRespondStep.mock.calls[0].arguments[0].messageIds, ['message-1']);
+    // account must reach respond — it's how the "known facts" board-URL
+    // derivation gets the deployment's public host (processing/respond/dispatch.js).
+    assert.deepEqual(collaborators.runRespondStep.mock.calls[0].arguments[0].account, {
+      accountId: 'default',
+    });
     assert.equal(finishSpy.mock.callCount(), 1);
     assert.equal(finishSpy.mock.calls[0].arguments[0].stateJson.extractError, false);
     assert.equal(finishSpy.mock.calls[0].arguments[0].stateJson.respondError, false);

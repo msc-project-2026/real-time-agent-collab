@@ -104,6 +104,85 @@ describe('runRespondStep', () => {
     assert.equal(result.runId, params.runId);
   });
 
+  test('includes the space id and a derived board URL in the prompt when the account has a webhook URL', async (t) => {
+    const runCalls = [];
+    const runEmbeddedAgent = t.mock.fn(async (params) => {
+      runCalls.push(params);
+      return { payloads: [] };
+    });
+    const pluginRuntime = makeAgentRuntime(t, { runEmbeddedAgent });
+    const { runRespondStep } = loadRespond(t);
+
+    await runRespondStep({
+      pluginRuntime,
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      message: { id: 'msg-1' },
+      messageIds: ['msg-1'],
+      decision: { finalIsMentioned: true, ready: false, reason: 'Addressed.' },
+      account: {
+        config: {
+          botWebhookUrl: 'https://example.up.railway.app/webhooks/webex/bot/default',
+        },
+      },
+      log: makeLog(t),
+    });
+
+    assert.match(runCalls[0].prompt, /This Webex space's id: `space-1`/);
+    assert.match(
+      runCalls[0].prompt,
+      /Task board URL for this space: https:\/\/example\.up\.railway\.app\/webex\/collab\/board\?spaceId=space-1/
+    );
+  });
+
+  test('omits the board URL fact (without crashing) when the account has no usable webhook URL', async (t) => {
+    const runCalls = [];
+    const runEmbeddedAgent = t.mock.fn(async (params) => {
+      runCalls.push(params);
+      return { payloads: [] };
+    });
+    const pluginRuntime = makeAgentRuntime(t, { runEmbeddedAgent });
+    const { runRespondStep } = loadRespond(t);
+
+    await runRespondStep({
+      pluginRuntime,
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      message: { id: 'msg-1' },
+      messageIds: ['msg-1'],
+      decision: { finalIsMentioned: true, ready: false, reason: 'Addressed.' },
+      // No account at all — mirrors any caller that hasn't threaded it through.
+      log: makeLog(t),
+    });
+
+    assert.match(runCalls[0].prompt, /This Webex space's id: `space-1`/);
+    assert.doesNotMatch(runCalls[0].prompt, /Task board URL/);
+  });
+
+  test('omits the board URL fact (without crashing) when botWebhookUrl is malformed', async (t) => {
+    const runCalls = [];
+    const runEmbeddedAgent = t.mock.fn(async (params) => {
+      runCalls.push(params);
+      return { payloads: [] };
+    });
+    const pluginRuntime = makeAgentRuntime(t, { runEmbeddedAgent });
+    const { runRespondStep } = loadRespond(t);
+
+    await runRespondStep({
+      pluginRuntime,
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      message: { id: 'msg-1' },
+      messageIds: ['msg-1'],
+      decision: { finalIsMentioned: true, ready: false, reason: 'Addressed.' },
+      account: { config: { botWebhookUrl: 'not-a-url' } },
+      log: makeLog(t),
+    });
+
+    assert.match(runCalls[0].prompt, /This Webex space's id: `space-1`/);
+    assert.doesNotMatch(runCalls[0].prompt, /Task board URL/);
+  });
+
   test('threads a main-space reply under the triggering message, never posts bare to main', async (t) => {
     const runCalls = [];
     const runEmbeddedAgent = t.mock.fn(async (params) => {

@@ -22,6 +22,25 @@ const { getRoutingAgentId } = require('../../runtime');
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+// The model has no way to know the space's own id or the board's URL on its
+// own — it's not something an LLM should ever guess or fabricate. Derived
+// from the account's own webhook URL (the one piece of config that reliably
+// carries the deployment's public host) rather than requiring new config.
+// Returns null if it can't be derived (e.g. account/config missing in a
+// test double) — the prompt just omits the fact rather than showing a
+// broken link.
+function deriveBoardUrl({ account, spaceId }) {
+  const webhookUrl = account?.config?.botWebhookUrl;
+  if (!webhookUrl) return null;
+
+  try {
+    const origin = new URL(webhookUrl).origin;
+    return `${origin}/webex/collab/board?spaceId=${encodeURIComponent(spaceId)}`;
+  } catch {
+    return null;
+  }
+}
+
 async function runRespondStep({
   pluginRuntime,
   spaceId,
@@ -29,6 +48,7 @@ async function runRespondStep({
   message,
   decision,
   messageIds,
+  account,
   log,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   explicitRoot,
@@ -39,6 +59,7 @@ async function runRespondStep({
 
   const window = await getThread({ spaceId, threadKey, explicitRoot });
   const activeTasks = await getActiveTasks({ spaceId, explicitRoot });
+  const knownFacts = { spaceId, boardUrl: deriveBoardUrl({ account, spaceId }) };
 
   // Replies always go into a thread, never posted bare in the main space —
   // the agent should always be replying under whatever message it understood
@@ -79,6 +100,7 @@ async function runRespondStep({
     },
     replyThreadId,
     activeTasks,
+    knownFacts,
   });
 
   const agentId = getRoutingAgentId();

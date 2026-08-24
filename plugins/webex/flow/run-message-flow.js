@@ -255,6 +255,7 @@ async function runMessageFlow({
       message,
       decision,
       messageIds,
+      account,
       log,
     }),
   ]);

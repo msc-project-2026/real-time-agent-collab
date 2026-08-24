@@ -24,6 +24,14 @@ function formatTaskEntry(task) {
   };
 }
 
+function formatKnownFacts(knownFacts) {
+  const lines = [`- This Webex space's id: \`${knownFacts?.spaceId ?? 'unknown'}\``];
+  if (knownFacts?.boardUrl) {
+    lines.push(`- Task board URL for this space: ${knownFacts.boardUrl}`);
+  }
+  return lines.join('\n');
+}
+
 function buildRespondInstruction({
   spaceId,
   threadKey,
@@ -32,6 +40,7 @@ function buildRespondInstruction({
   directive,
   replyThreadId,
   activeTasks,
+  knownFacts,
 }) {
   if (!spaceId) throw new Error('spaceId is required');
   if (!threadKey) throw new Error('threadKey is required');
@@ -73,6 +82,12 @@ Tasks currently tracked for this space, most recently updated first. You may ref
 \`\`\`json
 ${JSON.stringify(tasks, null, 2)}
 \`\`\`
+
+### Known facts
+
+If asked about any of these, answer directly and exactly — never guess or invent a value for something not listed here.
+
+${formatKnownFacts(knownFacts)}
 
 ### Tools available to you
 
