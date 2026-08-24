@@ -10,6 +10,9 @@
 // Concurrency / tool visibility — no per-step tool allowlist exists, so the
 // only lever here is telling the model exactly which tools are its job,
 // the same pattern tag_message's own description already relies on).
+// Phase 7 adds search_recall (v3 §9) for on-demand recall of something from
+// earlier history — possibly a different thread — that isn't already in
+// the window above.
 
 const { formatWindowSections } = require('../format-window');
 
@@ -91,7 +94,7 @@ ${formatKnownFacts(knownFacts)}
 
 ### Tools available to you
 
-You have exactly two tools for this task: the message tool, to send a reply, and \`search_tasks\`, to look up a task that's referenced but isn't listed above. Use only these.
+You have exactly three tools for this task: the message tool, to send a reply, \`search_tasks\`, to look up a task that's referenced but isn't listed above, and \`search_recall\`, to look up something from earlier history — possibly a different thread in this space — that isn't already shown above. Use only these.
 
 ### How to respond
 

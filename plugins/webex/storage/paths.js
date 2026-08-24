@@ -98,6 +98,19 @@ function taskParentIndexPath(spaceId, explicitRoot) {
   return path.join(contextDir(spaceId, explicitRoot), 'task-parents.json');
 }
 
+// v3 §9 recall/vector index (phase 7) — one index per space, same
+// per-space (not per-thread) convention as tasks.json/threads.json.
+function recallIndexPath(spaceId, explicitRoot) {
+  return path.join(contextDir(spaceId, explicitRoot), 'recall-index.json');
+}
+
+// Reverse old->new supersession lookup, same pattern as task-parents.json —
+// a recall entry's `supersedes` relationship is never mutated onto the old
+// entry itself (v3 §9: "Never mutate the old entry").
+function recallSupersessionIndexPath(spaceId, explicitRoot) {
+  return path.join(contextDir(spaceId, explicitRoot), 'recall-supersession.json');
+}
+
 // -- .collab/spaces/<spaceId>/tagging/
 function taggingDir(spaceId, explicitRoot) {
   return path.join(spaceDir(spaceId, explicitRoot), 'tagging');
@@ -142,6 +155,8 @@ module.exports = {
   threadsPath,
   tasksPath,
   taskParentIndexPath,
+  recallIndexPath,
+  recallSupersessionIndexPath,
   taggingDir,
   taggingValidationLogPath,
   jobsDir,

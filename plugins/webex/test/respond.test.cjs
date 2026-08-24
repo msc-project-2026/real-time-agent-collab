@@ -256,6 +256,29 @@ describe('runRespondStep', () => {
     assert.equal(result.didSend, false);
   });
 
+  test('mentions search_recall alongside search_tasks in the tools-available section (v3 §9, phase 7)', async (t) => {
+    const runCalls = [];
+    const runEmbeddedAgent = t.mock.fn(async (params) => {
+      runCalls.push(params);
+      return { payloads: [] };
+    });
+    const pluginRuntime = makeAgentRuntime(t, { runEmbeddedAgent });
+    const { runRespondStep } = loadRespond(t);
+
+    await runRespondStep({
+      pluginRuntime,
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      message: { id: 'msg-1' },
+      messageIds: ['msg-1'],
+      decision: { finalIsMentioned: true, ready: false, reason: 'Addressed.' },
+      log: makeLog(t),
+    });
+
+    assert.match(runCalls[0].prompt, /search_recall/);
+    assert.match(runCalls[0].prompt, /search_tasks/);
+  });
+
   test('propagates a spawn failure instead of swallowing it', async (t) => {
     const pluginRuntime = makeAgentRuntime(t, {
       runEmbeddedAgent: async () => {

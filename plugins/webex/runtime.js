@@ -27,6 +27,17 @@ function getRoutingAgentId() {
   return pluginConfig?.routingAgentId ?? 'main';
 }
 
+// v3 §9 recall (phase 7) — a separate, independently-configurable agent id
+// for resolving the /v1/embeddings endpoint's memorySearch config. Distinct
+// from routingAgentId (which is specifically about message-routing
+// classification, per its own config description) on principle — the two
+// are independent concerns that happen to default to the same value.
+// Defaults to routingAgentId's own resolution when unset, so a host that
+// hasn't configured this explicitly sees no change in behavior.
+function getEmbeddingsAgentId() {
+  return pluginConfig?.embeddingsAgentId ?? getRoutingAgentId();
+}
+
 function getPluginConfig() {
   return pluginConfig ?? {};
 }
@@ -37,4 +48,5 @@ module.exports = {
   setPluginConfig,
   getPluginConfig,
   getRoutingAgentId,
+  getEmbeddingsAgentId,
 };

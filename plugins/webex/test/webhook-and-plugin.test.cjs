@@ -1002,6 +1002,8 @@ describe('plugin registration and tool exposure', () => {
     const tagTool = { name: 'tag_message' };
     const writeTaskToolStub = { name: 'write_task' };
     const searchTasksToolStub = { name: 'search_tasks' };
+    const writeSummaryToolStub = { name: 'write_summary' };
+    const searchRecallToolStub = { name: 'search_recall' };
     const loaded = loadWithMocks(require.resolve('../index'), {
       [require.resolve('../channel')]: { webexPlugin },
       [require.resolve('../webhook/router')]: { webhookRouter },
@@ -1014,6 +1016,12 @@ describe('plugin registration and tool exposure', () => {
       },
       [require.resolve('../processing/search-tasks-tool')]: {
         searchTasksTool: () => searchTasksToolStub,
+      },
+      [require.resolve('../processing/summarize/tool')]: {
+        writeSummaryTool: () => writeSummaryToolStub,
+      },
+      [require.resolve('../processing/search-recall-tool')]: {
+        searchRecallTool: () => searchRecallToolStub,
       },
     });
     t.after(loaded.restore);
@@ -1037,7 +1045,7 @@ describe('plugin registration and tool exposure', () => {
     );
     assert.deepEqual(
       api.registerTool.mock.calls.map((call) => call.arguments[0]),
-      [tagTool, writeTaskToolStub, searchTasksToolStub]
+      [tagTool, writeTaskToolStub, searchTasksToolStub, writeSummaryToolStub, searchRecallToolStub]
     );
   });
 });

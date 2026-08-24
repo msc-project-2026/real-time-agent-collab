@@ -4,6 +4,8 @@
 const { tagMessageTool } = require('./processing/gate/tool');
 const { writeTaskTool } = require('./processing/extract/tool');
 const { searchTasksTool } = require('./processing/search-tasks-tool');
+const { writeSummaryTool } = require('./processing/summarize/tool');
+const { searchRecallTool } = require('./processing/search-recall-tool');
 
 const { webexPlugin } = require('./channel');
 const { webhookRouter } = require('./webhook/router');
@@ -54,6 +56,8 @@ function register(api) {
   api.registerTool(tagMessageTool());
   api.registerTool(writeTaskTool());
   api.registerTool(searchTasksTool());
+  api.registerTool(writeSummaryTool());
+  api.registerTool(searchRecallTool());
 }
 
 module.exports = register;

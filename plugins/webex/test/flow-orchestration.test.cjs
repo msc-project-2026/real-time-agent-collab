@@ -6,15 +6,16 @@ const { describe, test } = require('node:test');
 const { loadWithMocks, makeLog, mockCalls } = require('./helpers.cjs');
 
 // ---------------------------------------------------------------------------
-// Category: v3 phase 5/6 message-flow orchestration.
+// Category: v3 phase 5/6/7 message-flow orchestration.
 // runMessageFlow wraps the tagging gate + deterministic dispatch + extract +
-// respond as one managed Task Flow (flow-level tracking only, no runTask —
-// see v3 migration memory). Phase 6 makes extract and respond independent
-// steps that run together, not chained (see run-message-flow.js's own
-// comment block for the concurrency design). These tests exercise its
-// branching in isolation from the real Task Flow API, gate, extract, and
-// respond steps — flow/keyed-lock.js itself is NOT mocked, so the locking
-// behavior under test is real, not simulated.
+// summarize + respond as one managed Task Flow (flow-level tracking only, no
+// runTask — see v3 migration memory). Phase 6 makes extract and respond
+// independent steps that run together, not chained; phase 7 adds summarize
+// (v3 §9 recall) as a third independent sibling, same treatment (see
+// run-message-flow.js's own comment block for the concurrency design). These
+// tests exercise its branching in isolation from the real Task Flow API,
+// gate, extract, summarize, and respond steps — flow/keyed-lock.js itself is
+// NOT mocked, so the locking behavior under test is real, not simulated.
 // ---------------------------------------------------------------------------
 
 function makeBoundFlow(overrides = {}) {
@@ -72,6 +73,13 @@ function loadFlow(t, overrides = {}) {
       sessionKey: 'agent:main:webex:space-1:extract:__main__',
       runId: 'extract-123',
     })),
+    runSummarizeStep: t.mock.fn(async () => ({
+      outcome: 'success',
+      error: null,
+      toolCalls: 0,
+      sessionKey: 'agent:main:webex:space-1:summarize:__main__',
+      runId: 'summarize-123',
+    })),
     appendJobLogEntry: t.mock.fn(async () => undefined),
     ...overrides,
   };
@@ -99,6 +107,9 @@ function loadFlow(t, overrides = {}) {
     [require.resolve('../processing/extract/dispatch')]: {
       runExtractStep: collaborators.runExtractStep,
     },
+    [require.resolve('../processing/summarize/dispatch')]: {
+      runSummarizeStep: collaborators.runSummarizeStep,
+    },
     [require.resolve('../flow/job-log')]: {
       appendJobLogEntry: collaborators.appendJobLogEntry,
     },
@@ -123,7 +134,7 @@ function baseParams(t, overrides = {}) {
 }
 
 describe('runMessageFlow — nothing warranted', () => {
-  test('creates the flow, runs the gate, and finishes without config, extract, or respond', async (t) => {
+  test('creates the flow, runs the gate, and finishes without config, extract, summarize, or respond', async (t) => {
     const { runMessageFlow, collaborators, boundFlow } = loadFlow(t);
     const finishSpy = t.mock.method(boundFlow, 'finish');
 
@@ -132,6 +143,7 @@ describe('runMessageFlow — nothing warranted', () => {
     assert.equal(collaborators.dispatchTaggingGate.mock.callCount(), 1);
     assert.equal(collaborators.handleConfigRequest.mock.callCount(), 0);
     assert.equal(collaborators.runExtractStep.mock.callCount(), 0);
+    assert.equal(collaborators.runSummarizeStep.mock.callCount(), 0);
     assert.equal(collaborators.runRespondStep.mock.callCount(), 0);
     assert.equal(finishSpy.mock.callCount(), 1);
     assert.equal(finishSpy.mock.calls[0].arguments[0].flowId, 'flow-1');
@@ -145,6 +157,7 @@ describe('runMessageFlow — pending backstop (v3 §2)', () => {
     await runMessageFlow(baseParams(t, { pendingCount: 50 }));
 
     assert.equal(collaborators.runExtractStep.mock.callCount(), 1);
+    assert.equal(collaborators.runSummarizeStep.mock.callCount(), 1);
     assert.equal(collaborators.runRespondStep.mock.callCount(), 1);
   });
 
@@ -154,6 +167,7 @@ describe('runMessageFlow — pending backstop (v3 §2)', () => {
     await runMessageFlow(baseParams(t, { pendingCount: 49 }));
 
     assert.equal(collaborators.runExtractStep.mock.callCount(), 0);
+    assert.equal(collaborators.runSummarizeStep.mock.callCount(), 0);
     assert.equal(collaborators.runRespondStep.mock.callCount(), 0);
   });
 
@@ -174,7 +188,7 @@ describe('runMessageFlow — pending backstop (v3 §2)', () => {
 });
 
 describe('runMessageFlow — configRequest', () => {
-  test('hands off to the config flow and finishes without extract or respond', async (t) => {
+  test('hands off to the config flow and finishes without extract, summarize, or respond', async (t) => {
     const { runMessageFlow, collaborators, boundFlow } = loadFlow(t, {
       dispatchTaggingGate: (async () => ({
         messageTags: { isMentioned: false, configRequest: true },
@@ -188,6 +202,7 @@ describe('runMessageFlow — configRequest', () => {
     assert.equal(collaborators.handleConfigRequest.mock.callCount(), 1);
     assert.equal(collaborators.handleConfigRequest.mock.calls[0].arguments[0].spaceId, 'space-1');
     assert.equal(collaborators.runExtractStep.mock.callCount(), 0);
+    assert.equal(collaborators.runSummarizeStep.mock.callCount(), 0);
     assert.equal(collaborators.runRespondStep.mock.callCount(), 0);
     assert.equal(finishSpy.mock.callCount(), 1);
   });
@@ -227,12 +242,14 @@ describe('runMessageFlow — shouldProcess', () => {
     assert.equal(resumeSpy.mock.calls[0].arguments[0].currentStep, 'process');
     assert.deepEqual(resumeSpy.mock.calls[0].arguments[0].stateJson.messageIds, ['message-1']);
     assert.equal(collaborators.runExtractStep.mock.callCount(), 1);
+    assert.equal(collaborators.runSummarizeStep.mock.callCount(), 1);
     assert.equal(collaborators.runRespondStep.mock.callCount(), 1);
-    // Both steps must receive the flow's own claimed messageIds — this is
-    // what lets each step filter its own batch out of the shared
+    // All three steps must receive the flow's own claimed messageIds — this
+    // is what lets each step filter its own batch out of the shared
     // `processing` array rather than seeing another flow's messages
     // (see processing/format-window.js).
     assert.deepEqual(collaborators.runExtractStep.mock.calls[0].arguments[0].messageIds, ['message-1']);
+    assert.deepEqual(collaborators.runSummarizeStep.mock.calls[0].arguments[0].messageIds, ['message-1']);
     assert.deepEqual(collaborators.runRespondStep.mock.calls[0].arguments[0].messageIds, ['message-1']);
     // account must reach respond — it's how the "known facts" board-URL
     // derivation gets the deployment's public host (processing/respond/dispatch.js).
@@ -241,10 +258,17 @@ describe('runMessageFlow — shouldProcess', () => {
     });
     assert.equal(finishSpy.mock.callCount(), 1);
     assert.equal(finishSpy.mock.calls[0].arguments[0].stateJson.extractError, false);
+    assert.equal(finishSpy.mock.calls[0].arguments[0].stateJson.summarizeError, false);
     assert.equal(finishSpy.mock.calls[0].arguments[0].stateJson.respondError, false);
     assert.equal(
       collaborators.appendJobLogEntry.mock.calls.some(
         (call) => call.arguments[0].step === 'extract' && call.arguments[0].outcome === 'success'
+      ),
+      true
+    );
+    assert.equal(
+      collaborators.appendJobLogEntry.mock.calls.some(
+        (call) => call.arguments[0].step === 'summarize' && call.arguments[0].outcome === 'success'
       ),
       true
     );
@@ -270,7 +294,39 @@ describe('runMessageFlow — shouldProcess', () => {
     assert.equal(collaborators.markThreadMessagesProcessing.mock.callCount(), 0);
     assert.equal(collaborators.finalizeProcessingMessages.mock.callCount(), 0);
     assert.equal(collaborators.runExtractStep.mock.callCount(), 1);
+    assert.equal(collaborators.runSummarizeStep.mock.callCount(), 1);
     assert.equal(collaborators.runRespondStep.mock.callCount(), 1);
+  });
+
+  test('a summarize step failure does not block extract or respond, does not fail the flow, and still finalizes ("maintain service")', async (t) => {
+    const { runMessageFlow, collaborators, boundFlow } = loadFlow(t, {
+      dispatchTaggingGate: (async () => ({
+        messageTags: { isMentioned: true, configRequest: false },
+        pendingThreadWindowDecision: { ready: false, reason: 'Addressed.' },
+      })),
+      runSummarizeStep: (async () => {
+        throw new Error('embeddings request failed: 400');
+      }),
+    });
+    const finishSpy = t.mock.method(boundFlow, 'finish');
+    const failSpy = t.mock.method(boundFlow, 'fail');
+
+    await runMessageFlow(baseParams(t));
+
+    assert.equal(collaborators.runExtractStep.mock.callCount(), 1);
+    assert.equal(collaborators.runRespondStep.mock.callCount(), 1);
+    assert.equal(collaborators.finalizeProcessingMessages.mock.callCount(), 1);
+    assert.equal(failSpy.mock.callCount(), 0);
+    assert.equal(finishSpy.mock.callCount(), 1);
+    assert.equal(finishSpy.mock.calls[0].arguments[0].stateJson.summarizeError, true);
+    assert.equal(finishSpy.mock.calls[0].arguments[0].stateJson.extractError, false);
+    assert.equal(finishSpy.mock.calls[0].arguments[0].stateJson.respondError, false);
+    assert.equal(
+      collaborators.appendJobLogEntry.mock.calls.some(
+        (call) => call.arguments[0].step === 'summarize' && call.arguments[0].outcome === 'error'
+      ),
+      true
+    );
   });
 
   test('a respond step failure does not block extract, does not fail the flow, and still finalizes ("maintain service")', async (t) => {
@@ -390,6 +446,7 @@ describe('runMessageFlow — shouldProcess', () => {
 
     assert.equal(collaborators.handleConfigRequest.mock.callCount(), 1);
     assert.equal(collaborators.runExtractStep.mock.callCount(), 1);
+    assert.equal(collaborators.runSummarizeStep.mock.callCount(), 1);
     assert.equal(collaborators.runRespondStep.mock.callCount(), 1);
   });
 });
@@ -488,10 +545,96 @@ describe('runMessageFlow — concurrency locking', () => {
       'second-extract-end',
     ]);
   });
+
+  test('layer 2c: two summarize runs in the same space (different threads) still serialize', async (t) => {
+    const order = [];
+    let releaseFirstSummarize;
+    const firstSummarize = new Promise((resolve) => {
+      releaseFirstSummarize = resolve;
+    });
+    t.after(() => releaseFirstSummarize());
+
+    let callIndex = 0;
+    const { runMessageFlow } = loadFlow(t, {
+      dispatchTaggingGate: (async () => ({
+        messageTags: { isMentioned: true, configRequest: false },
+        pendingThreadWindowDecision: { ready: false, reason: 'Addressed.' },
+      })),
+      runSummarizeStep: t.mock.fn(async () => {
+        const isFirst = callIndex === 0;
+        callIndex += 1;
+        order.push(isFirst ? 'first-summarize-start' : 'second-summarize-start');
+        if (isFirst) {
+          await firstSummarize;
+        }
+        order.push(isFirst ? 'first-summarize-end' : 'second-summarize-end');
+        return { outcome: 'success', error: null, toolCalls: 0 };
+      }),
+    });
+
+    const firstFlow = runMessageFlow(
+      baseParams(t, { threadKey: 'thread-a', message: { id: 'message-1', mentionedPeople: [] } })
+    );
+    const secondFlow = runMessageFlow(
+      baseParams(t, { threadKey: 'thread-b', message: { id: 'message-2', mentionedPeople: [] } })
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    // Different threads, same space — the second summarize must still be
+    // queued behind the first (layer 2c is per-space, not per-thread, and
+    // uses its own lock key distinct from layer 2b's extract lock).
+    assert.deepEqual(order, ['first-summarize-start']);
+
+    releaseFirstSummarize();
+    await Promise.all([firstFlow, secondFlow]);
+    assert.deepEqual(order, [
+      'first-summarize-start',
+      'first-summarize-end',
+      'second-summarize-start',
+      'second-summarize-end',
+    ]);
+  });
+
+  test('extract and summarize use independent lock keys — neither blocks the other in the same space', async (t) => {
+    const order = [];
+    let releaseExtract;
+    const extractGate = new Promise((resolve) => {
+      releaseExtract = resolve;
+    });
+    t.after(() => releaseExtract());
+
+    const { runMessageFlow } = loadFlow(t, {
+      dispatchTaggingGate: (async () => ({
+        messageTags: { isMentioned: true, configRequest: false },
+        pendingThreadWindowDecision: { ready: false, reason: 'Addressed.' },
+      })),
+      runExtractStep: (async () => {
+        order.push('extract-start');
+        await extractGate;
+        order.push('extract-end');
+        return { outcome: 'success', error: null, toolCalls: 0 };
+      }),
+      runSummarizeStep: (async () => {
+        order.push('summarize-start');
+        order.push('summarize-end');
+        return { outcome: 'success', error: null, toolCalls: 0 };
+      }),
+    });
+
+    const flowPromise = runMessageFlow(baseParams(t));
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.ok(order.includes('summarize-end'), 'summarize should have completed');
+    assert.ok(!order.includes('extract-end'), 'extract should still be blocked');
+
+    releaseExtract();
+    await flowPromise;
+    assert.ok(order.includes('extract-end'), 'extract should complete once released');
+  });
 });
 
 describe('runMessageFlow — Task Flow unavailable', () => {
-  test('still runs the gate, extract, and respond when tasks.flow is missing, never throws', async (t) => {
+  test('still runs the gate, extract, summarize, and respond when tasks.flow is missing, never throws', async (t) => {
     const { runMessageFlow, collaborators } = loadFlow(t, {
       getPluginRuntime: (() => ({})),
       dispatchTaggingGate: (async () => ({
@@ -503,6 +646,7 @@ describe('runMessageFlow — Task Flow unavailable', () => {
     await assert.doesNotReject(runMessageFlow(baseParams(t)));
 
     assert.equal(collaborators.runExtractStep.mock.callCount(), 1);
+    assert.equal(collaborators.runSummarizeStep.mock.callCount(), 1);
     assert.equal(collaborators.runRespondStep.mock.callCount(), 1);
   });
 });

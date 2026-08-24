@@ -11,14 +11,18 @@
 //
 // Phase 6 adds a second step, extract (v3 §7c task extraction), as a sibling
 // to respond rather than a chained predecessor — see the concurrency design
-// below and the phase-6 plan for why. Both settle independently; neither
-// blocks or fails the other, "maintain service" per that plan's failure-
-// handling section — the flow always reaches `finish`, with any per-step
-// error captured in `stateJson` for later inspection rather than surfaced as
-// a flow-level failure.
+// below and the phase-6 plan for why. Phase 7 adds a third sibling,
+// summarize (v3 §9 recall/vector index) — same treatment, not chained (see
+// §7b's own recommended sequencing: "pulling summarize out as a parallel
+// sibling to extract"). All three settle independently; none blocks or fails
+// either other, "maintain service" per the phase-6 plan's failure-handling
+// section — the flow always reaches `finish`, with any per-step error
+// captured in `stateJson` for later inspection rather than surfaced as a
+// flow-level failure.
 //
-// Concurrency (phase 6 plan, "Concurrency — full design"): two lock layers
-// on top of threads-store.js's own internal per-space write lock (layer 1).
+// Concurrency (phase 6 plan, "Concurrency — full design"; phase 7 extends
+// it): lock layers on top of threads-store.js's own internal per-space write
+// lock (layer 1).
 // - Layer 2a: gate's LLM call + dispatch decision + flush, all inside one
 //   per-thread lock (`gate:${spaceId}:${threadKey}`) — a thread's next
 //   message can't start gating until this one's gate-and-flush has fully
@@ -29,6 +33,12 @@
 //   one per-space lock (`extract:${spaceId}`) — tasks.json/task-parents.json
 //   are space-scoped files (storage/paths.js), not thread-scoped, so
 //   extraction must serialize space-wide, not just per thread.
+// - Layer 2c (phase 7): the whole summarize step (spawn + write_summary/
+//   search_recall tool calls) inside its own per-space lock
+//   (`summarize:${spaceId}`) — recall-index.json/recall-supersession.json
+//   are space-scoped files, same reasoning as layer 2b, but a separate lock
+//   key since it's a different pair of files (no reason to serialize
+//   summarize behind extract or vice versa).
 // - respond acquires neither lock — genuinely unconstrained, best effort
 //   with whatever's readable at call time.
 //
@@ -47,6 +57,7 @@ const {
 } = require('../storage/threads-store');
 const { runRespondStep } = require('../processing/respond/dispatch');
 const { runExtractStep } = require('../processing/extract/dispatch');
+const { runSummarizeStep } = require('../processing/summarize/dispatch');
 const { appendJobLogEntry } = require('./job-log');
 const { withLock } = require('./keyed-lock');
 const { safeSegment } = require('../storage/paths');
@@ -240,13 +251,18 @@ async function runMessageFlow({
     return;
   }
 
-  // -- extract (layer 2b) + respond (unlocked), run together, not chained. --
+  // -- extract (layer 2b) + summarize (layer 2c) + respond (unlocked), run
+  // together, not chained. --
   const extractStartedAt = new Date().toISOString();
+  const summarizeStartedAt = new Date().toISOString();
   const respondStartedAt = new Date().toISOString();
 
-  const [extractSettled, respondSettled] = await Promise.allSettled([
+  const [extractSettled, summarizeSettled, respondSettled] = await Promise.allSettled([
     withLock(`extract:${spaceId}`, () =>
       runExtractStep({ pluginRuntime, spaceId, threadKey, messageIds, log })
+    ),
+    withLock(`summarize:${spaceId}`, () =>
+      runSummarizeStep({ pluginRuntime, spaceId, threadKey, messageIds, log })
     ),
     runRespondStep({
       pluginRuntime,
@@ -261,10 +277,13 @@ async function runMessageFlow({
   ]);
 
   const extractEndedAt = new Date().toISOString();
+  const summarizeEndedAt = new Date().toISOString();
   const respondEndedAt = new Date().toISOString();
 
   const extractResult = extractSettled.status === 'fulfilled' ? extractSettled.value : null;
   const extractError = extractSettled.status === 'rejected' ? extractSettled.reason : null;
+  const summarizeResult = summarizeSettled.status === 'fulfilled' ? summarizeSettled.value : null;
+  const summarizeError = summarizeSettled.status === 'rejected' ? summarizeSettled.reason : null;
   const respondResult = respondSettled.status === 'fulfilled' ? respondSettled.value : null;
   const respondError = respondSettled.status === 'rejected' ? respondSettled.reason : null;
 
@@ -280,6 +299,23 @@ async function runMessageFlow({
       outcome: extractError ? 'error' : 'success',
       error: errorMessage(extractError),
       toolCalls: extractResult?.toolCalls ?? null,
+      inputSummary: {
+        messageId: message?.id ?? null,
+        pendingCount: messageIds.length,
+      },
+    }).catch(() => {});
+
+    await appendJobLogEntry({
+      spaceId,
+      flowId,
+      step: 'summarize',
+      runId: summarizeResult?.runId ?? null,
+      sessionKey: summarizeResult?.sessionKey ?? null,
+      startedAt: summarizeStartedAt,
+      endedAt: summarizeEndedAt,
+      outcome: summarizeError ? 'error' : 'success',
+      error: errorMessage(summarizeError),
+      toolCalls: summarizeResult?.toolCalls ?? null,
       inputSummary: {
         messageId: message?.id ?? null,
         pendingCount: messageIds.length,
@@ -317,6 +353,17 @@ async function runMessageFlow({
     );
   }
 
+  if (summarizeError) {
+    log?.error?.(
+      `${LOG_PREFIX} summarize step failed ${JSON.stringify({
+        spaceId,
+        threadKey,
+        flowId,
+        error: errorMessage(summarizeError),
+      })}`
+    );
+  }
+
   if (respondError) {
     log?.error?.(
       `${LOG_PREFIX} respond step failed ${JSON.stringify({
@@ -328,7 +375,7 @@ async function runMessageFlow({
     );
   }
 
-  // Finalize regardless of either step's outcome — the batch was already
+  // Finalize regardless of any step's outcome — the batch was already
   // claimed at flush time (now sitting in `processing`); leaving it there
   // forever on a step failure would just strand it. "Maintain service": the
   // flow always reaches `finish`, never `fail`, with per-step errors
@@ -343,6 +390,7 @@ async function runMessageFlow({
     stateJson: {
       outcome: 'process-complete',
       extractError: Boolean(extractError),
+      summarizeError: Boolean(summarizeError),
       respondError: Boolean(respondError),
       didSend: Boolean(respondResult?.didSend),
     },
