@@ -117,7 +117,7 @@
     "defaultSessionKey": "hook:collab-sync"
   },
   "plugins": {
-    "allow": ["webex", "memory-core"],
+    "allow": ["webex", "memory-core", "openai"],
     "load": {
       "paths": ["plugins/webex"]
     },
