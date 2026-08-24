@@ -16,3 +16,9 @@ graphify-out/
 # Evaluation outputs/results
 plugins/webex/evaluation/outputs/
 plugins/webex/evaluation/**/*.local.json
+
+# Working docs, not meant to be tracked
+docs/report-outline.md
+docs/report-outline.docx
+docs/~$*.docx
+docs/phase-8-eval-plan.md

@@ -64,7 +64,15 @@
     "list": [
       {
         "id": "main",
-        "default": true
+        "default": true,
+        "memorySearch": {
+          "provider": "openai",
+          "model": "azure/text-embedding-3-small",
+          "remote": {
+            "baseUrl": "https://llm-proxy.dev.outshift.ai/",
+            "apiKey": "${CISCO_LLM_API_KEY}"
+          }
+        }
       }
     ]
   },
