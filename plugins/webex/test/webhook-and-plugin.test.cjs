@@ -654,7 +654,9 @@ describe('channel adapter contracts', () => {
     assert.deepEqual(collaborators.sendWebexMessage.mock.calls[0].arguments[0], {
       token: 'bot-token',
       to: 'space-1',
-      text: 'Hello',
+      // Sent as markdown, not text — see channel.js's sendText for why
+      // (Webex only renders formatting through this field).
+      markdown: 'Hello',
       parentId: 'parent-1',
     });
     assert.equal(

@@ -244,7 +244,17 @@ const webexPlugin = {
       const msg = await sendWebexMessage({
         token: resolvedAccount.config.token,
         to,
-        text,
+        // Sent as `markdown`, not `text` — Webex only renders formatting
+        // (bold, links, etc.) through the markdown field; text is shown
+        // literally, including any markdown syntax the model wrote (e.g. a
+        // reply ending up as literal "**Postgres**" instead of bold). The
+        // shared message tool has no separate markdown/format parameter for
+        // the model to target (confirmed against the deployed gateway
+        // bundle — MessageToolSchema has no such field), so this can't be
+        // fixed via prompting; it's the channel adapter's job. Webex derives
+        // a plaintext `text` fallback automatically from `markdown` when
+        // `text` is omitted, so nothing is lost for non-rendering clients.
+        markdown: text,
         parentId: replyToId,
       });
 
@@ -287,7 +297,9 @@ const webexPlugin = {
       const msg = await sendWebexMessage({
         token: resolvedAccount.config.token,
         to,
-        text,
+        // See sendText's identical note above — markdown, not text, is what
+        // Webex actually renders.
+        markdown: text,
         files: mediaUrl ? [mediaUrl] : undefined,
         parentId: replyToId,
       });
