@@ -11,6 +11,13 @@
       "mode": "token",
       "token": "${OPENCLAW_GATEWAY_TOKEN}"
     },
+    "http": {
+      "endpoints": {
+        "chatCompletions": {
+          "enabled": true
+        }
+      }
+    },
     "trustedProxies": [
       "100.64.0.3",
       "100.64.0.5",
