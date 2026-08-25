@@ -3,10 +3,7 @@
 
 const { webexFetch } = require('../api');
 const { sendWebexMessage } = require('../send');
-
-function valueOrEmpty(value) {
-  return value == null ? '' : String(value);
-}
+const { valueOrEmpty, sendAdaptiveCard } = require('../card/shared');
 
 function buildConfigCard({ config }) {
   return {
@@ -81,33 +78,16 @@ async function sendConfigCard({ spaceId, account, log, config, sendFn = sendWebe
   if (!spaceId) throw new Error('spaceId is required');
   if (!account) throw new Error('account is required');
 
-  const token = account.config?.token;
-  if (!token) throw new Error('Webex token is required');
-
   const card = buildConfigCard({ config: config ?? {} });
 
-  const msg = await sendFn({
-    token,
-    to: spaceId,
+  return sendAdaptiveCard({
+    spaceId,
+    account,
+    log,
     markdown: 'Please review this collaboration space configuration.',
-    attachments: [
-      {
-        contentType: 'application/vnd.microsoft.card.adaptive',
-        content: card,
-      },
-    ],
+    card,
+    sendFn,
   });
-
-  log?.info?.(`[webex:${account.accountId}] config card sent`, {
-    spaceId,
-    messageId: msg.id,
-  });
-
-  return {
-    ok: true,
-    spaceId,
-    messageId: msg.id,
-  };
 }
 
 module.exports = {
