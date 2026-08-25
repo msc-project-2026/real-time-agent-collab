@@ -26,7 +26,7 @@ const { writeJsonFileAtomic } = require('./atomic-write');
 //                                     // not here.
 //   assigned: 'unknown' | string,    // member/sender id
 //   deadline: 'unknown' | string,    // ISO datetime
-//   status: 'open' | 'approved' | 'delegated' | 'done' | 'archived',
+//   status: 'unapproved' | 'backlog' | 'in_progress' | 'in_review' | 'done' | 'archived',
 //   message_ids: [...],              // direct evidence only, never via a
 //                                     // conversation hop — append-only.
 //   child_tasks: [...],              // single direction, cycle-checked on
@@ -36,8 +36,12 @@ const { writeJsonFileAtomic } = require('./atomic-write');
 // parent_tasks is NEVER stored on the task record — derived by reverse
 // lookup (getParentTasks) from a separate index file, same non-mutation
 // principle as the v3 §9 summary-supersession index.
+//
+// Board-workflow revision: `delegated` is no longer a status value here —
+// delegation (target + timestamp) is board-local UI state only
+// (board/src/App.jsx), not persisted, until real board write-back lands.
 
-const ACTIVE_STATUSES = new Set(['open', 'approved', 'delegated', 'done']);
+const ACTIVE_STATUSES = new Set(['unapproved', 'backlog', 'in_progress', 'in_review', 'done']);
 
 function defaultTasksState() {
   return {
@@ -210,7 +214,7 @@ async function upsertTask({ spaceId, id, patch = {}, explicitRoot }) {
       type: patch.type,
       assigned: patch.assigned ?? 'unknown',
       deadline: patch.deadline ?? 'unknown',
-      status: patch.status ?? 'open',
+      status: patch.status ?? 'unapproved',
       message_ids: [],
       child_tasks: [],
       createdAt: now,

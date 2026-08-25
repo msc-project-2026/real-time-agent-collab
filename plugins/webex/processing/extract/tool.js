@@ -14,7 +14,19 @@ const { upsertTask } = require('../../storage/tasks-store');
 // storage/tasks-store.js stays type-agnostic) so extraction stays on a small,
 // consistent set rather than drifting into free-form labels turn by turn.
 const ALLOWED_TYPES = new Set(['development', 'design', 'research', 'coordination']);
-const ALLOWED_STATUSES = new Set(['open', 'approved', 'delegated', 'done', 'archived']);
+// v3 §7c status enum, board-workflow revision: `open`/`approved`/`delegated`
+// replaced by `unapproved` (pre-approval, drives the Review Queue) plus a
+// traditional post-approval pipeline (backlog/in_progress/in_review/done).
+// Delegation is no longer a status value — it's a board-local action/target
+// (see board/src/App.jsx), not tracked here.
+const ALLOWED_STATUSES = new Set([
+  'unapproved',
+  'backlog',
+  'in_progress',
+  'in_review',
+  'done',
+  'archived',
+]);
 
 function writeTaskTool() {
   return {
@@ -56,7 +68,7 @@ function writeTaskTool() {
         status: {
           type: 'string',
           enum: [...ALLOWED_STATUSES],
-          description: 'Defaults to "open" when creating. Only pass this to change status on a patch.',
+          description: 'Defaults to "unapproved" when creating. Only pass this to change status on a patch.',
         },
         message_ids: {
           type: 'array',

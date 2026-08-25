@@ -34,7 +34,7 @@ describe('tasks-store — upsert', () => {
     assert.equal(task.type, 'development');
     assert.equal(task.assigned, 'unknown');
     assert.equal(task.deadline, 'unknown');
-    assert.equal(task.status, 'open');
+    assert.equal(task.status, 'unapproved');
     assert.deepEqual(task.message_ids, ['msg-1']);
     assert.deepEqual(task.child_tasks, []);
     assert.ok(task.createdAt);
@@ -145,7 +145,7 @@ describe('tasks-store — queries', () => {
   test('getActiveTasks excludes only archived', async (t) => {
     const root = await makeTempWorkspace(t);
 
-    const statuses = ['open', 'approved', 'delegated', 'done', 'archived'];
+    const statuses = ['unapproved', 'backlog', 'in_progress', 'in_review', 'done', 'archived'];
     for (const status of statuses) {
       await upsertTask({
         spaceId: 'space-1',
@@ -157,7 +157,7 @@ describe('tasks-store — queries', () => {
     const active = await getActiveTasks({ spaceId: 'space-1', explicitRoot: root });
     assert.deepEqual(
       active.map((task) => task.status).sort(),
-      ['approved', 'delegated', 'done', 'open']
+      ['backlog', 'done', 'in_progress', 'in_review', 'unapproved']
     );
   });
 

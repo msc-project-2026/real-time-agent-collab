@@ -3,9 +3,12 @@ import {
   buildBoardCounts,
   filterTasks,
   formatDate,
+  fromDateInputValue,
   isReviewTask,
   normalizeTask,
+  resolveAssigneeName,
   shortId,
+  toDateInputValue,
 } from './model.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -20,18 +23,34 @@ const TYPE_LABELS = {
 const ALL_TYPES = ['development', 'design', 'research', 'coordination'];
 
 const STATUS_LABELS = {
-  open: 'Open',
-  approved: 'Approved',
-  delegated: 'Delegated',
+  unapproved: 'Unapproved',
+  backlog: 'Backlog',
+  in_progress: 'In Progress',
+  in_review: 'In Review',
   done: 'Done',
   archived: 'Archived',
 };
 
-// Review Queue owns `open` — the board's columns are what's already past
-// triage. `archived` is hidden behind a toggle rather than always shown, so
-// the default board view stays focused on live work.
-const KANBAN_STATUSES = ['approved', 'delegated', 'done'];
-const KANBAN_MOVE_TARGETS = ['approved', 'delegated', 'done', 'archived'];
+// Review Queue owns `unapproved` — the board's columns are a traditional
+// post-approval pipeline. `archived` is hidden behind a toggle rather than
+// always shown, so the default board view stays focused on live work.
+// `unapproved` is a valid move target too (not a column) — selecting it from
+// a board card sends the task back to the Review Queue ("unapprove").
+const KANBAN_STATUSES = ['backlog', 'in_progress', 'in_review', 'done'];
+const KANBAN_MOVE_TARGETS = ['unapproved', 'backlog', 'in_progress', 'in_review', 'done', 'archived'];
+
+// Delegation is board-local-only state (no schema/persistence — see
+// storage/tasks-store.js's comment) available once a task's assignee is the
+// special 'agent' entry (config/members.js). Default target is a per-task
+// suggestion based on `type`, not a hard rule — always changeable before
+// confirming.
+const DELEGATION_TARGETS = ['dev-swarm', 'design-agent', 'research-agent'];
+const DEFAULT_DELEGATION_TARGET_BY_TYPE = {
+  development: 'dev-swarm',
+  design: 'design-agent',
+  research: 'research-agent',
+  coordination: 'dev-swarm',
+};
 
 // ─── Badges ──────────────────────────────────────────────────────────────────
 
@@ -62,16 +81,22 @@ function SummaryCard({ label, value, accent }) {
 
 // ─── Edit Form ────────────────────────────────────────────────────────────────
 
-function EditForm({ task, onSave, onCancel }) {
+function EditForm({ task, members = [], onSave, onCancel }) {
   const [title, setTitle] = useState(task.title ?? '');
   const [description, setDescription] = useState(task.description ?? '');
   const [type, setType] = useState(task.type ?? 'development');
-  const [assigned, setAssigned] = useState(task.assigned ?? '');
-  const [deadline, setDeadline] = useState(task.deadline ?? '');
+  const [assigned, setAssigned] = useState(task.assigned ?? 'unknown');
+  const [deadline, setDeadline] = useState(task.deadline ?? 'unknown');
 
   function handleSave() {
     onSave({ title, description, type, assigned, deadline });
   }
+
+  // An assigned value that doesn't match any known member (e.g. a raw email
+  // the model captured that isn't in the — currently dummy — member list)
+  // gets one synthesized extra option, so editing never silently discards it.
+  const isUnrecognizedAssignee =
+    assigned && assigned !== 'unknown' && !members.some((member) => member.id === assigned);
 
   return (
     <div className="edit-form">
@@ -100,15 +125,26 @@ function EditForm({ task, onSave, onCancel }) {
         </div>
         <div className="edit-form-field">
           <label>Assigned</label>
-          <input
-            value={assigned}
-            onChange={(e) => setAssigned(e.target.value)}
-          />
+          <select value={assigned} onChange={(e) => setAssigned(e.target.value)}>
+            <option value="unknown">Unassigned</option>
+            {members.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.name}
+              </option>
+            ))}
+            {isUnrecognizedAssignee && (
+              <option value={assigned}>{assigned} (unrecognized)</option>
+            )}
+          </select>
         </div>
       </div>
       <div className="edit-form-field">
         <label>Deadline</label>
-        <input value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+        <input
+          type="date"
+          value={toDateInputValue(deadline)}
+          onChange={(e) => setDeadline(fromDateInputValue(e.target.value))}
+        />
       </div>
       <div className="edit-form-actions">
         <span className="local-note">⚠ Local only — resets on refresh</span>
@@ -125,12 +161,12 @@ function EditForm({ task, onSave, onCancel }) {
 
 // ─── Task Meta (evidence / sub-tasks) ─────────────────────────────────────────
 
-function TaskMeta({ task }) {
+function TaskMeta({ task, members = [] }) {
   return (
     <div className="card-meta">
       <span className="meta-item">
         {task.assigned && task.assigned !== 'unknown'
-          ? `👤 ${task.assigned}`
+          ? `👤 ${resolveAssigneeName(task.assigned, members)}`
           : 'Unassigned'}
       </span>
       {task.deadline && task.deadline !== 'unknown' && (
@@ -155,6 +191,7 @@ function TaskMeta({ task }) {
 
 function ReviewCard({
   task,
+  members,
   editingId,
   onApprove,
   onArchive,
@@ -176,14 +213,14 @@ function ReviewCard({
       </div>
 
       {isEditing ? (
-        <EditForm task={task} onSave={onEditSave} onCancel={onEditCancel} />
+        <EditForm task={task} members={members} onSave={onEditSave} onCancel={onEditCancel} />
       ) : (
         <>
           <h3 className="card-title">{task.title}</h3>
           {task.description && (
             <p className="card-description">{task.description}</p>
           )}
-          <TaskMeta task={task} />
+          <TaskMeta task={task} members={members} />
           <div className="card-actions">
             <button className="btn btn-approve" onClick={onApprove}>
               ✓ Approve
@@ -203,15 +240,46 @@ function ReviewCard({
 
 // ─── Kanban Card ──────────────────────────────────────────────────────────────
 
+function DelegateControl({ task, onDelegate }) {
+  const [target, setTarget] = useState(
+    task.delegation?.target ?? DEFAULT_DELEGATION_TARGET_BY_TYPE[task.type] ?? DELEGATION_TARGETS[0]
+  );
+
+  return (
+    <div className="delegate-control">
+      {task.delegation && (
+        <span className="badge delegation-badge">→ {task.delegation.target}</span>
+      )}
+      <select value={target} onChange={(e) => setTarget(e.target.value)}>
+        {DELEGATION_TARGETS.map((t) => (
+          <option key={t} value={t}>
+            {t}
+          </option>
+        ))}
+      </select>
+      <button className="btn btn-ghost btn-sm" onClick={() => onDelegate(target)}>
+        🚀 {task.delegation ? 'Re-delegate' : 'Delegate'}
+      </button>
+    </div>
+  );
+}
+
 function KanbanCard({
   task,
+  members,
   editingId,
   onEdit,
   onEditSave,
   onEditCancel,
   onStatusChange,
+  onDelegate,
 }) {
   const isEditing = editingId === task.id;
+  // Delegation is board-local-only (see storage/tasks-store.js's comment) —
+  // only offered once a task is assigned to the special 'agent' entry
+  // (config/members.js); delegating a human-owned or not-yet-approved task
+  // doesn't make sense.
+  const canDelegate = task.assigned === 'agent';
 
   return (
     <div className={`card${isEditing ? ' card-editing' : ''}`}>
@@ -225,14 +293,14 @@ function KanbanCard({
       </div>
 
       {isEditing ? (
-        <EditForm task={task} onSave={onEditSave} onCancel={onEditCancel} />
+        <EditForm task={task} members={members} onSave={onEditSave} onCancel={onEditCancel} />
       ) : (
         <>
           <h3 className="card-title">{task.title}</h3>
           {task.description && (
             <p className="card-description">{task.description}</p>
           )}
-          <TaskMeta task={task} />
+          <TaskMeta task={task} members={members} />
           <div className="card-actions work-card-actions">
             <div className="card-actions-row">
               <select
@@ -250,6 +318,7 @@ function KanbanCard({
                 Edit
               </button>
             </div>
+            {canDelegate && <DelegateControl task={task} onDelegate={onDelegate} />}
           </div>
         </>
       )}
@@ -264,6 +333,7 @@ export default function App() {
     new URLSearchParams(window.location.search).get('spaceId') ?? '';
 
   const [tasks, setTasks] = useState([]);
+  const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [lastLoaded, setLastLoaded] = useState(null);
@@ -296,9 +366,25 @@ export default function App() {
     }
   }, [spaceId]);
 
+  // Dummy for now (config/members.js) — same-shaped fetch as fetchTasks, so
+  // swapping in real space-membership data later is a backend-only change.
+  const fetchMembers = useCallback(async () => {
+    if (!spaceId) return;
+    try {
+      const url = `/webex/collab/spaces/${encodeURIComponent(spaceId)}/members`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      const data = await res.json();
+      setMembers(Array.isArray(data.members) ? data.members : []);
+    } catch {
+      setMembers([]);
+    }
+  }, [spaceId]);
+
   useEffect(() => {
     fetchTasks();
-  }, [fetchTasks]);
+    fetchMembers();
+  }, [fetchTasks, fetchMembers]);
 
   function updateTask(id, patch) {
     setTasks((prev) =>
@@ -312,7 +398,7 @@ export default function App() {
   }
 
   // Derived slices
-  const reviewTasks = filterTasks(tasks.filter(isReviewTask), { search, typeFilter });
+  const reviewTasks = filterTasks(tasks.filter(isReviewTask), { search, typeFilter, members });
   const kanbanStatuses = showArchived
     ? [...KANBAN_STATUSES, 'archived']
     : KANBAN_STATUSES;
@@ -354,17 +440,14 @@ export default function App() {
       {/* Summary bar */}
       <div className="summary-bar">
         <SummaryCard label="Total" value={counts.total} />
-        <SummaryCard label="Open" value={counts.open} accent="open" />
+        <SummaryCard label="Unapproved" value={counts.unapproved} accent="unapproved" />
+        <SummaryCard label="Backlog" value={counts.backlog} accent="backlog" />
         <SummaryCard
-          label="Approved"
-          value={counts.approved}
-          accent="approved"
+          label="In Progress"
+          value={counts.inProgress}
+          accent="in-progress"
         />
-        <SummaryCard
-          label="Delegated"
-          value={counts.delegated}
-          accent="delegated"
-        />
+        <SummaryCard label="In Review" value={counts.inReview} accent="in-review" />
         <SummaryCard label="Done" value={counts.done} accent="done" />
         <SummaryCard
           label="Archived"
@@ -388,7 +471,7 @@ export default function App() {
           onClick={() => setActiveTab('review')}
         >
           Review Queue
-          <span className="tab-badge">{counts.open}</span>
+          <span className="tab-badge">{counts.unapproved}</span>
         </button>
         <button
           className={`tab-btn${activeTab === 'board' ? ' active' : ''}`}
@@ -396,7 +479,7 @@ export default function App() {
         >
           Board
           <span className="tab-badge">
-            {counts.approved + counts.delegated + counts.done}
+            {counts.backlog + counts.inProgress + counts.inReview + counts.done}
           </span>
         </button>
       </div>
@@ -426,7 +509,7 @@ export default function App() {
                 ))}
               </select>
               <span className="record-count">
-                {reviewTasks.length} open task
+                {reviewTasks.length} unapproved task
                 {reviewTasks.length !== 1 ? 's' : ''}
               </span>
             </div>
@@ -443,8 +526,9 @@ export default function App() {
                   <ReviewCard
                     key={task.id}
                     task={task}
+                    members={members}
                     editingId={editingId}
-                    onApprove={() => updateTask(task.id, { status: 'approved' })}
+                    onApprove={() => updateTask(task.id, { status: 'backlog' })}
                     onArchive={() => updateTask(task.id, { status: 'archived' })}
                     onEdit={() => setEditingId(task.id)}
                     onEditSave={(form) => handleEditSave(task.id, form)}
@@ -492,12 +576,18 @@ export default function App() {
                         <KanbanCard
                           key={task.id}
                           task={task}
+                          members={members}
                           editingId={editingId}
                           onEdit={() => setEditingId(task.id)}
                           onEditSave={(form) => handleEditSave(task.id, form)}
                           onEditCancel={() => setEditingId(null)}
                           onStatusChange={(v) =>
                             updateTask(task.id, { status: v })
+                          }
+                          onDelegate={(target) =>
+                            updateTask(task.id, {
+                              delegation: { target, delegatedAt: new Date().toISOString() },
+                            })
                           }
                         />
                       ))

@@ -31,9 +31,10 @@ function jsonBody(response) {
 describe('collaboration visibility summary', () => {
   test('counts and formats tasks and threads', async (t) => {
     const getTasks = t.mock.fn(async () => [
-      { id: 'task-1', title: 'Fix login', type: 'development', status: 'open' },
-      { id: 'task-2', title: 'Design review', type: 'design', status: 'approved' },
-      { id: 'task-3', title: 'Handoff', type: 'coordination', status: 'delegated' },
+      { id: 'task-1', title: 'Fix login', type: 'development', status: 'unapproved' },
+      { id: 'task-2', title: 'Design review', type: 'design', status: 'backlog' },
+      { id: 'task-3', title: 'Handoff', type: 'coordination', status: 'in_progress' },
+      { id: 'task-3b', title: 'Polish', type: 'design', status: 'in_review' },
       { id: 'task-4', title: 'Ship it', type: 'development', status: 'done' },
       { id: 'task-5', title: 'Old idea', type: 'research', status: 'archived' },
     ]);
@@ -60,9 +61,10 @@ describe('collaboration visibility summary', () => {
     assert.equal(summary.spaceId, 'space-1');
     assert.match(summary.generatedAt, /^\d{4}-\d{2}-\d{2}T/);
     assert.deepEqual(summary.counts, {
-      openTasks: 1,
-      approvedTasks: 1,
-      delegatedTasks: 1,
+      unapprovedTasks: 1,
+      backlogTasks: 1,
+      inProgressTasks: 1,
+      inReviewTasks: 1,
       doneTasks: 1,
       archivedTasks: 1,
     });
@@ -71,7 +73,7 @@ describe('collaboration visibility summary', () => {
       title: 'Fix login',
       description: undefined,
       type: 'development',
-      status: 'open',
+      status: 'unapproved',
       assigned: null,
       deadline: null,
       message_ids: [],
@@ -107,6 +109,7 @@ function loadSpaceRouter(t) {
     buildContextSummary: t.mock.fn(async ({ spaceId }) => ({ spaceId, counts: {} })),
     getTasks: t.mock.fn(async () => [{ id: 'task-1' }]),
     getThreads: t.mock.fn(async () => [{ key: '__main__' }]),
+    getSpaceMembers: t.mock.fn(async () => [{ id: 'alice@example.com', name: 'Alice' }]),
   };
   const loaded = loadWithMocks(require.resolve('../visibility/space-router'), {
     [require.resolve('../visibility/summary')]: {
@@ -115,6 +118,9 @@ function loadSpaceRouter(t) {
     [require.resolve('../storage/tasks-store')]: { getTasks: collaborators.getTasks },
     [require.resolve('../storage/threads-store')]: {
       getThreads: collaborators.getThreads,
+    },
+    [require.resolve('../config/members')]: {
+      getSpaceMembers: collaborators.getSpaceMembers,
     },
   });
   t.after(loaded.restore);
@@ -176,11 +182,12 @@ describe('collaboration visibility HTTP API', () => {
     });
   });
 
-  test('serves tasks and threads with bounded queries', async (t) => {
+  test('serves tasks, threads, and members with bounded queries', async (t) => {
     const { spaceRouter, collaborators } = loadSpaceRouter(t);
     const cases = [
       ['tasks', collaborators.getTasks, { spaceId: 'space-1', limit: 200 }],
       ['threads', collaborators.getThreads, { spaceId: 'space-1', limit: 100 }],
+      ['members', collaborators.getSpaceMembers, { spaceId: 'space-1' }],
     ];
 
     for (const [resource, collaborator, expectedQuery] of cases) {

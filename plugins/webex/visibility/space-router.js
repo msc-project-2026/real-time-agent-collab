@@ -9,6 +9,7 @@
 const { buildContextSummary } = require('./summary');
 const { getTasks } = require('../storage/tasks-store');
 const { getThreads } = require('../storage/threads-store');
+const { getSpaceMembers } = require('../config/members');
 
 // *** Helpers
 
@@ -39,8 +40,9 @@ async function spaceRouter(req, res) {
   const summarySpaceId = matchSpaceRoute(pathname, '/summary');
   const tasksSpaceId = matchSpaceRoute(pathname, '/tasks');
   const threadsSpaceId = matchSpaceRoute(pathname, '/threads');
+  const membersSpaceId = matchSpaceRoute(pathname, '/members');
 
-  const matchedSpaceId = summarySpaceId ?? tasksSpaceId ?? threadsSpaceId;
+  const matchedSpaceId = summarySpaceId ?? tasksSpaceId ?? threadsSpaceId ?? membersSpaceId;
 
   if (!matchedSpaceId) return false;
 
@@ -89,6 +91,18 @@ async function spaceRouter(req, res) {
       ok: true,
       spaceId: threadsSpaceId,
       threads,
+    });
+
+    return true;
+  }
+
+  if (membersSpaceId) {
+    const members = await getSpaceMembers({ spaceId: membersSpaceId });
+
+    sendJson(res, 200, {
+      ok: true,
+      spaceId: membersSpaceId,
+      members,
     });
 
     return true;

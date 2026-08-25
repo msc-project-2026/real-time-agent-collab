@@ -54,9 +54,10 @@ async function buildContextSummary({ spaceId }) {
     spaceId,
     generatedAt: new Date().toISOString(),
     counts: {
-      openTasks: countTasks(tasks, (task) => task.status === 'open'),
-      approvedTasks: countTasks(tasks, (task) => task.status === 'approved'),
-      delegatedTasks: countTasks(tasks, (task) => task.status === 'delegated'),
+      unapprovedTasks: countTasks(tasks, (task) => task.status === 'unapproved'),
+      backlogTasks: countTasks(tasks, (task) => task.status === 'backlog'),
+      inProgressTasks: countTasks(tasks, (task) => task.status === 'in_progress'),
+      inReviewTasks: countTasks(tasks, (task) => task.status === 'in_review'),
       doneTasks: countTasks(tasks, (task) => task.status === 'done'),
       archivedTasks: countTasks(tasks, (task) => task.status === 'archived'),
     },

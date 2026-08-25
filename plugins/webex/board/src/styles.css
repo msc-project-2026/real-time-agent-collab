@@ -120,11 +120,12 @@ input, textarea, select, button {
   white-space: nowrap;
 }
 
-.summary-open .summary-val      { color: #1d4ed8; }
-.summary-approved .summary-val  { color: #a16207; }
-.summary-delegated .summary-val { color: #7c3aed; }
-.summary-done .summary-val      { color: #15803d; }
-.summary-archived .summary-val  { color: #6b7280; }
+.summary-unapproved .summary-val { color: #1d4ed8; }
+.summary-backlog .summary-val    { color: #a16207; }
+.summary-in-progress .summary-val { color: #7c3aed; }
+.summary-in-review .summary-val  { color: #b45309; }
+.summary-done .summary-val       { color: #15803d; }
+.summary-archived .summary-val   { color: #6b7280; }
 
 /* ─── Alerts ─────────────────────────────────────────────────────────────────── */
 .alert {
@@ -463,11 +464,16 @@ input, textarea, select, button {
 .type-coordination { background: #ffedd5; color: #c2410c; }
 
 /* Status badges (v3 §7c single status axis) */
-.status-open       { background: #dbeafe; color: #1d4ed8; }
-.status-approved   { background: #fef9c3; color: #a16207; }
-.status-delegated  { background: #ede9fe; color: #6d28d9; }
-.status-done       { background: #dcfce7; color: #15803d; }
-.status-archived   { background: #f3f4f6; color: #6b7280; }
+.status-unapproved  { background: #dbeafe; color: #1d4ed8; }
+.status-backlog     { background: #fef9c3; color: #a16207; }
+.status-in_progress { background: #ede9fe; color: #6d28d9; }
+.status-in_review   { background: #ffedd5; color: #b45309; }
+.status-done        { background: #dcfce7; color: #15803d; }
+.status-archived    { background: #f3f4f6; color: #6b7280; }
+
+/* Delegation control (board-local-only — no schema/persistence) */
+.delegate-control { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.delegation-badge { background: #ecfdf5; color: #047857; }
 
 /* ─── Edit Form ──────────────────────────────────────────────────────────────── */
 .edit-form {

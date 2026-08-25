@@ -129,13 +129,15 @@ description: string        // optional longer elaboration
 type: development | design | research | ...   // downstream handling/delegation category, not urgency
 assigned: unknown | <member/sender id>
 deadline: unknown | datetime
-status: open | approved | delegated | done | archived   // drives the UI approve→delegate flow
+status: unapproved | backlog | in_progress | in_review | done | archived   // drives the UI approve flow
 message_ids: [...]        // direct evidence — NOT via any intermediate conversation hop
 child_tasks: [...]        // single direction only
 // parent_tasks is NEVER stored — derived by reverse lookup from child_tasks at read time
 ```
 
 **Correction (phase 6 implementation):** the original schema above omitted `title`/`description` — an oversight caught building the board UI against it. A task record with no human-readable summary isn't actually reviewable by a person, only machine-filterable. `title` is required (same footing as `type`); `description` is optional elaboration. Both are ordinary patchable fields (last-write-wins on update), same as `type`/`assigned`/`deadline`/`status` — not append-only like `message_ids`/`child_tasks`.
+
+**Correction (board-workflow revision):** `status`'s original enum (`open | approved | delegated | done | archived`) collapsed "approved and being worked on" into one value and treated delegation as a status. Replaced with `unapproved` (pre-approval, drives the Review Queue — same role `open` played) plus a traditional post-approval pipeline (`backlog | in_progress | in_review | done`), so human-assigned work in progress is actually trackable rather than sitting in one undifferentiated `approved` bucket. `archived` is unchanged. Delegation is no longer a status value at all — it's a board-local action (pick a target once a task's `assigned` is the special `agent` entry), not yet part of this persisted schema; see §14.
 
 - `child_tasks` writes are tool-enforced: setting A→B automatically the reverse-derivable link, and cycles are rejected at the tool layer. `parent_tasks` is never stored on the task record itself — same non-mutation principle as summary `supersedes` (§9). For lookup, this can use the same lightweight reverse-index-table pattern as the supersession index (`child_id → parent_id` rows) rather than a full scan across all tasks, particularly once task count grows.
 - A dedicated `search_tasks(include_archived: true)` tool exists for the case where a message references a task outside the active bulk-injected set (already completed/archived) — found tasks can have status flipped back via the same status-transition tool used elsewhere. **This requires its own search index (full-text or embedding-based) over archived tasks — it is not free, and is a distinct build item from the recall index in §9, not something that falls out of it.**
@@ -355,3 +357,5 @@ These are genuine unknowns from OpenClaw's docs/API that this architecture was d
 - GitHub webhooks/writes — optional, opportunistic only, unchanged from original PRD.
 - Structured extraction of non-task item types (decisions/risks/coordination) — possible future work if summaries prove insufficient for the UI-surfacing use case, not designed now.
 - Shared per-task session for swarm handoff coordination — a real future question, explicitly parked.
+- Delegation target-tracking + persistence — the board currently tracks delegation (target + timestamp) as local-only UI state (`board/src/App.jsx`), not a schema field; a real `storage/tasks-store.js` field plus write-back is deferred to the larger board write-back update, alongside making the space-member list (currently dummy, `config/members.js`) real.
+- Confidence-scored auto-approval/auto-delegation — the model predicting a per-task confidence score (mix of risk and directive-sensed certainty), with tasks above a threshold immediately approved and delegated. Deliberately not implemented yet; noted here as the intended next workflow this design should support without new plumbing — approve and delegate are already independently triggerable actions for exactly this reason.
