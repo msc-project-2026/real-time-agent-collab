@@ -409,7 +409,7 @@ input, textarea, select, button {
 }
 
 .board-col {
-  flex: 0 0 230px;
+  flex: 0 0 300px;
   background: #f9fafb;
   border: 1px solid #e5e7eb;
   border-radius: 10px;
@@ -490,6 +490,11 @@ input, textarea, select, button {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  /* Without this, a grid/flex item won't shrink below its content's
+     intrinsic min-width — a <select>'s own text (e.g. "Development") can
+     then force the row wider than its column, overflowing/getting clipped
+     rather than shrinking to fit. */
+  min-width: 0;
 }
 
 .edit-form-field label {
@@ -503,6 +508,7 @@ input, textarea, select, button {
 .edit-form-field input,
 .edit-form-field textarea,
 .edit-form-field select {
+  width: 100%;
   padding: 7px 10px;
   border: 1px solid #d1d5db;
   border-radius: 6px;
