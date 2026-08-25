@@ -7,13 +7,28 @@
 // result, no pending-result map to read back afterward — extract's own
 // completion is enough of a signal that whatever it wrote already landed.
 
-const { upsertTask } = require('../../storage/tasks-store');
+const {
+  upsertTask,
+  readTasksState,
+  CONFIDENCE_AUTO_APPROVE_THRESHOLD,
+} = require('../../storage/tasks-store');
 
-// Open taxonomy per v3 §7c ("development | design | research | ..."), but a
-// starter allowlist is enforced here (at the tool layer, not the store —
-// storage/tasks-store.js stays type-agnostic) so extraction stays on a small,
-// consistent set rather than drifting into free-form labels turn by turn.
-const ALLOWED_TYPES = new Set(['development', 'design', 'research', 'coordination']);
+// Mirrors board/src/App.jsx's own dummy delegation-target mapping — same
+// literal target strings, so a task reads consistently whether seen via the
+// task-notify ack message or later on the board.
+const DEFAULT_DELEGATION_TARGET_BY_TYPE = {
+  development: 'dev-swarm',
+  design: 'design-agent',
+  research: 'research-agent',
+};
+
+// Closed positive taxonomy (response-policy + extraction-calibration
+// revision): development | design | research are the only task-worthy
+// categories — see extract/instruction.js's "How to extract" section for
+// the full definition of each. `coordination` was dropped: it was too
+// permissive a catch-all, letting non-deliverables (decisions, questions)
+// get extracted as tasks.
+const ALLOWED_TYPES = new Set(['development', 'design', 'research']);
 // v3 §7c status enum, board-workflow revision: `open`/`approved`/`delegated`
 // replaced by `unapproved` (pre-approval, drives the Review Queue) plus a
 // traditional post-approval pipeline (backlog/in_progress/in_review/done).
@@ -68,7 +83,13 @@ function writeTaskTool() {
         status: {
           type: 'string',
           enum: [...ALLOWED_STATUSES],
-          description: 'Defaults to "unapproved" when creating. Only pass this to change status on a patch.',
+          description:
+            'For a task assigned to a human (or unassigned): set this only if the thread clearly shows real progress already exists (e.g. already started or already done) — otherwise omit it and the default applies. For a task assigned to the agent itself ("agent"): never set this — pass `confidence` instead, and the system decides the outcome deterministically.',
+        },
+        confidence: {
+          type: 'number',
+          description:
+            'Only when `assigned` is "agent": your confidence (0-1) that this self-assigned task is genuinely warranted, weighing both how explicitly you were directed and how well it fits a safe, clearly in-scope pickup. Omit entirely when assigning to a human or leaving unassigned.',
         },
         message_ids: {
           type: 'array',
@@ -94,6 +115,7 @@ function writeTaskTool() {
         assigned,
         deadline,
         status,
+        confidence,
         message_ids: messageIds,
         child_tasks: childTasks,
       } = params ?? {};
@@ -115,6 +137,12 @@ function writeTaskTool() {
       if (status !== undefined && !ALLOWED_STATUSES.has(status)) {
         errors.push(`\`status\` must be one of: ${[...ALLOWED_STATUSES].join(', ')}.`);
       }
+      if (
+        confidence !== undefined &&
+        (typeof confidence !== 'number' || confidence < 0 || confidence > 1)
+      ) {
+        errors.push('`confidence` must be a number between 0 and 1.');
+      }
       if (messageIds !== undefined && !Array.isArray(messageIds)) {
         errors.push('`message_ids` must be an array of strings.');
       }
@@ -127,7 +155,17 @@ function writeTaskTool() {
       }
 
       try {
-        const task = await upsertTask({
+        // Captured before the write so the auto-approval override below can
+        // tell "just created" / "was still unapproved" apart from "already
+        // past unapproved" — a patch is a separate upsertTask call from the
+        // read, but they run inside the extract:${spaceId} lock (see
+        // flow/run-message-flow.js), so there's no concurrent-write race here.
+        const priorStatus = id
+          ? ((await readTasksState({ spaceId })).tasks.find((existing) => existing.id === id)
+              ?.status ?? null)
+          : 'unapproved';
+
+        let task = await upsertTask({
           spaceId,
           id,
           patch: {
@@ -137,10 +175,38 @@ function writeTaskTool() {
             assigned,
             deadline,
             status,
+            confidence,
             message_ids: messageIds,
             child_tasks: childTasks,
           },
         });
+
+        // Confidence-driven auto-approval (response-policy + extraction-
+        // calibration revision): a self-assigned task that clears the
+        // threshold skips human approval and starts immediately. Guarded to
+        // only ever fire once, on first crossing the bar — without the
+        // priorStatus === 'unapproved' check, a later legitimate patch (e.g.
+        // marking an already-in-flight task `done`) that happens to also
+        // carry a high confidence value could get silently reset back to
+        // `in_progress`.
+        if (
+          task.assigned === 'agent' &&
+          typeof task.confidence === 'number' &&
+          task.confidence >= CONFIDENCE_AUTO_APPROVE_THRESHOLD &&
+          priorStatus === 'unapproved'
+        ) {
+          task = await upsertTask({
+            spaceId,
+            id: task.id,
+            patch: {
+              status: 'in_progress',
+              delegation: {
+                target: DEFAULT_DELEGATION_TARGET_BY_TYPE[task.type] ?? 'dev-swarm',
+                delegatedAt: new Date().toISOString(),
+              },
+            },
+          });
+        }
 
         return { ok: true, task };
       } catch (err) {

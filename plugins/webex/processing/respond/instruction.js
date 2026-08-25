@@ -54,17 +54,15 @@ function buildRespondInstruction({
   return `
 ## Task
 
-You are the agent's response step for one Webex thread. You have the thread's recent history and the new message(s) below, plus one directive explaining why you were triggered. Decide whether a response is warranted, and if so, send it using the message tool. If not, do not call the message tool at all.
+You are the agent's response step for one Webex thread. You are only ever invoked because the thread was determined to be addressed to you — someone is actively talking to you and expecting a reply, the same as if they'd spoken to you directly in person. You have the thread's recent history and the new message(s) below. Decide what, if anything, to say, and send it using the message tool.
 
 You are not limited to a single message. The new messages below may contain more than one distinct point worth addressing — if so, call the message tool as many times as genuinely warranted, one call per message, the same way a person would send a couple of short messages in a row rather than cramming unrelated replies into one wall of text. Don't call it repeatedly for no reason, though — most turns still warrant exactly one reply, or none.
 
 ### Directive
 
-- addressed: ${Boolean(directive?.addressed)} — the thread is being directly addressed to you (semantic addressing, judged by a prior classification step — not just a raw @-mention)
-- ready: ${Boolean(directive?.ready)} — the pending portion of this thread has crystallized into a complete, coherent unit of meaning
 - reason: ${directive?.reason ?? 'n/a'}
 
-If \`addressed\` is true, you should respond — someone is actively talking to you and expecting a reply, the same as if they'd spoken to you directly in person. Do not withhold a reply just because the message itself doesn't look like a formal question or request — a casual remark aimed at you (e.g. "you there?", "are you free?") still gets a reply, the same way a person would answer rather than stay silent. If only \`ready\` is true (not addressed), respond only if a reply is genuinely warranted — staying silent is the common case for a thread that wasn't talking to you.
+Do not withhold a reply just because the message itself doesn't look like a formal question or request — a casual remark aimed at you (e.g. "you there?", "are you free?") still gets a reply, the same way a person would answer rather than stay silent.
 
 ### Recent history
 

@@ -27,7 +27,7 @@ describe('tag_message tool validation', () => {
   const validParams = {
     spaceId: 'space-1',
     threadKey: '__main__',
-    isMentioned: true,
+    isAddressed: true,
     configRequest: false,
     ready: true,
     reason: 'Contains a complete request.',
@@ -41,7 +41,7 @@ describe('tag_message tool validation', () => {
 
     assert.deepEqual(result, { ok: true });
     assert.deepEqual(takePendingTagResult('space-1', '__main__'), {
-      messageTags: { isMentioned: true, configRequest: false },
+      messageTags: { isAddressed: true, configRequest: false },
       pendingThreadWindowDecision: {
         ready: true,
         reason: 'Contains a complete request.',
@@ -87,19 +87,19 @@ describe('tag_message tool validation', () => {
     assert.equal(takePendingTagResult('space-1', '__main__'), null);
   });
 
-  test('non-boolean isMentioned/configRequest/ready returns validation error', async () => {
+  test('non-boolean isAddressed/configRequest/ready returns validation error', async () => {
     const { tagMessageTool } = loadTool();
     const tool = tagMessageTool();
 
     const result = await tool.execute('id-1', {
       ...validParams,
-      isMentioned: 'yes',
+      isAddressed: 'yes',
       configRequest: 0,
       ready: 'true',
     });
 
     assert.equal(result.ok, false);
-    assert.ok(result.errors.some((e) => e.includes('isMentioned')));
+    assert.ok(result.errors.some((e) => e.includes('isAddressed')));
     assert.ok(result.errors.some((e) => e.includes('configRequest')));
     assert.ok(result.errors.some((e) => e.includes('ready')));
   });
@@ -239,7 +239,7 @@ describe('dispatchTaggingGate', () => {
         processed: [],
       })),
       takePendingTagResult: t.mock.fn(() => ({
-        messageTags: { isMentioned: true, configRequest: false },
+        messageTags: { isAddressed: true, configRequest: false },
         pendingThreadWindowDecision: { ready: true, reason: 'Complete ask.' },
       })),
       appendTaggingValidationRecord: t.mock.fn(async () => undefined),
@@ -318,7 +318,7 @@ describe('dispatchTaggingGate', () => {
     assert.equal(record.runId, params.runId);
     assert.equal(record.pendingSliceSize, 1);
     assert.equal(record.toolCallAttempts, 1);
-    assert.deepEqual(record.tagResult.messageTags, { isMentioned: true, configRequest: false });
+    assert.deepEqual(record.tagResult.messageTags, { isAddressed: true, configRequest: false });
   });
 
   test('passes botId through so the gate can recognize its own prior messages', async (t) => {
@@ -497,17 +497,19 @@ describe('dispatchTaggingGate', () => {
 describe('decideDispatch', () => {
   const { decideDispatch } = require('../processing/gate/decide');
 
-  test('neither mentioned, ready, nor configRequest: no dispatch', () => {
+  test('neither mentioned, addressed, ready, nor configRequest: no dispatch', () => {
     const decision = decideDispatch({
       tagResult: {
-        messageTags: { isMentioned: false, configRequest: false },
+        messageTags: { isAddressed: false, configRequest: false },
         pendingThreadWindowDecision: { ready: false, reason: 'Not yet.' },
       },
-      botIsMentioned: false,
+      isBotMentioned: false,
     });
 
     assert.deepEqual(decision, {
-      finalIsMentioned: false,
+      isBotMentioned: false,
+      isBotAddressed: false,
+      shouldRespond: false,
       configRequest: false,
       ready: false,
       shouldProcess: false,
@@ -515,42 +517,42 @@ describe('decideDispatch', () => {
     });
   });
 
-  test('deterministic botIsMentioned alone is OR-ed in, independent of the gate', () => {
+  test('deterministic isBotMentioned alone is OR-ed in, independent of the gate', () => {
     const decision = decideDispatch({
       tagResult: {
-        messageTags: { isMentioned: false, configRequest: false },
-        pendingThreadWindowDecision: { ready: false, reason: 'Not judged mentioned.' },
+        messageTags: { isAddressed: false, configRequest: false },
+        pendingThreadWindowDecision: { ready: false, reason: 'Not judged addressed.' },
       },
-      botIsMentioned: true,
+      isBotMentioned: true,
     });
 
-    assert.equal(decision.finalIsMentioned, true);
+    assert.equal(decision.shouldRespond, true);
     assert.equal(decision.shouldProcess, true);
   });
 
-  test('gate-judged isMentioned alone is OR-ed in, independent of the deterministic flag', () => {
+  test('gate-judged isBotAddressed alone is OR-ed in, independent of the deterministic flag', () => {
     const decision = decideDispatch({
       tagResult: {
-        messageTags: { isMentioned: true, configRequest: false },
+        messageTags: { isAddressed: true, configRequest: false },
         pendingThreadWindowDecision: { ready: false, reason: 'Semantically addressed.' },
       },
-      botIsMentioned: false,
+      isBotMentioned: false,
     });
 
-    assert.equal(decision.finalIsMentioned, true);
+    assert.equal(decision.shouldRespond, true);
     assert.equal(decision.shouldProcess, true);
   });
 
-  test('ready alone triggers shouldProcess without mention', () => {
+  test('ready alone triggers shouldProcess without shouldRespond', () => {
     const decision = decideDispatch({
       tagResult: {
-        messageTags: { isMentioned: false, configRequest: false },
+        messageTags: { isAddressed: false, configRequest: false },
         pendingThreadWindowDecision: { ready: true, reason: 'Complete ask.' },
       },
-      botIsMentioned: false,
+      isBotMentioned: false,
     });
 
-    assert.equal(decision.finalIsMentioned, false);
+    assert.equal(decision.shouldRespond, false);
     assert.equal(decision.ready, true);
     assert.equal(decision.shouldProcess, true);
   });
@@ -558,13 +560,13 @@ describe('decideDispatch', () => {
   test('mention and ready can both be true for the same message', () => {
     const decision = decideDispatch({
       tagResult: {
-        messageTags: { isMentioned: true, configRequest: false },
+        messageTags: { isAddressed: true, configRequest: false },
         pendingThreadWindowDecision: { ready: true, reason: 'Both.' },
       },
-      botIsMentioned: true,
+      isBotMentioned: true,
     });
 
-    assert.equal(decision.finalIsMentioned, true);
+    assert.equal(decision.shouldRespond, true);
     assert.equal(decision.ready, true);
     assert.equal(decision.shouldProcess, true);
   });
@@ -572,28 +574,30 @@ describe('decideDispatch', () => {
   test('configRequest is independent of mention/ready and can co-occur', () => {
     const decision = decideDispatch({
       tagResult: {
-        messageTags: { isMentioned: false, configRequest: true },
+        messageTags: { isAddressed: false, configRequest: true },
         pendingThreadWindowDecision: { ready: true, reason: 'Config ask plus a task.' },
       },
-      botIsMentioned: false,
+      isBotMentioned: false,
     });
 
     assert.equal(decision.configRequest, true);
     assert.equal(decision.shouldProcess, true);
   });
 
-  test('a null tagResult (failed/missing gate) falls back to botIsMentioned alone', () => {
-    const notMentioned = decideDispatch({ tagResult: null, botIsMentioned: false });
+  test('a null tagResult (failed/missing gate) falls back to isBotMentioned alone', () => {
+    const notMentioned = decideDispatch({ tagResult: null, isBotMentioned: false });
     assert.deepEqual(notMentioned, {
-      finalIsMentioned: false,
+      isBotMentioned: false,
+      isBotAddressed: false,
+      shouldRespond: false,
       configRequest: false,
       ready: false,
       shouldProcess: false,
       reason: null,
     });
 
-    const mentioned = decideDispatch({ tagResult: null, botIsMentioned: true });
-    assert.equal(mentioned.finalIsMentioned, true);
+    const mentioned = decideDispatch({ tagResult: null, isBotMentioned: true });
+    assert.equal(mentioned.shouldRespond, true);
     assert.equal(mentioned.shouldProcess, true);
   });
 });
@@ -615,7 +619,7 @@ describe('appendTaggingValidationRecord', () => {
       pendingSliceSize: 2,
       toolCallAttempts: 1,
       tagResult: {
-        messageTags: { isMentioned: true, configRequest: false },
+        messageTags: { isAddressed: true, configRequest: false },
         pendingThreadWindowDecision: { ready: true, reason: 'done' },
       },
       explicitRoot: root,
@@ -627,7 +631,7 @@ describe('appendTaggingValidationRecord', () => {
       runId: 'run-2',
       pendingSliceSize: 3,
       tagResult: {
-        messageTags: { isMentioned: false, configRequest: false },
+        messageTags: { isAddressed: false, configRequest: false },
         pendingThreadWindowDecision: { ready: false, reason: 'not yet' },
       },
       explicitRoot: root,

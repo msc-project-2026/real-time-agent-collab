@@ -74,7 +74,7 @@ describe('runRespondStep', () => {
       threadKey: '__main__',
       message: { id: 'msg-1' },
       messageIds: ['msg-1'],
-      decision: { finalIsMentioned: true, ready: false, reason: 'Addressed.' },
+      decision: { shouldRespond: true, ready: false, reason: 'Addressed.' },
       log: makeLog(t),
     });
 
@@ -88,7 +88,7 @@ describe('runRespondStep', () => {
     assert.equal(params.currentChannelId, 'space-1');
     // Unlike the gate, disableMessageTool must not be set.
     assert.equal(params.disableMessageTool, undefined);
-    assert.match(params.prompt, /addressed: true/);
+    assert.match(params.prompt, /reason: Addressed\./);
     assert.match(params.prompt, /Ada/);
     // No context-level currentThreadTs/messageThreadId — deliberately not
     // set, to avoid confounding the diagnostic test with an unconfirmed
@@ -119,7 +119,7 @@ describe('runRespondStep', () => {
       threadKey: '__main__',
       message: { id: 'msg-1' },
       messageIds: ['msg-1'],
-      decision: { finalIsMentioned: true, ready: false, reason: 'Addressed.' },
+      decision: { shouldRespond: true, ready: false, reason: 'Addressed.' },
       account: {
         config: {
           botWebhookUrl: 'https://example.up.railway.app/webhooks/webex/bot/default',
@@ -150,7 +150,7 @@ describe('runRespondStep', () => {
       threadKey: '__main__',
       message: { id: 'msg-1' },
       messageIds: ['msg-1'],
-      decision: { finalIsMentioned: true, ready: false, reason: 'Addressed.' },
+      decision: { shouldRespond: true, ready: false, reason: 'Addressed.' },
       // No account at all — mirrors any caller that hasn't threaded it through.
       log: makeLog(t),
     });
@@ -174,7 +174,7 @@ describe('runRespondStep', () => {
       threadKey: '__main__',
       message: { id: 'msg-1' },
       messageIds: ['msg-1'],
-      decision: { finalIsMentioned: true, ready: false, reason: 'Addressed.' },
+      decision: { shouldRespond: true, ready: false, reason: 'Addressed.' },
       account: { config: { botWebhookUrl: 'not-a-url' } },
       log: makeLog(t),
     });
@@ -198,7 +198,7 @@ describe('runRespondStep', () => {
       threadKey: '__main__',
       message: { id: 'msg-1' },
       messageIds: ['msg-1'],
-      decision: { finalIsMentioned: false, ready: true, reason: 'Ready.' },
+      decision: { shouldRespond: false, ready: true, reason: 'Ready.' },
       log: makeLog(t),
     });
 
@@ -222,7 +222,7 @@ describe('runRespondStep', () => {
       threadKey: 'thread-root-message-1',
       message: { id: 'msg-1' },
       messageIds: ['msg-1'],
-      decision: { finalIsMentioned: true, ready: false, reason: 'Addressed.' },
+      decision: { shouldRespond: true, ready: false, reason: 'Addressed.' },
       log: makeLog(t),
     });
 
@@ -247,7 +247,7 @@ describe('runRespondStep', () => {
       threadKey: '__main__',
       message: { id: 'msg-1' },
       messageIds: ['msg-1'],
-      decision: { finalIsMentioned: false, ready: true, reason: 'Ready but not addressed.' },
+      decision: { shouldRespond: false, ready: true, reason: 'Ready but not addressed.' },
       log: makeLog(t),
     });
 
@@ -271,7 +271,7 @@ describe('runRespondStep', () => {
       threadKey: '__main__',
       message: { id: 'msg-1' },
       messageIds: ['msg-1'],
-      decision: { finalIsMentioned: true, ready: false, reason: 'Addressed.' },
+      decision: { shouldRespond: true, ready: false, reason: 'Addressed.' },
       log: makeLog(t),
     });
 
@@ -294,7 +294,7 @@ describe('runRespondStep', () => {
         threadKey: '__main__',
         message: { id: 'msg-1' },
       messageIds: ['msg-1'],
-        decision: { finalIsMentioned: true, ready: false, reason: 'Addressed.' },
+        decision: { shouldRespond: true, ready: false, reason: 'Addressed.' },
         log: makeLog(t),
       }),
       /provider timeout/
@@ -319,7 +319,7 @@ describe('runRespondStep', () => {
       threadKey: '__main__',
       message: { id: 'msg-1' },
       messageIds: ['msg-1'],
-      decision: { finalIsMentioned: true, ready: false, reason: 'Addressed.' },
+      decision: { shouldRespond: true, ready: false, reason: 'Addressed.' },
       log: makeLog(t),
     });
 

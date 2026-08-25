@@ -58,6 +58,7 @@ const {
 const { runRespondStep } = require('../processing/respond/dispatch');
 const { runExtractStep } = require('../processing/extract/dispatch');
 const { runSummarizeStep } = require('../processing/summarize/dispatch');
+const { runTaskNotifyStep } = require('../processing/task-notify');
 const { appendJobLogEntry } = require('./job-log');
 const { withLock } = require('./keyed-lock');
 const { safeSegment } = require('../storage/paths');
@@ -148,10 +149,10 @@ async function runMessageFlow({
       log,
     });
 
-    const botIsMentioned =
+    const isBotMentioned =
       Array.isArray(message.mentionedPeople) && message.mentionedPeople.includes(botId);
 
-    decision = decideDispatch({ tagResult, botIsMentioned });
+    decision = decideDispatch({ tagResult, isBotMentioned });
 
     // v3 §2 backstop: a thread that never gets addressed and never gets
     // judged "ready" would otherwise accumulate pending messages
@@ -186,7 +187,7 @@ async function runMessageFlow({
       currentStep: 'process',
       stateJson: {
         directive: {
-          addressed: decision.finalIsMentioned,
+          shouldRespond: decision.shouldRespond,
           ready: decision.ready,
           reason: decision.reason,
         },
@@ -221,10 +222,12 @@ async function runMessageFlow({
       messageId: message.id,
       flowId,
       gateRan: Boolean(tagResult),
-      gateIsMentioned: tagResult?.messageTags?.isMentioned ?? null,
+      gateIsAddressed: tagResult?.messageTags?.isAddressed ?? null,
       gateConfigRequest: tagResult?.messageTags?.configRequest ?? null,
       gateReady: tagResult?.pendingThreadWindowDecision?.ready ?? null,
-      finalIsMentioned: decision.finalIsMentioned,
+      isBotMentioned: decision.isBotMentioned,
+      isBotAddressed: decision.isBotAddressed,
+      shouldRespond: decision.shouldRespond,
       configRequest: decision.configRequest,
       pendingCount: pendingCount ?? null,
       backstopTriggered,
@@ -257,6 +260,30 @@ async function runMessageFlow({
   const summarizeStartedAt = new Date().toISOString();
   const respondStartedAt = new Date().toISOString();
 
+  // respond only spawns when the agent was actually mentioned or addressed
+  // (decision.shouldRespond) — a controller-level gate, not a prompt hope.
+  // extract/summarize are unaffected: task/summary value doesn't depend on
+  // being spoken to, so they still run whenever shouldProcess is true.
+  const respondPromise = decision.shouldRespond
+    ? runRespondStep({
+        pluginRuntime,
+        spaceId,
+        threadKey,
+        message,
+        decision,
+        messageIds,
+        account,
+        log,
+      })
+    : Promise.resolve({
+        outcome: 'skipped',
+        error: null,
+        toolCalls: null,
+        sessionKey: null,
+        runId: null,
+        didSend: false,
+      });
+
   const [extractSettled, summarizeSettled, respondSettled] = await Promise.allSettled([
     withLock(`extract:${spaceId}`, () =>
       runExtractStep({ pluginRuntime, spaceId, threadKey, messageIds, log })
@@ -264,16 +291,7 @@ async function runMessageFlow({
     withLock(`summarize:${spaceId}`, () =>
       runSummarizeStep({ pluginRuntime, spaceId, threadKey, messageIds, log })
     ),
-    runRespondStep({
-      pluginRuntime,
-      spaceId,
-      threadKey,
-      message,
-      decision,
-      messageIds,
-      account,
-      log,
-    }),
+    respondPromise,
   ]);
 
   const extractEndedAt = new Date().toISOString();
@@ -330,12 +348,12 @@ async function runMessageFlow({
       sessionKey: respondResult?.sessionKey ?? null,
       startedAt: respondStartedAt,
       endedAt: respondEndedAt,
-      outcome: respondError ? 'error' : 'success',
+      outcome: respondError ? 'error' : respondResult?.outcome ?? 'success',
       error: errorMessage(respondError),
       toolCalls: respondResult?.toolCalls ?? null,
       inputSummary: {
         messageId: message?.id ?? null,
-        addressed: decision.finalIsMentioned,
+        shouldRespond: decision.shouldRespond,
         ready: decision.ready,
         pendingCount: messageIds.length,
       },
@@ -375,6 +393,64 @@ async function runMessageFlow({
     );
   }
 
+  // -- task-notify (deterministic, no model call) — runs after extract has
+  // landed, not inside the settle block above, since it reads what extract
+  // just wrote. Skipped entirely on extract failure: nothing new to notify
+  // about, and reading tasks.json right after a failed write isn't useful.
+  const taskNotifyStartedAt = new Date().toISOString();
+  let taskNotifyResult = null;
+  let taskNotifyError = null;
+
+  if (!extractError) {
+    try {
+      taskNotifyResult = await runTaskNotifyStep({
+        spaceId,
+        threadKey,
+        messageIds,
+        message,
+        account,
+        log,
+        sendFn,
+        // Anything write_task delegated during this run's extract step
+        // timestamps at-or-after this — the signal task-notify uses to tell
+        // "just auto-approved this batch" apart from "was already delegated
+        // a while ago, just touched again for an unrelated reason."
+        sinceTimestamp: extractStartedAt,
+      });
+    } catch (err) {
+      taskNotifyError = err;
+    }
+  }
+
+  const taskNotifyEndedAt = new Date().toISOString();
+
+  if (flowId) {
+    await appendJobLogEntry({
+      spaceId,
+      flowId,
+      step: 'task-notify',
+      startedAt: taskNotifyStartedAt,
+      endedAt: taskNotifyEndedAt,
+      outcome: extractError ? 'skipped' : taskNotifyError ? 'error' : 'success',
+      error: errorMessage(taskNotifyError),
+      inputSummary: {
+        messageId: message?.id ?? null,
+        notified: taskNotifyResult?.notified?.length ?? null,
+      },
+    }).catch(() => {});
+  }
+
+  if (taskNotifyError) {
+    log?.error?.(
+      `${LOG_PREFIX} task-notify step failed ${JSON.stringify({
+        spaceId,
+        threadKey,
+        flowId,
+        error: errorMessage(taskNotifyError),
+      })}`
+    );
+  }
+
   // Finalize regardless of any step's outcome — the batch was already
   // claimed at flush time (now sitting in `processing`); leaving it there
   // forever on a step failure would just strand it. "Maintain service": the
@@ -392,6 +468,7 @@ async function runMessageFlow({
       extractError: Boolean(extractError),
       summarizeError: Boolean(summarizeError),
       respondError: Boolean(respondError),
+      taskNotifyError: Boolean(taskNotifyError),
       didSend: Boolean(respondResult?.didSend),
     },
   });

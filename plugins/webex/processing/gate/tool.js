@@ -38,7 +38,7 @@ function tagMessageTool() {
           type: 'string',
           description: 'The threadKey from the prompt. Copy it verbatim.',
         },
-        isMentioned: {
+        isAddressed: {
           type: 'boolean',
           description:
             'Semantic addressing — is the pending slice addressed to the bot, independent of the deterministic mention flag.',
@@ -61,7 +61,7 @@ function tagMessageTool() {
       required: [
         'spaceId',
         'threadKey',
-        'isMentioned',
+        'isAddressed',
         'configRequest',
         'ready',
         'reason',
@@ -69,7 +69,7 @@ function tagMessageTool() {
       additionalProperties: false,
     },
     async execute(_toolUseId, params) {
-      const { spaceId, threadKey, isMentioned, configRequest, ready, reason } =
+      const { spaceId, threadKey, isAddressed, configRequest, ready, reason } =
         params ?? {};
 
       const errors = [];
@@ -80,8 +80,8 @@ function tagMessageTool() {
       if (!threadKey || typeof threadKey !== 'string') {
         errors.push('`threadKey` must be a non-empty string.');
       }
-      if (typeof isMentioned !== 'boolean') {
-        errors.push('`isMentioned` must be a boolean.');
+      if (typeof isAddressed !== 'boolean') {
+        errors.push('`isAddressed` must be a boolean.');
       }
       if (typeof configRequest !== 'boolean') {
         errors.push('`configRequest` must be a boolean.');
@@ -106,7 +106,7 @@ function tagMessageTool() {
       }
 
       pendingTagResults.set(key, {
-        messageTags: { isMentioned, configRequest },
+        messageTags: { isAddressed, configRequest },
         pendingThreadWindowDecision: { ready, reason },
       });
 

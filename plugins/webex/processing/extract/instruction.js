@@ -36,7 +36,12 @@ function buildExtractInstruction({ spaceId, window, messageIds, activeTasks }) {
 
 You are the agent's extraction step for one Webex thread. Your only job is to identify task-worthy points in the messages below and record them by calling \`write_task\`. You do not reply to anyone and you are not evaluating whether to respond — that is a separate step running independently of this one.
 
-A task-worthy point is concrete work: something to build, decide on, research, or coordinate that a person or the team should track and follow up on. Not every message contains one — most turns may warrant zero \`write_task\` calls, and that's the expected common case. Casual remarks, acknowledgements, and pure conversation are not tasks.
+A task-worthy point is a concrete project deliverable, falling into exactly one of these three categories — nothing else qualifies, no matter how important it seems in the conversation:
+- **development**: writing, fixing, or shipping code or a running system — a feature, a bug fix, an integration, a deployment.
+- **design**: producing a concrete design artifact — a UI mockup, an architecture diagram, an API shape, a written spec.
+- **research**: investigating a concrete open question and producing a finding — evaluating an option, prototyping to answer a question, gathering information the team needs.
+
+Anything else is out of scope for \`write_task\`, however notable it is in the thread — a decision being made, a question being asked, general discussion, status updates, acknowledgements. Not every message contains a task-worthy point — most turns may warrant zero \`write_task\` calls, and that's the expected common case.
 
 ### Recent history
 
@@ -73,7 +78,9 @@ For each task-worthy point:
 - Always include a short \`title\` when creating a task — a few words summarizing what it actually is (e.g. "Fix login test flakiness"), not a restatement of the type. Add \`description\` only if the title alone would leave out something that matters.
 - Always include \`message_ids\` — the specific message id(s) that are direct evidence for this task. Never omit this.
 - Use \`child_tasks\` when the point is naturally a sub-part of an existing task, rather than creating an unrelated duplicate.
-- Set \`assigned\`/\`deadline\` only when the thread actually states them — leave them unset otherwise rather than guessing.
+- Set \`assigned\`/\`deadline\` only when the thread actually states them — leave them unset otherwise rather than guessing. Use \`assigned: "agent"\` when the task is for you yourself to pick up.
+- **Status, human-assigned or unassigned tasks**: free — set \`status\` only if the thread clearly shows real progress already exists (e.g. someone says they already started it, or it's already done); otherwise leave it unset and the default applies. No \`confidence\` needed for these.
+- **Status, agent-assigned tasks** (\`assigned: "agent"\`): never set \`status\` yourself. Instead, set \`confidence\` (0-1) — the system decides the outcome deterministically from it, either holding the task for human approval or auto-starting it. Weigh two things: how explicitly you were actually directed to do this, and how well it fits a safe, clearly in-scope pickup (e.g. a small, low-risk contribution that naturally follows from a design conversation can still warrant real confidence even without an explicit instruction — but anything ambiguous or higher-stakes should score low). Rough bands: 0.8+ for an explicit, unambiguous instruction; 0.4-0.7 for a reasonable but not certain pickup; below 0.4 for a speculative or risky one.
 
 Call \`write_task\` once per task-worthy point — as many or as few times as the batch actually warrants, including zero. Once you've made all the calls you need, respond with exactly the word \`done\` and nothing else — no explanation, no punctuation.
 `.trim();

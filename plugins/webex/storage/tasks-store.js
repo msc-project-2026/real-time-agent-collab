@@ -27,6 +27,18 @@ const { writeJsonFileAtomic } = require('./atomic-write');
 //   assigned: 'unknown' | string,    // member/sender id
 //   deadline: 'unknown' | string,    // ISO datetime
 //   status: 'unapproved' | 'backlog' | 'in_progress' | 'in_review' | 'done' | 'archived',
+//   confidence: null | number,       // 0-1, only meaningful when assigned === 'agent'
+//                                     // — the extraction model's own estimate that a
+//                                     // self-assigned task is genuinely warranted.
+//                                     // Drives the auto-approval override (write_task,
+//                                     // response-policy + extraction-calibration
+//                                     // revision) — see CONFIDENCE_AUTO_APPROVE_THRESHOLD.
+//   delegation: null | { target: string, delegatedAt: string },
+//                                     // set only by the auto-approval override when
+//                                     // confidence clears the threshold — a real,
+//                                     // backend-owned field, distinct from the board's
+//                                     // own manual delegate button (still local-only,
+//                                     // unrelated mechanism, see board/src/App.jsx).
 //   message_ids: [...],              // direct evidence only, never via a
 //                                     // conversation hop — append-only.
 //   child_tasks: [...],              // single direction, cycle-checked on
@@ -38,10 +50,17 @@ const { writeJsonFileAtomic } = require('./atomic-write');
 // principle as the v3 §9 summary-supersession index.
 //
 // Board-workflow revision: `delegated` is no longer a status value here —
-// delegation (target + timestamp) is board-local UI state only
-// (board/src/App.jsx), not persisted, until real board write-back lands.
+// the board's own manual delegation action stays board-local UI state only
+// (board/src/App.jsx), not persisted. `delegation` above is a separate,
+// later-added mechanism: our own pipeline code setting it automatically via
+// the confidence auto-approval override, not the board's manual button.
 
 const ACTIVE_STATUSES = new Set(['unapproved', 'backlog', 'in_progress', 'in_review', 'done']);
+
+// Auto-approval bar for a self-assigned (assigned: 'agent') task's
+// extraction-time confidence score — see write_task's override logic
+// (processing/extract/tool.js). Tunable later.
+const CONFIDENCE_AUTO_APPROVE_THRESHOLD = 0.7;
 
 function defaultTasksState() {
   return {
@@ -215,6 +234,8 @@ async function upsertTask({ spaceId, id, patch = {}, explicitRoot }) {
       assigned: patch.assigned ?? 'unknown',
       deadline: patch.deadline ?? 'unknown',
       status: patch.status ?? 'unapproved',
+      confidence: patch.confidence ?? null,
+      delegation: patch.delegation ?? null,
       message_ids: [],
       child_tasks: [],
       createdAt: now,
@@ -230,6 +251,8 @@ async function upsertTask({ spaceId, id, patch = {}, explicitRoot }) {
       assigned: patch.assigned ?? existing.assigned,
       deadline: patch.deadline ?? existing.deadline,
       status: patch.status ?? existing.status,
+      confidence: patch.confidence ?? existing.confidence ?? null,
+      delegation: patch.delegation ?? existing.delegation ?? null,
       updatedAt: now,
     };
   }
@@ -395,4 +418,5 @@ module.exports = {
   searchTasks,
   getParentTasks,
   wouldCreateCycle,
+  CONFIDENCE_AUTO_APPROVE_THRESHOLD,
 };

@@ -19,11 +19,17 @@ describe('write_task tool', () => {
   function loadTool(t, overrides = {}) {
     const upsertTask =
       overrides.upsertTask ?? t.mock.fn(async () => ({ id: 'task_abc', type: 'development' }));
+    const readTasksState =
+      overrides.readTasksState ?? t.mock.fn(async () => ({ tasks: [] }));
     const loaded = loadWithMocks(require.resolve('../processing/extract/tool'), {
-      [require.resolve('../storage/tasks-store')]: { upsertTask },
+      [require.resolve('../storage/tasks-store')]: {
+        upsertTask,
+        readTasksState,
+        CONFIDENCE_AUTO_APPROVE_THRESHOLD: 0.7,
+      },
     });
     t.after(loaded.restore);
-    return { ...loaded.subject, upsertTask };
+    return { ...loaded.subject, upsertTask, readTasksState };
   }
 
   test('creating a task delegates to upsertTask with the given fields', async (t) => {
@@ -50,6 +56,7 @@ describe('write_task tool', () => {
         assigned: 'alice',
         deadline: undefined,
         status: undefined,
+        confidence: undefined,
         message_ids: ['msg-1'],
         child_tasks: undefined,
       },
@@ -161,6 +168,146 @@ describe('write_task tool', () => {
 
     assert.equal(result.ok, false);
     assert.ok(result.errors.some((e) => e.includes('cycle')));
+  });
+
+  test('coordination is no longer an accepted type', async (t) => {
+    const { writeTaskTool } = loadTool(t);
+    const tool = writeTaskTool();
+
+    const result = await tool.execute('id-1', {
+      spaceId: 'space-1',
+      title: 'Fix login test',
+      type: 'coordination',
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(result.errors.some((e) => e.includes('type')));
+  });
+
+  test('confidence outside 0-1 or non-numeric is rejected, and never calls the store', async (t) => {
+    const { writeTaskTool, upsertTask } = loadTool(t);
+    const tool = writeTaskTool();
+
+    const tooHigh = await tool.execute('id-1', {
+      spaceId: 'space-1',
+      title: 'Fix login test',
+      type: 'development',
+      confidence: 1.5,
+    });
+    const notNumber = await tool.execute('id-1', {
+      spaceId: 'space-1',
+      title: 'Fix login test',
+      type: 'development',
+      confidence: 'high',
+    });
+
+    assert.equal(tooHigh.ok, false);
+    assert.ok(tooHigh.errors.some((e) => e.includes('confidence')));
+    assert.equal(notNumber.ok, false);
+    assert.ok(notNumber.errors.some((e) => e.includes('confidence')));
+    assert.equal(upsertTask.mock.callCount(), 0);
+  });
+
+  test('auto-approves and delegates a self-assigned task that clears the confidence threshold on create', async (t) => {
+    const upsertTask = t.mock.fn(async (params) => {
+      if (params.patch?.status === 'in_progress') {
+        return {
+          id: 'task_abc',
+          type: 'development',
+          assigned: 'agent',
+          confidence: 0.9,
+          status: 'in_progress',
+          delegation: params.patch.delegation,
+        };
+      }
+      return {
+        id: 'task_abc',
+        type: 'development',
+        assigned: 'agent',
+        confidence: 0.9,
+        status: 'unapproved',
+      };
+    });
+    const { writeTaskTool } = loadTool(t, { upsertTask });
+    const tool = writeTaskTool();
+
+    const result = await tool.execute('id-1', {
+      spaceId: 'space-1',
+      title: 'Investigate flaky test',
+      type: 'development',
+      assigned: 'agent',
+      confidence: 0.9,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(upsertTask.mock.callCount(), 2);
+    const overridePatch = upsertTask.mock.calls[1].arguments[0].patch;
+    assert.equal(overridePatch.status, 'in_progress');
+    assert.equal(overridePatch.delegation.target, 'dev-swarm');
+    assert.ok(overridePatch.delegation.delegatedAt);
+    assert.equal(result.task.status, 'in_progress');
+  });
+
+  test('does not auto-approve when confidence is below the threshold', async (t) => {
+    const upsertTask = t.mock.fn(async () => ({
+      id: 'task_abc',
+      type: 'development',
+      assigned: 'agent',
+      confidence: 0.4,
+      status: 'unapproved',
+    }));
+    const { writeTaskTool } = loadTool(t, { upsertTask });
+    const tool = writeTaskTool();
+
+    await tool.execute('id-1', {
+      spaceId: 'space-1',
+      title: 'Investigate flaky test',
+      type: 'development',
+      assigned: 'agent',
+      confidence: 0.4,
+    });
+
+    assert.equal(upsertTask.mock.callCount(), 1);
+  });
+
+  test('does not auto-approve a task not assigned to the agent, even with high confidence', async (t) => {
+    const upsertTask = t.mock.fn(async () => ({
+      id: 'task_abc',
+      type: 'development',
+      assigned: 'alice',
+      confidence: 0.95,
+      status: 'unapproved',
+    }));
+    const { writeTaskTool } = loadTool(t, { upsertTask });
+    const tool = writeTaskTool();
+
+    await tool.execute('id-1', {
+      spaceId: 'space-1',
+      title: 'Investigate flaky test',
+      type: 'development',
+      assigned: 'alice',
+    });
+
+    assert.equal(upsertTask.mock.callCount(), 1);
+  });
+
+  test('does not re-trigger auto-approval on a patch whose prior status was already past unapproved', async (t) => {
+    const readTasksState = t.mock.fn(async () => ({
+      tasks: [{ id: 'task_abc', status: 'in_review' }],
+    }));
+    const upsertTask = t.mock.fn(async () => ({
+      id: 'task_abc',
+      type: 'development',
+      assigned: 'agent',
+      confidence: 0.95,
+      status: 'in_review',
+    }));
+    const { writeTaskTool } = loadTool(t, { upsertTask, readTasksState });
+    const tool = writeTaskTool();
+
+    await tool.execute('id-1', { spaceId: 'space-1', id: 'task_abc', confidence: 0.95 });
+
+    assert.equal(upsertTask.mock.callCount(), 1);
   });
 });
 

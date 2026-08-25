@@ -51,7 +51,7 @@ function loadFlow(t, overrides = {}) {
     })),
     getRoutingAgentId: t.mock.fn(() => 'main'),
     dispatchTaggingGate: t.mock.fn(async () => ({
-      messageTags: { isMentioned: false, configRequest: false },
+      messageTags: { isAddressed: false, configRequest: false },
       pendingThreadWindowDecision: { ready: false, reason: 'Not yet.' },
     })),
     handleConfigRequest: t.mock.fn(async () => undefined),
@@ -80,6 +80,7 @@ function loadFlow(t, overrides = {}) {
       sessionKey: 'agent:main:webex:space-1:summarize:__main__',
       runId: 'summarize-123',
     })),
+    runTaskNotifyStep: t.mock.fn(async () => ({ outcome: 'success', notified: [] })),
     appendJobLogEntry: t.mock.fn(async () => undefined),
     ...overrides,
   };
@@ -109,6 +110,9 @@ function loadFlow(t, overrides = {}) {
     },
     [require.resolve('../processing/summarize/dispatch')]: {
       runSummarizeStep: collaborators.runSummarizeStep,
+    },
+    [require.resolve('../processing/task-notify')]: {
+      runTaskNotifyStep: collaborators.runTaskNotifyStep,
     },
     [require.resolve('../flow/job-log')]: {
       appendJobLogEntry: collaborators.appendJobLogEntry,
@@ -145,20 +149,21 @@ describe('runMessageFlow — nothing warranted', () => {
     assert.equal(collaborators.runExtractStep.mock.callCount(), 0);
     assert.equal(collaborators.runSummarizeStep.mock.callCount(), 0);
     assert.equal(collaborators.runRespondStep.mock.callCount(), 0);
+    assert.equal(collaborators.runTaskNotifyStep.mock.callCount(), 0);
     assert.equal(finishSpy.mock.callCount(), 1);
     assert.equal(finishSpy.mock.calls[0].arguments[0].flowId, 'flow-1');
   });
 });
 
 describe('runMessageFlow — pending backstop (v3 §2)', () => {
-  test('forces shouldProcess once pendingCount reaches the backstop size, even when the gate says neither addressed nor ready', async (t) => {
+  test('forces shouldProcess once pendingCount reaches the backstop size, even when the gate says neither addressed nor ready — but does not spawn respond, since nobody addressed the bot', async (t) => {
     const { runMessageFlow, collaborators } = loadFlow(t);
 
     await runMessageFlow(baseParams(t, { pendingCount: 50 }));
 
     assert.equal(collaborators.runExtractStep.mock.callCount(), 1);
     assert.equal(collaborators.runSummarizeStep.mock.callCount(), 1);
-    assert.equal(collaborators.runRespondStep.mock.callCount(), 1);
+    assert.equal(collaborators.runRespondStep.mock.callCount(), 0);
   });
 
   test('does not force shouldProcess below the backstop size', async (t) => {
@@ -191,7 +196,7 @@ describe('runMessageFlow — configRequest', () => {
   test('hands off to the config flow and finishes without extract, summarize, or respond', async (t) => {
     const { runMessageFlow, collaborators, boundFlow } = loadFlow(t, {
       dispatchTaggingGate: (async () => ({
-        messageTags: { isMentioned: false, configRequest: true },
+        messageTags: { isAddressed: false, configRequest: true },
         pendingThreadWindowDecision: { ready: false, reason: 'Config ask only.' },
       })),
     });
@@ -212,7 +217,7 @@ describe('runMessageFlow — shouldProcess', () => {
   test('flushes pending, resumes into "process", runs extract and respond together, and finishes on success', async (t) => {
     const { runMessageFlow, collaborators, boundFlow } = loadFlow(t, {
       dispatchTaggingGate: (async () => ({
-        messageTags: { isMentioned: true, configRequest: false },
+        messageTags: { isAddressed: true, configRequest: false },
         pendingThreadWindowDecision: { ready: false, reason: 'Addressed.' },
       })),
     });
@@ -278,12 +283,40 @@ describe('runMessageFlow — shouldProcess', () => {
       ),
       true
     );
+    assert.equal(collaborators.runTaskNotifyStep.mock.callCount(), 1);
+    assert.equal(
+      collaborators.appendJobLogEntry.mock.calls.some(
+        (call) => call.arguments[0].step === 'task-notify' && call.arguments[0].outcome === 'success'
+      ),
+      true
+    );
+  });
+
+  test('ready alone (not addressed/mentioned) still runs extract and summarize but never spawns respond — job-log carries a "skipped" respond entry', async (t) => {
+    const { runMessageFlow, collaborators } = loadFlow(t, {
+      dispatchTaggingGate: (async () => ({
+        messageTags: { isAddressed: false, configRequest: false },
+        pendingThreadWindowDecision: { ready: true, reason: 'Complete ask, not addressed.' },
+      })),
+    });
+
+    await runMessageFlow(baseParams(t));
+
+    assert.equal(collaborators.runExtractStep.mock.callCount(), 1);
+    assert.equal(collaborators.runSummarizeStep.mock.callCount(), 1);
+    assert.equal(collaborators.runRespondStep.mock.callCount(), 0);
+    assert.equal(
+      collaborators.appendJobLogEntry.mock.calls.some(
+        (call) => call.arguments[0].step === 'respond' && call.arguments[0].outcome === 'skipped'
+      ),
+      true
+    );
   });
 
   test('skips markThreadMessagesProcessing/finalizeProcessingMessages when the pending slice is empty', async (t) => {
     const { runMessageFlow, collaborators } = loadFlow(t, {
       dispatchTaggingGate: (async () => ({
-        messageTags: { isMentioned: true, configRequest: false },
+        messageTags: { isAddressed: true, configRequest: false },
         pendingThreadWindowDecision: { ready: false, reason: 'Addressed.' },
       })),
       getPendingSlice: (async () => []),
@@ -301,7 +334,7 @@ describe('runMessageFlow — shouldProcess', () => {
   test('a summarize step failure does not block extract or respond, does not fail the flow, and still finalizes ("maintain service")', async (t) => {
     const { runMessageFlow, collaborators, boundFlow } = loadFlow(t, {
       dispatchTaggingGate: (async () => ({
-        messageTags: { isMentioned: true, configRequest: false },
+        messageTags: { isAddressed: true, configRequest: false },
         pendingThreadWindowDecision: { ready: false, reason: 'Addressed.' },
       })),
       runSummarizeStep: (async () => {
@@ -332,7 +365,7 @@ describe('runMessageFlow — shouldProcess', () => {
   test('a respond step failure does not block extract, does not fail the flow, and still finalizes ("maintain service")', async (t) => {
     const { runMessageFlow, collaborators, boundFlow } = loadFlow(t, {
       dispatchTaggingGate: (async () => ({
-        messageTags: { isMentioned: true, configRequest: false },
+        messageTags: { isAddressed: true, configRequest: false },
         pendingThreadWindowDecision: { ready: false, reason: 'Addressed.' },
       })),
       runRespondStep: (async () => {
@@ -361,7 +394,7 @@ describe('runMessageFlow — shouldProcess', () => {
   test('an extract step failure does not block respond, does not fail the flow, and still finalizes ("maintain service")', async (t) => {
     const { runMessageFlow, collaborators, boundFlow } = loadFlow(t, {
       dispatchTaggingGate: (async () => ({
-        messageTags: { isMentioned: true, configRequest: false },
+        messageTags: { isAddressed: true, configRequest: false },
         pendingThreadWindowDecision: { ready: false, reason: 'Addressed.' },
       })),
       runExtractStep: (async () => {
@@ -385,6 +418,15 @@ describe('runMessageFlow — shouldProcess', () => {
       ),
       true
     );
+    // task-notify reads what extract just wrote — skipped entirely on
+    // extract failure, nothing new to notify about.
+    assert.equal(collaborators.runTaskNotifyStep.mock.callCount(), 0);
+    assert.equal(
+      collaborators.appendJobLogEntry.mock.calls.some(
+        (call) => call.arguments[0].step === 'task-notify' && call.arguments[0].outcome === 'skipped'
+      ),
+      true
+    );
   });
 
   test('extract and respond run together, not chained — respond is not delayed behind a slow extract', async (t) => {
@@ -400,7 +442,7 @@ describe('runMessageFlow — shouldProcess', () => {
 
     const { runMessageFlow } = loadFlow(t, {
       dispatchTaggingGate: (async () => ({
-        messageTags: { isMentioned: true, configRequest: false },
+        messageTags: { isAddressed: true, configRequest: false },
         pendingThreadWindowDecision: { ready: false, reason: 'Addressed.' },
       })),
       runExtractStep: (async () => {
@@ -437,7 +479,7 @@ describe('runMessageFlow — shouldProcess', () => {
   test('configRequest and shouldProcess both fire when the gate reports both', async (t) => {
     const { runMessageFlow, collaborators } = loadFlow(t, {
       dispatchTaggingGate: (async () => ({
-        messageTags: { isMentioned: true, configRequest: true },
+        messageTags: { isAddressed: true, configRequest: true },
         pendingThreadWindowDecision: { ready: false, reason: 'Both.' },
       })),
     });
@@ -474,7 +516,7 @@ describe('runMessageFlow — concurrency locking', () => {
         }
         order.push(isFirst ? 'first-gate-end' : 'second-gate-end');
         return {
-          messageTags: { isMentioned: false, configRequest: false },
+          messageTags: { isAddressed: false, configRequest: false },
           pendingThreadWindowDecision: { ready: false, reason: 'Not ready.' },
         };
       }),
@@ -509,7 +551,7 @@ describe('runMessageFlow — concurrency locking', () => {
     let callIndex = 0;
     const { runMessageFlow } = loadFlow(t, {
       dispatchTaggingGate: (async () => ({
-        messageTags: { isMentioned: true, configRequest: false },
+        messageTags: { isAddressed: true, configRequest: false },
         pendingThreadWindowDecision: { ready: false, reason: 'Addressed.' },
       })),
       runExtractStep: t.mock.fn(async () => {
@@ -557,7 +599,7 @@ describe('runMessageFlow — concurrency locking', () => {
     let callIndex = 0;
     const { runMessageFlow } = loadFlow(t, {
       dispatchTaggingGate: (async () => ({
-        messageTags: { isMentioned: true, configRequest: false },
+        messageTags: { isAddressed: true, configRequest: false },
         pendingThreadWindowDecision: { ready: false, reason: 'Addressed.' },
       })),
       runSummarizeStep: t.mock.fn(async () => {
@@ -605,7 +647,7 @@ describe('runMessageFlow — concurrency locking', () => {
 
     const { runMessageFlow } = loadFlow(t, {
       dispatchTaggingGate: (async () => ({
-        messageTags: { isMentioned: true, configRequest: false },
+        messageTags: { isAddressed: true, configRequest: false },
         pendingThreadWindowDecision: { ready: false, reason: 'Addressed.' },
       })),
       runExtractStep: (async () => {
@@ -638,7 +680,7 @@ describe('runMessageFlow — Task Flow unavailable', () => {
     const { runMessageFlow, collaborators } = loadFlow(t, {
       getPluginRuntime: (() => ({})),
       dispatchTaggingGate: (async () => ({
-        messageTags: { isMentioned: true, configRequest: false },
+        messageTags: { isAddressed: true, configRequest: false },
         pendingThreadWindowDecision: { ready: false, reason: 'Addressed.' },
       })),
     });

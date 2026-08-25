@@ -19,27 +19,9 @@ const { getActiveTasks } = require('../../storage/tasks-store');
 const { safeSegment } = require('../../storage/paths');
 const { buildRespondInstruction } = require('./instruction');
 const { getRoutingAgentId } = require('../../runtime');
+const { deriveBoardUrl } = require('../board-url');
 
 const DEFAULT_TIMEOUT_MS = 30_000;
-
-// The model has no way to know the space's own id or the board's URL on its
-// own — it's not something an LLM should ever guess or fabricate. Derived
-// from the account's own webhook URL (the one piece of config that reliably
-// carries the deployment's public host) rather than requiring new config.
-// Returns null if it can't be derived (e.g. account/config missing in a
-// test double) — the prompt just omits the fact rather than showing a
-// broken link.
-function deriveBoardUrl({ account, spaceId }) {
-  const webhookUrl = account?.config?.botWebhookUrl;
-  if (!webhookUrl) return null;
-
-  try {
-    const origin = new URL(webhookUrl).origin;
-    return `${origin}/webex/collab/board?spaceId=${encodeURIComponent(spaceId)}`;
-  } catch {
-    return null;
-  }
-}
 
 async function runRespondStep({
   pluginRuntime,
@@ -93,11 +75,7 @@ async function runRespondStep({
     threadKey,
     window,
     messageIds,
-    directive: {
-      addressed: decision?.finalIsMentioned,
-      ready: decision?.ready,
-      reason: decision?.reason,
-    },
+    directive: { reason: decision?.reason },
     replyThreadId,
     activeTasks,
     knownFacts,

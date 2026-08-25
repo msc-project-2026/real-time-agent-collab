@@ -12,6 +12,7 @@ const {
   searchTasks,
   getParentTasks,
   wouldCreateCycle,
+  CONFIDENCE_AUTO_APPROVE_THRESHOLD,
 } = require('../storage/tasks-store');
 
 // ---------------------------------------------------------------------------
@@ -35,6 +36,8 @@ describe('tasks-store — upsert', () => {
     assert.equal(task.assigned, 'unknown');
     assert.equal(task.deadline, 'unknown');
     assert.equal(task.status, 'unapproved');
+    assert.equal(task.confidence, null);
+    assert.equal(task.delegation, null);
     assert.deepEqual(task.message_ids, ['msg-1']);
     assert.deepEqual(task.child_tasks, []);
     assert.ok(task.createdAt);
@@ -42,6 +45,52 @@ describe('tasks-store — upsert', () => {
 
     const state = await readTasksState({ spaceId: 'space-1', explicitRoot: root });
     assert.equal(state.tasks.length, 1);
+  });
+
+  test('confidence and delegation are patchable, and preserved across a patch that omits them', async (t) => {
+    const root = await makeTempWorkspace(t);
+
+    const created = await upsertTask({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      patch: { title: 'Investigate flaky test', type: 'research', assigned: 'agent', confidence: 0.85 },
+    });
+    assert.equal(created.confidence, 0.85);
+    assert.equal(created.delegation, null);
+
+    const delegated = await upsertTask({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      id: created.id,
+      patch: {
+        status: 'in_progress',
+        delegation: { target: 'research-agent', delegatedAt: '2026-08-25T00:00:00.000Z' },
+      },
+    });
+    assert.equal(delegated.status, 'in_progress');
+    assert.deepEqual(delegated.delegation, {
+      target: 'research-agent',
+      delegatedAt: '2026-08-25T00:00:00.000Z',
+    });
+    // confidence wasn't part of this patch — it survives, not reset to null.
+    assert.equal(delegated.confidence, 0.85);
+
+    const untouched = await upsertTask({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      id: created.id,
+      patch: { title: 'Investigate flaky test (renamed)' },
+    });
+    assert.equal(untouched.confidence, 0.85);
+    assert.deepEqual(untouched.delegation, {
+      target: 'research-agent',
+      delegatedAt: '2026-08-25T00:00:00.000Z',
+    });
+  });
+
+  test('exports the confidence auto-approval threshold as a tunable constant', () => {
+    assert.equal(typeof CONFIDENCE_AUTO_APPROVE_THRESHOLD, 'number');
+    assert.ok(CONFIDENCE_AUTO_APPROVE_THRESHOLD > 0 && CONFIDENCE_AUTO_APPROVE_THRESHOLD <= 1);
   });
 
   test('creating without `type` throws', async (t) => {
