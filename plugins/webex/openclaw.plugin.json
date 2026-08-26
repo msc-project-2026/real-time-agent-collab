@@ -47,13 +47,13 @@
         "items": { "type": "string" },
         "description": "Allowed sender emails or person IDs (dmPolicy: allowlisted)"
       },
-      "routingAgentId": {
+      "collabAgentId": {
         "type": "string",
         "description": "Agent ID used for message routing classification and processing spawns (gate/extract/summarize/respond). Configure this agent with a lightweight model in the host openclaw.json. Defaults to 'main'."
       },
       "embeddingsAgentId": {
         "type": "string",
-        "description": "Agent ID whose `memorySearch` config the recall feature (v3 §9) resolves embeddings from. Defaults to routingAgentId's value if unset. For recall to work, this agent needs a `memorySearch` block configured in the host's agents.list[] entry — without it, recall embedding calls fail soft (logged, skipped) rather than crashing."
+        "description": "Agent ID whose `memorySearch` config the recall feature (v3 §9) resolves embeddings from. Defaults to collabAgentId's value if unset. For recall to work, this agent needs a `memorySearch` block configured in the host's agents.list[] entry — without it, recall embedding calls fail soft (logged, skipped) rather than crashing."
       },
       "accessToken": {
         "type": "string",
