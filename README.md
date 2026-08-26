@@ -1,6 +1,6 @@
 # Real-Time Agent Collaboration
 
-An AI agent collaboration system that connects a Cisco Webex bot to an [OpenClaw](https://github.com/openclaw/openclaw) gateway, backed by a Cisco LLM proxy. A companion Setup UI lets teams onboard new projects by writing configuration directly to their GitHub repos via a GitHub App.
+An AI agent collaboration system that connects a bot to an [OpenClaw](https://github.com/openclaw/openclaw) gateway, backed by a Cisco LLM proxy. A companion Setup UI lets teams onboard new projects by writing configuration directly to their GitHub repos via a GitHub App.
 
 ---
 
