@@ -15,9 +15,19 @@ const {
 } = require('./token');
 const { targets, normPath } = require('./webhook/router');
 const { handleInboundWebexWebhook } = require('./inbound');
-const { sendWebexMessage } = require('./send');
+const { sendOutboundMessage } = require('./send');
 
 const DEFAULT_ACCOUNT = 'default';
+
+// Populated in startAccount once the bot's own identity is resolved.
+// resolveAccount stays synchronous (it's called all over, including
+// synchronously in tests) so it can't fetch botId itself — it just reads
+// this cache and merges it in.
+const botIdByAccountId = new Map();
+
+function makeFetchMessageById(token) {
+  return (id) => webexFetch(token, `/messages/${id}`);
+}
 
 function redactAccount(a) {
   if (!a) return null;
@@ -108,6 +118,7 @@ function resolveAccount(cfg, accountId = DEFAULT_ACCOUNT) {
     accountId,
     enabled: section.enabled !== false,
     configured: Boolean(resolved.token),
+    botId: botIdByAccountId.get(accountId) ?? null,
     config: resolved,
   };
 }
@@ -214,6 +225,7 @@ const webexPlugin = {
       account,
       accountId = DEFAULT_ACCOUNT,
       replyToId,
+      recordToThread = true,
     }) => {
       // Diagnostic only — direct ground truth for whether the message tool
       // actually threads the send, since this is the one place upstream
@@ -241,7 +253,11 @@ const webexPlugin = {
         );
       }
 
-      const msg = await sendWebexMessage({
+      const msg = await sendOutboundMessage({
+        spaceId: to,
+        botId: resolvedAccount.botId,
+        fetchMessageById: makeFetchMessageById(resolvedAccount.config.token),
+        recordToThread,
         token: resolvedAccount.config.token,
         to,
         // Sent as `markdown`, not `text` — Webex only renders formatting
@@ -269,6 +285,7 @@ const webexPlugin = {
       account,
       accountId = DEFAULT_ACCOUNT,
       replyToId,
+      recordToThread = true,
     }) => {
       // Diagnostic only — see sendText's identical note above.
       console.log('[collab-agent:channel-send] sendMedia replyToId', {
@@ -294,7 +311,11 @@ const webexPlugin = {
         );
       }
 
-      const msg = await sendWebexMessage({
+      const msg = await sendOutboundMessage({
+        spaceId: to,
+        botId: resolvedAccount.botId,
+        fetchMessageById: makeFetchMessageById(resolvedAccount.config.token),
+        recordToThread,
         token: resolvedAccount.config.token,
         to,
         // See sendText's identical note above — markdown, not text, is what
@@ -406,6 +427,7 @@ const webexPlugin = {
       // Resolve bot identity so we can filter self-messages and detect mentions
       const botInfo = await webexFetch(cfg.token, '/people/me');
       const botId = botInfo.id;
+      botIdByAccountId.set(account.accountId, botId);
       log?.info?.(`[webex:${account.accountId}] bot id=${botId}`);
 
       // Refresh access token every 12 days (tokens last ~14 days); Webex auto-renews the refresh token.

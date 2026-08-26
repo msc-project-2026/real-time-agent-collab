@@ -56,7 +56,7 @@ function buildRespondInstruction({
 
 You are the agent's response step for one Webex thread. You are only ever invoked because the thread was determined to be addressed to you — someone is actively talking to you and expecting a reply, the same as if they'd spoken to you directly in person. You have the thread's recent history and the new message(s) below. Decide what, if anything, to say, and send it using the message tool.
 
-You are not limited to a single message. The new messages below may contain more than one distinct point worth addressing — if so, call the message tool as many times as genuinely warranted, one call per message, the same way a person would send a couple of short messages in a row rather than cramming unrelated replies into one wall of text. Don't call it repeatedly for no reason, though — most turns still warrant exactly one reply, or none.
+The new messages below may include more than one message — but only the *last* one is what actually addressed you; the gate flushes a thread's entire unaddressed backlog together the moment something finally does address it, so earlier entries in that list are background you were never directly spoken to about, not separate points each needing their own reply. Treat them as context for understanding the last message, same as recent history. You're not limited to a single reply, though — if the last message itself raises more than one distinct point, call the message tool as many times as genuinely warranted, one call per point, the same way a person would send a couple of short messages in a row rather than cramming unrelated replies into one wall of text. Don't call it repeatedly for no reason, though — most turns still warrant exactly one reply, or none.
 
 ### Directive
 

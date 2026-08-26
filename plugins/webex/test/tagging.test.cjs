@@ -29,7 +29,7 @@ describe('tag_message tool validation', () => {
     threadKey: '__main__',
     isAddressed: true,
     configRequest: false,
-    ready: true,
+    sliceReady: true,
     reason: 'Contains a complete request.',
   };
 
@@ -43,7 +43,7 @@ describe('tag_message tool validation', () => {
     assert.deepEqual(takePendingTagResult('space-1', '__main__'), {
       messageTags: { isAddressed: true, configRequest: false },
       pendingThreadWindowDecision: {
-        ready: true,
+        sliceReady: true,
         reason: 'Contains a complete request.',
       },
     });
@@ -63,15 +63,15 @@ describe('tag_message tool validation', () => {
     const { tagMessageTool, takePendingTagResult } = loadTool();
     const tool = tagMessageTool();
 
-    await tool.execute('id-1', { ...validParams, threadKey: 'thread-a', ready: true });
-    await tool.execute('id-2', { ...validParams, threadKey: 'thread-b', ready: false });
+    await tool.execute('id-1', { ...validParams, threadKey: 'thread-a', sliceReady: true });
+    await tool.execute('id-2', { ...validParams, threadKey: 'thread-b', sliceReady: false });
 
     assert.equal(
-      takePendingTagResult('space-1', 'thread-a').pendingThreadWindowDecision.ready,
+      takePendingTagResult('space-1', 'thread-a').pendingThreadWindowDecision.sliceReady,
       true
     );
     assert.equal(
-      takePendingTagResult('space-1', 'thread-b').pendingThreadWindowDecision.ready,
+      takePendingTagResult('space-1', 'thread-b').pendingThreadWindowDecision.sliceReady,
       false
     );
   });
@@ -87,7 +87,7 @@ describe('tag_message tool validation', () => {
     assert.equal(takePendingTagResult('space-1', '__main__'), null);
   });
 
-  test('non-boolean isAddressed/configRequest/ready returns validation error', async () => {
+  test('non-boolean isAddressed/configRequest/sliceReady returns validation error', async () => {
     const { tagMessageTool } = loadTool();
     const tool = tagMessageTool();
 
@@ -95,13 +95,13 @@ describe('tag_message tool validation', () => {
       ...validParams,
       isAddressed: 'yes',
       configRequest: 0,
-      ready: 'true',
+      sliceReady: 'true',
     });
 
     assert.equal(result.ok, false);
     assert.ok(result.errors.some((e) => e.includes('isAddressed')));
     assert.ok(result.errors.some((e) => e.includes('configRequest')));
-    assert.ok(result.errors.some((e) => e.includes('ready')));
+    assert.ok(result.errors.some((e) => e.includes('sliceReady')));
   });
 
   test('empty reason string returns validation error and does not store', async () => {
@@ -240,7 +240,7 @@ describe('dispatchTaggingGate', () => {
       })),
       takePendingTagResult: t.mock.fn(() => ({
         messageTags: { isAddressed: true, configRequest: false },
-        pendingThreadWindowDecision: { ready: true, reason: 'Complete ask.' },
+        pendingThreadWindowDecision: { sliceReady: true, reason: 'Complete ask.' },
       })),
       appendTaggingValidationRecord: t.mock.fn(async () => undefined),
       getRoutingAgentId: t.mock.fn(() => 'main'),
@@ -501,7 +501,7 @@ describe('decideDispatch', () => {
     const decision = decideDispatch({
       tagResult: {
         messageTags: { isAddressed: false, configRequest: false },
-        pendingThreadWindowDecision: { ready: false, reason: 'Not yet.' },
+        pendingThreadWindowDecision: { sliceReady: false, reason: 'Not yet.' },
       },
       isBotMentioned: false,
     });
@@ -511,7 +511,7 @@ describe('decideDispatch', () => {
       isBotAddressed: false,
       shouldRespond: false,
       configRequest: false,
-      ready: false,
+      sliceReady: false,
       shouldProcess: false,
       reason: 'Not yet.',
     });
@@ -521,7 +521,7 @@ describe('decideDispatch', () => {
     const decision = decideDispatch({
       tagResult: {
         messageTags: { isAddressed: false, configRequest: false },
-        pendingThreadWindowDecision: { ready: false, reason: 'Not judged addressed.' },
+        pendingThreadWindowDecision: { sliceReady: false, reason: 'Not judged addressed.' },
       },
       isBotMentioned: true,
     });
@@ -534,7 +534,7 @@ describe('decideDispatch', () => {
     const decision = decideDispatch({
       tagResult: {
         messageTags: { isAddressed: true, configRequest: false },
-        pendingThreadWindowDecision: { ready: false, reason: 'Semantically addressed.' },
+        pendingThreadWindowDecision: { sliceReady: false, reason: 'Semantically addressed.' },
       },
       isBotMentioned: false,
     });
@@ -543,39 +543,39 @@ describe('decideDispatch', () => {
     assert.equal(decision.shouldProcess, true);
   });
 
-  test('ready alone triggers shouldProcess without shouldRespond', () => {
+  test('sliceReady alone triggers shouldProcess without shouldRespond', () => {
     const decision = decideDispatch({
       tagResult: {
         messageTags: { isAddressed: false, configRequest: false },
-        pendingThreadWindowDecision: { ready: true, reason: 'Complete ask.' },
+        pendingThreadWindowDecision: { sliceReady: true, reason: 'Complete ask.' },
       },
       isBotMentioned: false,
     });
 
     assert.equal(decision.shouldRespond, false);
-    assert.equal(decision.ready, true);
+    assert.equal(decision.sliceReady, true);
     assert.equal(decision.shouldProcess, true);
   });
 
-  test('mention and ready can both be true for the same message', () => {
+  test('mention and sliceReady can both be true for the same message', () => {
     const decision = decideDispatch({
       tagResult: {
         messageTags: { isAddressed: true, configRequest: false },
-        pendingThreadWindowDecision: { ready: true, reason: 'Both.' },
+        pendingThreadWindowDecision: { sliceReady: true, reason: 'Both.' },
       },
       isBotMentioned: true,
     });
 
     assert.equal(decision.shouldRespond, true);
-    assert.equal(decision.ready, true);
+    assert.equal(decision.sliceReady, true);
     assert.equal(decision.shouldProcess, true);
   });
 
-  test('configRequest is independent of mention/ready and can co-occur', () => {
+  test('configRequest is independent of mention/sliceReady and can co-occur', () => {
     const decision = decideDispatch({
       tagResult: {
         messageTags: { isAddressed: false, configRequest: true },
-        pendingThreadWindowDecision: { ready: true, reason: 'Config ask plus a task.' },
+        pendingThreadWindowDecision: { sliceReady: true, reason: 'Config ask plus a task.' },
       },
       isBotMentioned: false,
     });
@@ -591,7 +591,7 @@ describe('decideDispatch', () => {
       isBotAddressed: false,
       shouldRespond: false,
       configRequest: false,
-      ready: false,
+      sliceReady: false,
       shouldProcess: false,
       reason: null,
     });
@@ -620,7 +620,7 @@ describe('appendTaggingValidationRecord', () => {
       toolCallAttempts: 1,
       tagResult: {
         messageTags: { isAddressed: true, configRequest: false },
-        pendingThreadWindowDecision: { ready: true, reason: 'done' },
+        pendingThreadWindowDecision: { sliceReady: true, reason: 'done' },
       },
       explicitRoot: root,
     });
@@ -632,7 +632,7 @@ describe('appendTaggingValidationRecord', () => {
       pendingSliceSize: 3,
       tagResult: {
         messageTags: { isAddressed: false, configRequest: false },
-        pendingThreadWindowDecision: { ready: false, reason: 'not yet' },
+        pendingThreadWindowDecision: { sliceReady: false, reason: 'not yet' },
       },
       explicitRoot: root,
     });
@@ -645,7 +645,7 @@ describe('appendTaggingValidationRecord', () => {
     assert.equal(lines[0].toolCallAttempts, 1);
     assert.equal(lines[1].messageId, 'msg-2');
     assert.equal(lines[1].toolCallAttempts, null);
-    assert.equal(lines[1].pendingThreadWindowDecision.ready, false);
+    assert.equal(lines[1].pendingThreadWindowDecision.sliceReady, false);
   });
 });
 

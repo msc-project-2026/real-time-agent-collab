@@ -256,7 +256,7 @@ describe('accepted inbound message — flow dispatch', () => {
     assert.deepEqual(flowArgs.account, { accountId: 'default' });
   });
 
-  test('stops before running the flow on a bot-authored message, after recording thread context', async (t) => {
+  test('never records or runs the flow for a bot-authored message — recording is now the sender\'s job at send time', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const webexFetch = t.mock.fn(async (_token, apiPath) =>
       apiPath.startsWith('/messages/')
@@ -277,7 +277,12 @@ describe('accepted inbound message — flow dispatch', () => {
       inboundContext(t)
     );
 
-    assert.equal(collaborators.appendMessageToThreadWindow.mock.callCount(), 1);
+    // The bot-message check now runs before appendMessageToThreadWindow, not
+    // after — the inbound webhook echo no longer records anything for the
+    // bot's own sends (send.js's sendOutboundMessage does that at send time
+    // instead), so double-appending — and silently defeating a deliberately
+    // unrecorded send like the "thinking" placeholder — can't happen.
+    assert.equal(collaborators.appendMessageToThreadWindow.mock.callCount(), 0);
     assert.equal(collaborators.runMessageFlow.mock.callCount(), 0);
   });
 });

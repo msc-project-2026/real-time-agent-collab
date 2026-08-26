@@ -39,8 +39,11 @@
 //   are space-scoped files, same reasoning as layer 2b, but a separate lock
 //   key since it's a different pair of files (no reason to serialize
 //   summarize behind extract or vice versa).
-// - respond acquires neither lock — genuinely unconstrained, best effort
-//   with whatever's readable at call time.
+// - respond acquires neither lock itself, but (response-policy revision,
+//   phase 2) is no longer unconstrained relative to extract/task-notify —
+//   it now runs sequenced *after* both settle, only when shouldRespond,
+//   so it can be deterministically skipped when task-notify already sent
+//   something for the triggering message. See the "respond" section below.
 //
 // Replaces the old sequence in inbound/message.js (dispatchTaggingGate ->
 // decideDispatch -> handleStagePendingBatchRequest) and the phase-4
@@ -59,6 +62,7 @@ const { runRespondStep } = require('../processing/respond/dispatch');
 const { runExtractStep } = require('../processing/extract/dispatch');
 const { runSummarizeStep } = require('../processing/summarize/dispatch');
 const { runTaskNotifyStep } = require('../processing/task-notify');
+const { sendThinkingAck } = require('../processing/thinking-ack');
 const { appendJobLogEntry } = require('./job-log');
 const { withLock } = require('./keyed-lock');
 const { safeSegment } = require('../storage/paths');
@@ -188,7 +192,7 @@ async function runMessageFlow({
       stateJson: {
         directive: {
           shouldRespond: decision.shouldRespond,
-          ready: decision.ready,
+          sliceReady: decision.sliceReady,
           reason: decision.reason,
         },
         pendingCount: messageIds.length,
@@ -224,7 +228,7 @@ async function runMessageFlow({
       gateRan: Boolean(tagResult),
       gateIsAddressed: tagResult?.messageTags?.isAddressed ?? null,
       gateConfigRequest: tagResult?.messageTags?.configRequest ?? null,
-      gateReady: tagResult?.pendingThreadWindowDecision?.ready ?? null,
+      gateSliceReady: tagResult?.pendingThreadWindowDecision?.sliceReady ?? null,
       isBotMentioned: decision.isBotMentioned,
       isBotAddressed: decision.isBotAddressed,
       shouldRespond: decision.shouldRespond,
@@ -241,7 +245,7 @@ async function runMessageFlow({
   // and holding the lock for that network call would needlessly delay the
   // next message's gate cycle for this thread.
   if (decision.configRequest) {
-    await handleConfigRequest({ spaceId, account, log, sendFn });
+    await handleConfigRequest({ spaceId, threadKey, message, account, botId, log, sendFn });
   }
 
   if (!shouldProcess) {
@@ -254,56 +258,48 @@ async function runMessageFlow({
     return;
   }
 
-  // -- extract (layer 2b) + summarize (layer 2c) + respond (unlocked), run
-  // together, not chained. --
+  // -- thinking placeholder — sent immediately once addressing is
+  // confirmed, before extract/summarize/respond run. Stands in for a
+  // typing indicator (Webex's bot API has no such endpoint); deliberately
+  // never recorded to the thread window (see processing/thinking-ack.js).
+  // Best-effort — a failure here must never block the rest of the flow.
+  if (decision.shouldRespond) {
+    await sendThinkingAck({ spaceId, threadKey, message, account, botId, log, sendFn }).catch(
+      (err) =>
+        log?.warn?.(
+          `${LOG_PREFIX} thinking-ack failed ${JSON.stringify({
+            spaceId,
+            threadKey,
+            flowId,
+            error: errorMessage(err),
+          })}`
+        )
+    );
+  }
+
+  // -- extract (layer 2b) + summarize (layer 2c), run together, not
+  // chained. respond no longer runs alongside these — see below: it's
+  // sequenced after task-notify so it can be skipped deterministically
+  // when task-notify already covered the triggering message. --
   const extractStartedAt = new Date().toISOString();
   const summarizeStartedAt = new Date().toISOString();
-  const respondStartedAt = new Date().toISOString();
 
-  // respond only spawns when the agent was actually mentioned or addressed
-  // (decision.shouldRespond) — a controller-level gate, not a prompt hope.
-  // extract/summarize are unaffected: task/summary value doesn't depend on
-  // being spoken to, so they still run whenever shouldProcess is true.
-  const respondPromise = decision.shouldRespond
-    ? runRespondStep({
-        pluginRuntime,
-        spaceId,
-        threadKey,
-        message,
-        decision,
-        messageIds,
-        account,
-        log,
-      })
-    : Promise.resolve({
-        outcome: 'skipped',
-        error: null,
-        toolCalls: null,
-        sessionKey: null,
-        runId: null,
-        didSend: false,
-      });
-
-  const [extractSettled, summarizeSettled, respondSettled] = await Promise.allSettled([
+  const [extractSettled, summarizeSettled] = await Promise.allSettled([
     withLock(`extract:${spaceId}`, () =>
       runExtractStep({ pluginRuntime, spaceId, threadKey, messageIds, log })
     ),
     withLock(`summarize:${spaceId}`, () =>
       runSummarizeStep({ pluginRuntime, spaceId, threadKey, messageIds, log })
     ),
-    respondPromise,
   ]);
 
   const extractEndedAt = new Date().toISOString();
   const summarizeEndedAt = new Date().toISOString();
-  const respondEndedAt = new Date().toISOString();
 
   const extractResult = extractSettled.status === 'fulfilled' ? extractSettled.value : null;
   const extractError = extractSettled.status === 'rejected' ? extractSettled.reason : null;
   const summarizeResult = summarizeSettled.status === 'fulfilled' ? summarizeSettled.value : null;
   const summarizeError = summarizeSettled.status === 'rejected' ? summarizeSettled.reason : null;
-  const respondResult = respondSettled.status === 'fulfilled' ? respondSettled.value : null;
-  const respondError = respondSettled.status === 'rejected' ? respondSettled.reason : null;
 
   if (flowId) {
     await appendJobLogEntry({
@@ -339,25 +335,6 @@ async function runMessageFlow({
         pendingCount: messageIds.length,
       },
     }).catch(() => {});
-
-    await appendJobLogEntry({
-      spaceId,
-      flowId,
-      step: 'respond',
-      runId: respondResult?.runId ?? null,
-      sessionKey: respondResult?.sessionKey ?? null,
-      startedAt: respondStartedAt,
-      endedAt: respondEndedAt,
-      outcome: respondError ? 'error' : respondResult?.outcome ?? 'success',
-      error: errorMessage(respondError),
-      toolCalls: respondResult?.toolCalls ?? null,
-      inputSummary: {
-        messageId: message?.id ?? null,
-        shouldRespond: decision.shouldRespond,
-        ready: decision.ready,
-        pendingCount: messageIds.length,
-      },
-    }).catch(() => {});
   }
 
   if (extractError) {
@@ -382,17 +359,6 @@ async function runMessageFlow({
     );
   }
 
-  if (respondError) {
-    log?.error?.(
-      `${LOG_PREFIX} respond step failed ${JSON.stringify({
-        spaceId,
-        threadKey,
-        flowId,
-        error: errorMessage(respondError),
-      })}`
-    );
-  }
-
   // -- task-notify (deterministic, no model call) — runs after extract has
   // landed, not inside the settle block above, since it reads what extract
   // just wrote. Skipped entirely on extract failure: nothing new to notify
@@ -409,6 +375,7 @@ async function runMessageFlow({
         messageIds,
         message,
         account,
+        botId,
         log,
         sendFn,
         // Anything write_task delegated during this run's extract step
@@ -447,6 +414,85 @@ async function runMessageFlow({
         threadKey,
         flowId,
         error: errorMessage(taskNotifyError),
+      })}`
+    );
+  }
+
+  // -- respond — sequenced after extract/task-notify (a deliberate reversal
+  // of the earlier "not delayed behind a slow extract" property), so it can
+  // be skipped deterministically rather than narrating something
+  // task-notify already announced. Only the *last* message in a flushed
+  // batch could possibly be the one responsible for shouldRespond (gate
+  // evaluation runs fresh per message and flushes immediately once
+  // shouldRespond/sliceReady fires — see docs §5) — task-notify's
+  // `coversLastMessage` tells us whether it already sent something tied to
+  // that exact message.
+  const skipRespondForTaskNotify = Boolean(
+    taskNotifyResult?.notified?.some((entry) => entry.coversLastMessage)
+  );
+
+  const respondStartedAt = new Date().toISOString();
+
+  let respondResult = null;
+  let respondError = null;
+
+  if (decision.shouldRespond && !skipRespondForTaskNotify) {
+    try {
+      respondResult = await runRespondStep({
+        pluginRuntime,
+        spaceId,
+        threadKey,
+        message,
+        decision,
+        messageIds,
+        account,
+        log,
+      });
+    } catch (err) {
+      respondError = err;
+    }
+  } else {
+    respondResult = {
+      outcome: 'skipped',
+      error: null,
+      toolCalls: null,
+      sessionKey: null,
+      runId: null,
+      didSend: false,
+    };
+  }
+
+  const respondEndedAt = new Date().toISOString();
+
+  if (flowId) {
+    await appendJobLogEntry({
+      spaceId,
+      flowId,
+      step: 'respond',
+      runId: respondResult?.runId ?? null,
+      sessionKey: respondResult?.sessionKey ?? null,
+      startedAt: respondStartedAt,
+      endedAt: respondEndedAt,
+      outcome: respondError ? 'error' : respondResult?.outcome ?? 'success',
+      error: errorMessage(respondError),
+      toolCalls: respondResult?.toolCalls ?? null,
+      inputSummary: {
+        messageId: message?.id ?? null,
+        shouldRespond: decision.shouldRespond,
+        skipRespondForTaskNotify,
+        sliceReady: decision.sliceReady,
+        pendingCount: messageIds.length,
+      },
+    }).catch(() => {});
+  }
+
+  if (respondError) {
+    log?.error?.(
+      `${LOG_PREFIX} respond step failed ${JSON.stringify({
+        spaceId,
+        threadKey,
+        flowId,
+        error: errorMessage(respondError),
       })}`
     );
   }

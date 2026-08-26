@@ -20,11 +20,22 @@ describe('runTaskNotifyStep', () => {
       sendWebexMessage: overrides.sendWebexMessage ?? (async () => ({ id: 'msg-sent' })),
       deriveBoardUrl: overrides.deriveBoardUrl ?? (() => 'https://example.test/board?spaceId=space-1'),
     };
+    // sendOutboundMessage's own recording (appendMessageToThreadWindow) is
+    // covered directly in send-outbound.test.cjs — here it just delegates
+    // straight to the mocked sendWebexMessage, matching the real function's
+    // observable send behavior without needing thread-store recording.
+    const sendOutboundMessage = t.mock.fn(
+      async ({ spaceId, botId, fetchMessageById, recordToThread, log, sendFn, ...sendParams }) =>
+        (sendFn ?? collaborators.sendWebexMessage)(sendParams)
+    );
 
     const loaded = loadWithMocks(require.resolve('../processing/task-notify'), {
       [require.resolve('../storage/tasks-store')]: { getTasks: collaborators.getTasks },
       [require.resolve('../storage/threads-store')]: { MAIN_THREAD_KEY: '__main__' },
-      [require.resolve('../send')]: { sendWebexMessage: collaborators.sendWebexMessage },
+      [require.resolve('../send')]: {
+        sendWebexMessage: collaborators.sendWebexMessage,
+        sendOutboundMessage,
+      },
       [require.resolve('../processing/board-url')]: { deriveBoardUrl: collaborators.deriveBoardUrl },
     });
     t.after(loaded.restore);
@@ -106,6 +117,7 @@ describe('runTaskNotifyStep', () => {
           delegation: { target: 'research-agent', delegatedAt: '2026-08-25T12:00:00.000Z' },
           createdAt: '2026-08-20T00:00:00.000Z',
           updatedAt: '2026-08-25T12:00:00.000Z',
+          message_ids: ['msg-1'],
         },
       ],
     });
@@ -113,7 +125,7 @@ describe('runTaskNotifyStep', () => {
     const result = await runTaskNotifyStep(baseParams({ sinceTimestamp: '2026-08-25T11:00:00.000Z' }));
 
     assert.equal(sendWebexMessage.mock.callCount(), 1);
-    assert.deepEqual(result.notified, [{ taskId: 'task-1', action: 'ack' }]);
+    assert.deepEqual(result.notified, [{ taskId: 'task-1', action: 'ack', coversLastMessage: true }]);
   });
 
   test('sends a plain markdown ack (not a card) for a newly-created, auto-approved agent task', async (t) => {
@@ -130,6 +142,7 @@ describe('runTaskNotifyStep', () => {
           delegation: { target: 'research-agent', delegatedAt: '2026-08-25T00:00:00.000Z' },
           createdAt: '2026-08-25T00:00:00.000Z',
           updatedAt: '2026-08-25T00:00:00.000Z',
+          message_ids: ['msg-1'],
         },
       ],
     });
@@ -142,7 +155,7 @@ describe('runTaskNotifyStep', () => {
     assert.match(call.markdown, /Investigate flaky test/);
     assert.match(call.markdown, /research-agent/);
     assert.match(call.markdown, /https:\/\/example\.test\/board/);
-    assert.deepEqual(result.notified, [{ taskId: 'task-1', action: 'ack' }]);
+    assert.deepEqual(result.notified, [{ taskId: 'task-1', action: 'ack', coversLastMessage: true }]);
   });
 
   test('sends an Adaptive Card approval request for a newly-created agent task that did not clear the bar', async (t) => {
@@ -159,6 +172,7 @@ describe('runTaskNotifyStep', () => {
           confidence: 0.4,
           createdAt: '2026-08-25T00:00:00.000Z',
           updatedAt: '2026-08-25T00:00:00.000Z',
+          message_ids: ['msg-1'],
         },
       ],
     });
@@ -176,7 +190,9 @@ describe('runTaskNotifyStep', () => {
       ['task_card_approve', 'task_card_reject']
     );
     assert.equal(card.actions[0].data.taskId, 'task-1');
-    assert.deepEqual(result.notified, [{ taskId: 'task-1', action: 'approval_card' }]);
+    assert.deepEqual(result.notified, [
+      { taskId: 'task-1', action: 'approval_card', coversLastMessage: true },
+    ]);
   });
 
   test('threads under the triggering message id for the main space, under threadKey otherwise', async (t) => {
@@ -190,6 +206,7 @@ describe('runTaskNotifyStep', () => {
       delegation: { target: 'dev-swarm', delegatedAt: '2026-08-25T00:00:00.000Z' },
       createdAt: '2026-08-25T00:00:00.000Z',
       updatedAt: '2026-08-25T00:00:00.000Z',
+      message_ids: ['msg-1', 'msg-2'],
     };
     const { runTaskNotifyStep } = loadTaskNotify(t, {
       sendWebexMessage,

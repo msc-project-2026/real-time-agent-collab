@@ -36,6 +36,16 @@ Worth carrying `datetime` explicitly now, unlike in a native-session design — 
 
 On arrival, a message is appended to its thread's window as `pending` immediately — before the tagging gate runs, as the very first deterministic step. This is a durability choice, not a modeling one: the message is stored regardless of what tagging or dispatch later decide, so nothing depends on those steps succeeding for the message to be captured. It also means the tagging gate's "pending slice" context (§4) already includes the current message — there's no separate "message + slice" concatenation to reason about, just "the slice, which now includes this message."
 
+### 3a. Outbound recording — a sender decision, not a passive echo
+
+**Addition (send-time recording revision):** the above describes *inbound* messages. Outbound messages (the model's own replies, and this plugin's own deterministic sends — config/task cards, task-notify's ack, the "thinking" placeholder) are **not** recorded via Webex's webhook echo (Webex redelivers every message in a space, including the bot's own — the naive approach would be to let that echo append it the same way an inbound message is). Instead, every sender goes through one shared function, `sendOutboundMessage` (`send.js`), which calls whatever actually reaches Webex (`sendFn`, real by default) and then — unless the caller explicitly opts out via `recordToThread: false` — records the result through the *same* `appendMessageToThreadWindow` inbound messages use, not a parallel implementation. `inbound/message.js` checks `personId === botId` *before* ever calling `appendMessageToThreadWindow`, so the echo never double-records or fights a deliberately-unrecorded send.
+
+This makes recording an explicit, per-send decision instead of an automatic side effect of delivery:
+- Real replies (`respond`, via `channel.js`), config/task cards, and task-notify's ack all record by default (`recordToThread: true`) — genuine content worth the model remembering later.
+- The "thinking" placeholder (§5) is the one deliberate exception — sent with `recordToThread: false`, since a transient "processing…" filler has no value in a later prompt and must never resurface there.
+
+**Threading a reply doesn't always target an existing thread** — a question asked bare in `__main__` gets a reply that starts a *brand-new* thread, rooted at the question itself, exactly the case `appendMessageToThreadWindow`'s root-seeding (§2) already exists for on the inbound side. Every sender supplies a `fetchMessageById` for this case, resolved as cheaply as it can: `channel.js` (the model's own replies) doesn't have the triggering message in memory, only its id, so it does a real Webex fetch; every deterministic sender (task-notify, cards, the placeholder) already has the triggering message in memory from the flow that's carrying it, so it just resolves to that directly — no network round-trip.
+
 ## 4. Tagging gate (per message, single cheap call, fresh context each time)
 
 Context: the thread's `pending` slice only, which by this point already includes the current message (§3 — not the full processed window; this call is deliberately narrow and cheap).
@@ -48,25 +58,41 @@ messageTags: {
   configRequest: bool   // semantic detection of a config ask, fallback to deterministic slash-command match where applicable
 }
 pendingThreadWindowDecision: {
-  ready: bool           // is there a complete, coherent unit of meaning in the pending slice yet
+  sliceReady: bool       // is there a complete, coherent unit of meaning in the pending slice yet
   reason: string
 }
 ```
 
-This call does nothing but classify — no side effects, no tool calls that trigger anything downstream. The gate's only action is a single tool call carrying the schema above as structured parameters (e.g. `tag_message(isAddressed, configRequest, ready, reason)`) — we never parse the model's free-text output to extract a decision. The tool call itself may enforce minimal shape validation (all fields present, correct types), but performs no dispatch. All dispatch logic lives entirely in our code (§5), reading the tool call's parameters, not in the model's hands — this keeps it unit-testable independent of the LLM.
+**Correction (send-time recording revision):** this field was originally named `ready`, renamed `sliceReady` once `shouldRespond`/`shouldProcess` (§5) sat alongside it and "ready" alone became ambiguous about what's ready.
+
+**Addition (send-time recording revision):** `sliceReady` also covers a genuinely urgent, need-for-help signal even when the specific ask isn't fully articulated (e.g. "we're blocked," "this needs to happen today") — the gate is instructed to err toward capturing it now rather than waiting for it to be stated more precisely. Lower-risk than it might look: `sliceReady` alone no longer triggers a reply (§5's `shouldRespond`/`shouldProcess` split) — it only lets `extract`/`summarize` look at the content sooner, and `extract`'s own closed-taxonomy judgment (§7c) is a second, independent filter against over-extraction even if the gate lets urgent-but-vague content through.
+
+This call does nothing but classify — no side effects, no tool calls that trigger anything downstream. The gate's only action is a single tool call carrying the schema above as structured parameters (e.g. `tag_message(isAddressed, configRequest, sliceReady, reason)`) — we never parse the model's free-text output to extract a decision. The tool call itself may enforce minimal shape validation (all fields present, correct types), but performs no dispatch. All dispatch logic lives entirely in our code (§5), reading the tool call's parameters, not in the model's hands — this keeps it unit-testable independent of the LLM.
 
 ## 5. Dispatch (deterministic code, not a model decision)
 
 ```
 isBotAddressed = messageTags.isAddressed
 shouldRespond = isBotMentioned OR isBotAddressed   // OR computed in code, never asked of the model twice
-shouldProcess = shouldRespond OR pendingThreadWindowDecision.ready
+shouldProcess = shouldRespond OR pendingThreadWindowDecision.sliceReady
 ```
 
 - `messageTags.configRequest` → route to the config flow (§6), independent of the general pipeline. Not Task-Flow-wrapped — see §6.
 - `shouldProcess` → flush thread's pending slice, advance the flow and spawn `extract`/`summarize` (§7) — task/summary value doesn't depend on being spoken to, so these run whenever the slice is ready OR the bot was addressed, independent of each other.
-- `shouldRespond` → additionally spawn `respond` (§7). **Correction (response-policy + extraction-calibration revision):** `respond` originally spawned on the same `shouldProcess` condition, with a prompt-level instruction to stay silent when only `ready` (not addressed) was true. Manual testing showed this wasn't reliable — `respond` narrated an already-extracted, human-assigned task unprompted. Replaced with a controller-level gate: `respond` is only spawned at all when `shouldRespond` is true, guaranteeing silence rather than prompting for it.
+- `shouldRespond` → spawn `respond` (§7), **sequenced after `extract`/`summarize`/`task-notify` settle** (see §5a below), not alongside them. **Correction (response-policy + extraction-calibration revision):** `respond` originally spawned on the same `shouldProcess` condition, with a prompt-level instruction to stay silent when only `sliceReady` (not addressed) was true. Manual testing showed this wasn't reliable — `respond` narrated an already-extracted, human-assigned task unprompted. Replaced with a controller-level gate: `respond` is only spawned at all when `shouldRespond` is true, guaranteeing silence rather than prompting for it.
 - None of the above → `finish` the flow. Message stays `pending`. This is the common case, and it's a legitimate single-step flow — nothing wrong with a flow that only ever ran one task.
+
+### 5a. The "last message" invariant, and the deterministic `respond` skip
+
+**Addition (send-time recording revision):** a second bug surfaced once `shouldRespond` gating (above) shipped — when the same message both addressed the bot *and* caused a self-assigned task to auto-approve, the user got two separate messages: `task-notify`'s deterministic ack, and `respond`'s own independent conversational reply, narrating the same event twice.
+
+The fix rests on a structural invariant of the dispatch loop above: gate evaluation runs fresh on every inbound message, over whatever's currently in the pending slice, and flushes *immediately* the moment `shouldProcess` becomes true. So for any message in a flushed batch *except the last one*, its own arrival-time evaluation (over the smaller slice that existed then) must have come back `shouldProcess: false` — otherwise the slice would already have flushed, smaller, right there. That holds for `shouldRespond` specifically too: if an earlier message's own addressing signal had been true at its own arrival, it would have flushed immediately, alone or with whatever had accumulated before it. **Within any flushed batch, only the last-arrived message could possibly be the one responsible for `shouldRespond` being true** — every earlier message in that batch got swept along by `sliceReady`/accumulation, not because it itself demanded a reply.
+
+This lets the double-message case be resolved deterministically, no model judgment involved: `task-notify` (which already queries tasks touched by the *whole* batch, not just the last message — unrelated, unchanged mechanism) additionally checks, per notified task, whether that task's own evidence (`message_ids`) includes the batch's last-arrived message — `coversLastMessage`. `run-message-flow.js` spawns `respond` only when `shouldRespond` is true **and** no notified task's `coversLastMessage` is true; otherwise `respond` is skipped entirely (not spawned, not merely told to stay silent), since `task-notify` already sent something for the exact message that would have triggered `respond`'s own reply.
+
+**Known, accepted narrow gap**: if the triggering message combines a task instruction *and* something unrelated (e.g. "please research X, and also, what's the deploy schedule?"), skipping `respond` entirely also drops the answer to the unrelated part — there's no attempt to have `respond` answer just the leftover portion. Accepted as a simplicity trade-off, not an oversight.
+
+Because `respond` no longer runs alongside `extract`/`summarize` (it now runs after `task-notify`, which itself runs after `extract`), the perceived responsiveness gap is covered by a separate, unrelated-in-mechanism placeholder: the moment `shouldRespond` is confirmed, `sendThinkingAck` (`processing/thinking-ack.js`) sends one of a short rotating set of "processing…" phrases, deliberately with `recordToThread: false` (§3a) — standing in for a typing indicator, which Webex's bot API doesn't expose (confirmed: no such REST endpoint exists; the community-documented workaround for exactly this situation is a placeholder message).
 
 The gate itself is also a flow step, not a bare session spawn — see §7a for why gate and processing live under one flow rather than two.
 
@@ -119,7 +145,7 @@ This is intentionally an open structure, not a fixed pipeline shape — the flow
 
 **Implementation guardrail:** before the full rewrite depends on Task Flow, do a minimal Task Flow API spike: create one managed flow, run one isolated gate spawn, link the spawn with `runTask`, update `stateJson` with `expectedRevision`, finish the flow, and confirm the resulting `flowId`, `taskId`, `runId`, and `sessionKey` are inspectable and usable for usage correlation. If that spike exposes API friction, keep the architecture's deterministic controller logic but adjust the orchestration envelope before building the full pipeline.
 
-**Open gap, unchanged by any of this:** once the bot sends a message via `send_message` (inside whichever step ends up calling it), that reply needs to be written into the thread's window itself (as `processed`, excluded from re-triggering the gate, same as any self/bot message) — otherwise a human's follow-up won't have the bot's own prior reply in context on the next run. Not automatic; an explicit tool-mediated write, same as everything else.
+**Closed (send-time recording revision):** the gap noted here originally — a sent reply needing to be written back into the thread's window itself, as `processed`, so a human's follow-up has it in context — is now built, and this section's own recommendation (`respond` as a genuine sequential dependency) is exactly the current shape too: `respond` (response-policy revision) runs sequenced after `extract`/`summarize`/`task-notify`, not alongside them, and every send (real replies via `channel.js`, and this plugin's own deterministic sends) records itself through one shared function (`sendOutboundMessage`, §3a) rather than relying on the inbound webhook echo. See §3a and §5a for the full mechanism.
 
 ### 7c. Task schema
 

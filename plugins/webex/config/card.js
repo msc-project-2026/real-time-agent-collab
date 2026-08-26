@@ -3,12 +3,11 @@
 
 const { webexFetch } = require('../api');
 const { sendWebexMessage } = require('../send');
-const { valueOrEmpty, sendAdaptiveCard } = require('../card/shared');
+const { MAIN_THREAD_KEY } = require('../storage/threads-store');
+const { valueOrEmpty, buildCardEnvelope, sendAdaptiveCard } = require('../card/shared');
 
 function buildConfigCard({ config }) {
-  return {
-    type: 'AdaptiveCard',
-    version: '1.3',
+  return buildCardEnvelope({
     body: [
       {
         type: 'TextBlock',
@@ -71,21 +70,35 @@ function buildConfigCard({ config }) {
         },
       },
     ],
-  };
+  });
 }
 
-async function sendConfigCard({ spaceId, account, log, config, sendFn = sendWebexMessage }) {
+async function sendConfigCard({
+  spaceId,
+  threadKey,
+  message,
+  account,
+  botId,
+  log,
+  config,
+  sendFn = sendWebexMessage,
+}) {
   if (!spaceId) throw new Error('spaceId is required');
   if (!account) throw new Error('account is required');
 
   const card = buildConfigCard({ config: config ?? {} });
+  const replyThreadId = threadKey === MAIN_THREAD_KEY ? message?.id : threadKey;
 
   return sendAdaptiveCard({
     spaceId,
     account,
+    botId,
     log,
     markdown: 'Please review this collaboration space configuration.',
     card,
+    recordLabel: 'Config card sent — review/update space settings',
+    parentId: replyThreadId,
+    fetchMessageById: async () => message,
     sendFn,
   });
 }

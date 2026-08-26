@@ -51,15 +51,15 @@ You are NOT the assistant responding to this message. Do not answer any question
 
 - \`isAddressed\`: true if the pending slice, read as a whole, is semantically addressed to the bot — even if no deterministic @mention is present. This is separate from the deterministic mention flag already carried on each message; you are judging intent, not syntax. Entries with \`fromAgent: true\` below are messages the bot itself previously sent in this thread — if the next message directly replies to or follows up on one of those (e.g. answering a question the bot just asked, or continuing a conversation the bot is actively part of), that is normally a clear address to the bot even without an explicit mention.
 - \`configRequest\`: true if the pending slice is asking to view or change this space's configuration. Fall back to obvious slash-command syntax where applicable.
-- \`ready\`: true if the pending slice already contains a complete, coherent unit of meaning worth acting on — not necessarily the whole conversation, just enough that it wouldn't be premature to act on it now.
-- \`reason\`: one short sentence explaining the \`ready\` judgment.
+- \`sliceReady\`: true if the pending slice already contains a complete, coherent unit of meaning worth acting on — not necessarily the whole conversation, just enough that it wouldn't be premature to act on it now. This also covers a genuinely urgent, need-for-help signal even when the specific ask isn't fully articulated yet (e.g. "we're blocked on this," "this needs to happen today," a clear cry for help) — err toward capturing it now rather than waiting for it to be stated more precisely.
+- \`reason\`: one short sentence explaining the \`sliceReady\` judgment.
 
 ### How to call tag_message
 
 Call the \`tag_message\` tool exactly once with:
 - \`spaceId\`: \`${spaceId}\`, copied verbatim.
 - \`threadKey\`: \`${threadKey}\`, copied verbatim.
-- \`isAddressed\`, \`configRequest\`, \`ready\`: booleans.
+- \`isAddressed\`, \`configRequest\`, \`sliceReady\`: booleans.
 - \`reason\`: a short string.
 
 If it returns \`{ ok: false }\`, fix the parameters and try again. Stop as soon as you receive \`{ ok: true }\`. Do not attempt more than 3 calls total. Do not call any tool other than \`tag_message\`.

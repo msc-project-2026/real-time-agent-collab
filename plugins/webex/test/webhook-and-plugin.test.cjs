@@ -519,6 +519,14 @@ function loadChannel(t) {
     handleInboundWebexWebhook: t.mock.fn(async () => undefined),
     sendWebexMessage: t.mock.fn(async () => ({ id: 'sent-1', roomId: 'space-1' })),
   };
+  // sendOutboundMessage's own recording step (appendMessageToThreadWindow) is
+  // exercised directly in send-outbound.test.cjs — here it's stubbed to just
+  // delegate straight to the mocked sendWebexMessage, since these tests only
+  // care about what reaches the underlying send call.
+  collaborators.sendOutboundMessage = t.mock.fn(
+    async ({ spaceId, botId, fetchMessageById, recordToThread, log, sendFn, ...sendParams }) =>
+      (sendFn ?? collaborators.sendWebexMessage)(sendParams)
+  );
   const loaded = loadWithMocks(require.resolve('../channel'), {
     [require.resolve('../api')]: {
       WEBEX_API: 'https://webexapis.com/v1',
@@ -542,6 +550,7 @@ function loadChannel(t) {
     },
     [require.resolve('../send')]: {
       sendWebexMessage: collaborators.sendWebexMessage,
+      sendOutboundMessage: collaborators.sendOutboundMessage,
     },
   });
   t.after(loaded.restore);

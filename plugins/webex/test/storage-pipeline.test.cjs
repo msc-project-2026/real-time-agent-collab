@@ -100,6 +100,44 @@ describe('thread context windows', () => {
     assert.deepEqual(thread.processed.map((message) => message.id), ['bot-root-1']);
   });
 
+  test('records an outbound bot send into a brand-new thread via a synthetic (non-network) fetchMessageById', async (t) => {
+    // Mirrors how send.js's sendOutboundMessage seeds a new thread for our
+    // own replies — the triggering message is already in memory (the same
+    // object the flow has been carrying since it arrived), so there's no
+    // need for a real Webex API round-trip the way the inbound side needs
+    // one for a message it's never seen before.
+    const root = await makeTempWorkspace(t);
+    const triggeringMessage = { id: 'main-question-1', text: 'What is the board URL?', personId: 'person-1' };
+    const fetchMessageById = t.mock.fn(async () => triggeringMessage);
+
+    await appendMessageToThreadWindow({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      botId: 'bot-1',
+      message: {
+        id: 'bot-reply-1',
+        parentId: 'main-question-1',
+        text: 'Here you go: https://example/board',
+        personId: 'bot-1',
+      },
+      fetchMessageById,
+      log: { info: t.mock.fn(), warn: t.mock.fn() },
+    });
+
+    assert.equal(fetchMessageById.mock.callCount(), 1);
+
+    const thread = await getThread({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      threadKey: 'main-question-1',
+    });
+    // The bot's own reply is bot-authored — straight to processed, never
+    // pending, same rule whether it arrived via inbound webhook echo (as
+    // tested above) or was recorded directly at send time.
+    assert.deepEqual(thread.pending, []);
+    assert.deepEqual(thread.processed.map((m) => m.id), ['main-question-1', 'bot-reply-1']);
+  });
+
   test('filters and orders thread listings', async (t) => {
     const root = await makeTempWorkspace(t);
     await appendMessageToThreadWindow({

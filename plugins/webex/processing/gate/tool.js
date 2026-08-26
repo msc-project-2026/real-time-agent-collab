@@ -48,14 +48,14 @@ function tagMessageTool() {
           description:
             'Semantic detection of a config ask, falling back to slash-command syntax where applicable.',
         },
-        ready: {
+        sliceReady: {
           type: 'boolean',
           description:
             'Whether the pending slice already contains a complete, coherent unit of meaning worth acting on.',
         },
         reason: {
           type: 'string',
-          description: 'A brief reason for the `ready` judgment.',
+          description: 'A brief reason for the `sliceReady` judgment.',
         },
       },
       required: [
@@ -63,13 +63,13 @@ function tagMessageTool() {
         'threadKey',
         'isAddressed',
         'configRequest',
-        'ready',
+        'sliceReady',
         'reason',
       ],
       additionalProperties: false,
     },
     async execute(_toolUseId, params) {
-      const { spaceId, threadKey, isAddressed, configRequest, ready, reason } =
+      const { spaceId, threadKey, isAddressed, configRequest, sliceReady, reason } =
         params ?? {};
 
       const errors = [];
@@ -86,8 +86,8 @@ function tagMessageTool() {
       if (typeof configRequest !== 'boolean') {
         errors.push('`configRequest` must be a boolean.');
       }
-      if (typeof ready !== 'boolean') {
-        errors.push('`ready` must be a boolean.');
+      if (typeof sliceReady !== 'boolean') {
+        errors.push('`sliceReady` must be a boolean.');
       }
       if (!reason || typeof reason !== 'string' || !reason.trim()) {
         errors.push('`reason` must be a non-empty string.');
@@ -107,7 +107,7 @@ function tagMessageTool() {
 
       pendingTagResults.set(key, {
         messageTags: { isAddressed, configRequest },
-        pendingThreadWindowDecision: { ready, reason },
+        pendingThreadWindowDecision: { sliceReady, reason },
       });
 
       return { ok: true };

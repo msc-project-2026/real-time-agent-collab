@@ -21,7 +21,7 @@ function decideDispatch({ tagResult, isBotMentioned }) {
   const finalIsBotMentioned = Boolean(isBotMentioned);
   const isBotAddressed = Boolean(messageTags.isAddressed);
   const configRequest = Boolean(messageTags.configRequest);
-  const ready = Boolean(windowDecision.ready);
+  const sliceReady = Boolean(windowDecision.sliceReady);
   const shouldRespond = finalIsBotMentioned || isBotAddressed;
 
   return {
@@ -29,12 +29,12 @@ function decideDispatch({ tagResult, isBotMentioned }) {
     isBotAddressed,
     shouldRespond,
     configRequest,
-    ready,
-    // Mention/addressed or ready both flush the pending slice and spawn
+    sliceReady,
+    // Mention/addressed or sliceReady both flush the pending slice and spawn
     // extract/summarize — independent of configRequest, and independent of
     // each other (either or both can be true for the same message).
     // `respond` itself only spawns on `shouldRespond` (see run-message-flow.js).
-    shouldProcess: shouldRespond || ready,
+    shouldProcess: shouldRespond || sliceReady,
     reason: windowDecision.reason ?? null,
   };
 }

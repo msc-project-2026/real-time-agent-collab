@@ -2,6 +2,7 @@
 'use strict';
 
 const { webexFetch } = require('./api');
+const { appendMessageToThreadWindow } = require('./storage/threads-store');
 
 // Some callers (e.g. OpenClaw core's durable delivery queue) pass targets in
 // the generic `<channel>:<id>` form instead of the bare Webex id. Left
@@ -62,4 +63,35 @@ async function sendWebexMessage({
   });
 }
 
-module.exports = { buildMsgBody, sendWebexMessage };
+// Send-time recording (response-policy revision, phase 2): every sender in
+// this plugin — the model's own replies via channel.js, and this plugin's
+// own deterministic sends (config/task cards, task-notify's ack, the
+// thinking placeholder) — goes through this instead of calling `sendFn`
+// directly, so recording is never something a caller has to remember or
+// reimplement. `sendFn` is the thing that actually hits Webex (real by
+// default); this function itself is never wrapped or swapped out — only
+// `sendFn` is. Recording reuses the exact same appendMessageToThreadWindow
+// path inbound messages go through (same threading/root-seeding rules,
+// not a parallel implementation) — a bot-authored message routes straight
+// to `processed`, never `pending`, via that function's own existing logic.
+async function sendOutboundMessage({
+  sendFn = sendWebexMessage,
+  recordToThread = true,
+  spaceId,
+  botId,
+  fetchMessageById,
+  log,
+  ...sendParams
+}) {
+  const msg = await sendFn(sendParams);
+
+  if (recordToThread && botId) {
+    await appendMessageToThreadWindow({ spaceId, message: msg, botId, log, fetchMessageById }).catch(
+      (err) => log?.warn?.(`failed to record outbound message: ${err?.message ?? err}`)
+    );
+  }
+
+  return msg;
+}
+
+module.exports = { buildMsgBody, sendWebexMessage, sendOutboundMessage };

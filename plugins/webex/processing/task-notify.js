@@ -12,7 +12,14 @@
 // batch: an ack message if it just cleared the confidence auto-approval bar
 // (extract/tool.js already set status: 'in_progress' + delegation there),
 // or a pending-approval Adaptive Card if it's newly created and still
-// awaiting approval (task-card/dispatch.js).
+// awaiting approval (task-card/card.js).
+//
+// Each notified entry also reports `coversLastMessage` — whether that
+// specific task's evidence includes the batch's last-arrived message, the
+// only one that could have triggered `shouldRespond` (see
+// run-message-flow.js). This has no bearing on which tasks get notified
+// (that's the filtering above, over the whole batch); it's purely a signal
+// the caller reads afterward to decide whether `respond` should be skipped.
 //
 // The two branches use different "did this just happen" signals, since a
 // single `createdAt === updatedAt` check isn't right for both:
@@ -27,9 +34,9 @@
 //   then createdAt no longer equals updatedAt.
 const { getTasks } = require('../storage/tasks-store');
 const { MAIN_THREAD_KEY } = require('../storage/threads-store');
-const { sendWebexMessage } = require('../send');
+const { sendWebexMessage, sendOutboundMessage } = require('../send');
 const { deriveBoardUrl } = require('./board-url');
-const { sendTaskApprovalCard } = require('../task-card/dispatch');
+const { sendTaskApprovalCard } = require('../task-card/card');
 
 function isNewlyCreatedPendingTask(task) {
   return task.assigned === 'agent' && task.status !== 'in_progress' && task.createdAt === task.updatedAt;
@@ -56,6 +63,7 @@ async function runTaskNotifyStep({
   messageIds,
   message,
   account,
+  botId,
   log,
   sendFn = sendWebexMessage,
   sinceTimestamp,
@@ -82,29 +90,43 @@ async function runTaskNotifyStep({
 
   const replyThreadId = threadKey === MAIN_THREAD_KEY ? message?.id : threadKey;
   const boardUrl = deriveBoardUrl({ account, spaceId });
+  const fetchMessageById = async () => message;
+  // Only the last-arrived message in the batch could possibly be the one
+  // responsible for shouldRespond (see run-message-flow.js's respond-skip
+  // logic) — checked per task below, never assumed from just one.
+  const lastMessageId = messageIds[messageIds.length - 1];
 
   const notified = [];
 
   for (const task of notifyWorthy) {
+    const coversLastMessage = task.message_ids.includes(lastMessageId);
+
     if (task.status === 'in_progress') {
-      await sendFn({
+      await sendOutboundMessage({
+        sendFn,
+        spaceId,
+        botId,
+        fetchMessageById,
+        log,
         token,
         to: spaceId,
         markdown: buildAckText({ task, boardUrl }),
         parentId: replyThreadId,
       });
-      notified.push({ taskId: task.id, action: 'ack' });
+      notified.push({ taskId: task.id, action: 'ack', coversLastMessage });
     } else {
       await sendTaskApprovalCard({
         task,
         boardUrl,
         spaceId,
         account,
+        botId,
         log,
         parentId: replyThreadId,
+        fetchMessageById,
         sendFn,
       });
-      notified.push({ taskId: task.id, action: 'approval_card' });
+      notified.push({ taskId: task.id, action: 'approval_card', coversLastMessage });
     }
   }
 

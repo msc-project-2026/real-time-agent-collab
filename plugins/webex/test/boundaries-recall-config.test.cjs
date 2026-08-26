@@ -270,16 +270,23 @@ describe('configuration submission and card flow', () => {
     t.after(loaded.restore);
     const log = makeLog(t);
     const requestAccount = { accountId: 'default' };
+    const triggeringMessage = { id: 'msg-1' };
 
     await loaded.subject.handleConfigRequest({
       spaceId: 'space-1',
+      threadKey: '__main__',
+      message: triggeringMessage,
       account: requestAccount,
+      botId: 'bot-1',
       log,
     });
 
     assert.deepEqual(sendConfigCard.mock.calls[0].arguments[0], {
       spaceId: 'space-1',
+      threadKey: '__main__',
+      message: triggeringMessage,
       account: requestAccount,
+      botId: 'bot-1',
       log,
       config: active.config,
       sendFn: undefined,
@@ -311,7 +318,7 @@ describe('configuration submission and card flow', () => {
     assert.deepEqual(sendConfigCard.mock.calls[0].arguments[0].config, {});
   });
 
-  test('builds and sends the adaptive configuration card', async (t) => {
+  test('builds and sends the adaptive configuration card, threaded under the triggering message', async (t) => {
     const sendWebexMessage = t.mock.fn(async () => ({ id: 'card-1' }));
     const loaded = loadWithMocks(require.resolve('../config/card'), {
       [require.resolve('../api')]: { webexFetch: t.mock.fn() },
@@ -321,6 +328,8 @@ describe('configuration submission and card flow', () => {
 
     const response = await loaded.subject.sendConfigCard({
       spaceId: 'space-1',
+      threadKey: '__main__',
+      message: { id: 'msg-1' },
       account: { accountId: 'default', config: { token: 'bot-token' } },
       log: makeLog(t),
       config: {
@@ -335,10 +344,33 @@ describe('configuration submission and card flow', () => {
     const request = sendWebexMessage.mock.calls[0].arguments[0];
     assert.equal(request.attachments[0].contentType,
       'application/vnd.microsoft.card.adaptive');
+    // Main-space request → threads under the triggering message, same
+    // convention every other sender uses (task-notify, thinking-ack).
+    assert.equal(request.parentId, 'msg-1');
     const card = request.attachments[0].content;
     assert.equal(card.type, 'AdaptiveCard');
     assert.ok(card.body.some((field) => field.id === 'githubRepo' && field.value === 'owner/repo'));
     assert.equal(card.actions[0].data.action, 'submit_config');
+  });
+
+  test('threads the config card under threadKey when the request came from an existing thread', async (t) => {
+    const sendWebexMessage = t.mock.fn(async () => ({ id: 'card-1' }));
+    const loaded = loadWithMocks(require.resolve('../config/card'), {
+      [require.resolve('../api')]: { webexFetch: t.mock.fn() },
+      [require.resolve('../send')]: { sendWebexMessage },
+    });
+    t.after(loaded.restore);
+
+    await loaded.subject.sendConfigCard({
+      spaceId: 'space-1',
+      threadKey: 'thread-root-1',
+      message: { id: 'msg-2' },
+      account: { accountId: 'default', config: { token: 'bot-token' } },
+      log: makeLog(t),
+      config: {},
+    });
+
+    assert.equal(sendWebexMessage.mock.calls[0].arguments[0].parentId, 'thread-root-1');
   });
 
   test('validates card delivery inputs before sending', async (t) => {

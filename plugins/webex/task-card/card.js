@@ -1,18 +1,20 @@
 // ********* TASK-CARD/CARD.JS *********
 'use strict';
 
-// Deterministic Adaptive Card builder for a self-assigned task that didn't
-// clear the confidence auto-approval bar (processing/task-notify.js) — same
-// pattern as config/card.js's buildConfigCard, built on the same shared
-// card infrastructure (card/shared.js). Approve/Reject buttons are
+// Deterministic Adaptive Card build + send for a self-assigned task that
+// didn't clear the confidence auto-approval bar (processing/task-notify.js)
+// — build and send kept together in one file, same shape as
+// config/card.js's buildConfigCard + sendConfigCard, both built on the same
+// shared card infrastructure (card/shared.js). Approve/Reject buttons are
 // intentionally not wired to a handler yet; inbound/attachment-actions.js's
 // `default` case already fails safe (logs and returns) for any action type
 // it doesn't recognize, so sending these now, unwired, is safe. Submission
-// handling (approve/reject) is future work — this directory is where it'll
-// live, mirroring config/'s card.js + handle-request.js + handle-submission.js
-// split.
+// handling (approve/reject) is future work — a `handle-submission.js`
+// alongside this file, mirroring config/'s handle-request.js +
+// handle-submission.js split, once Approve/Reject actions get wired up.
 
-const { valueOrEmpty } = require('../card/shared');
+const { sendWebexMessage } = require('../send');
+const { valueOrEmpty, buildCardEnvelope, sendAdaptiveCard } = require('../card/shared');
 
 function buildTaskApprovalCard({ task, boardUrl }) {
   const body = [
@@ -54,9 +56,7 @@ function buildTaskApprovalCard({ task, boardUrl }) {
     });
   }
 
-  return {
-    type: 'AdaptiveCard',
-    version: '1.3',
+  return buildCardEnvelope({
     body,
     actions: [
       {
@@ -70,9 +70,41 @@ function buildTaskApprovalCard({ task, boardUrl }) {
         data: { action: 'task_card_reject', taskId: task.id },
       },
     ],
-  };
+  });
+}
+
+async function sendTaskApprovalCard({
+  task,
+  boardUrl,
+  spaceId,
+  account,
+  botId,
+  log,
+  parentId,
+  fetchMessageById,
+  recordToThread = true,
+  sendFn = sendWebexMessage,
+}) {
+  if (!task) throw new Error('task is required');
+
+  const card = buildTaskApprovalCard({ task, boardUrl });
+
+  return sendAdaptiveCard({
+    spaceId,
+    account,
+    botId,
+    log,
+    markdown: `New task pending approval: **${task.title}**`,
+    card,
+    recordLabel: `Task approval card sent — ${task.title}`,
+    parentId,
+    fetchMessageById,
+    recordToThread,
+    sendFn,
+  });
 }
 
 module.exports = {
   buildTaskApprovalCard,
+  sendTaskApprovalCard,
 };

@@ -48,6 +48,19 @@ async function handleHydratedWebexMessage({
 }) {
   const spaceId = message.roomId;
 
+  // Skip bot's own messages — checked before appendMessageToThreadWindow,
+  // not after. Recording a bot-authored message is now exclusively the
+  // sender's decision, made at send time (send.js's sendOutboundMessage);
+  // appending it again here via the webhook echo would double-record it
+  // (harmless on its own, since the processed-array append dedupes by id)
+  // but would silently defeat a deliberately-unrecorded send (e.g. the
+  // "thinking" placeholder, processing/thinking-ack.js) the moment its own
+  // echo arrived.
+  if (message.personId === botId) {
+    log?.info?.(`[collab-agent:inbound-message] ignoring bot message`);
+    return;
+  }
+
   // Thread handling — the message is durably stored as `pending` before
   // anything downstream runs (v3 §3), regardless of what dispatch decides.
   const { threadKey, pendingCount } = await appendMessageToThreadWindow({
@@ -59,12 +72,6 @@ async function handleHydratedWebexMessage({
   });
 
   message.threadKey = threadKey;
-
-  // Skip bot's own messages
-  if (message.personId === botId) {
-    log?.info?.(`[collab-agent:inbound-message] ignoring bot message`);
-    return;
-  }
 
   // v3 phase 5: one managed Task Flow per message, gate as its first step,
   // respond (if triggered) as its second — see flow/run-message-flow.js.
