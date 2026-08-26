@@ -25,11 +25,16 @@ function formatTaskEntry(task) {
   };
 }
 
-function buildExtractInstruction({ spaceId, window, messageIds, activeTasks }) {
+function formatMemberEntry(member) {
+  return { id: member.id, name: member.name };
+}
+
+function buildExtractInstruction({ spaceId, window, messageIds, activeTasks, members }) {
   if (!spaceId) throw new Error('spaceId is required');
 
   const sections = formatWindowSections({ window, messageIds });
   const tasks = (Array.isArray(activeTasks) ? activeTasks : []).map(formatTaskEntry);
+  const spaceMembers = (Array.isArray(members) ? members : []).map(formatMemberEntry);
 
   return `
 ## Task
@@ -67,6 +72,12 @@ Tasks already tracked for this space. Before creating a new task, check whether 
 ${JSON.stringify(tasks, null, 2)}
 \`\`\`
 
+### Space members
+
+\`\`\`json
+${JSON.stringify(spaceMembers, null, 2)}
+\`\`\`
+
 ### Tools available to you
 
 You have exactly two tools for this task: \`write_task\`, to create or update a task, and \`search_tasks\`, to check for an existing task not listed above before creating a duplicate. Use only these.
@@ -78,7 +89,7 @@ For each task-worthy point:
 - Always include a short \`title\` when creating a task — a few words summarizing what it actually is (e.g. "Fix login test flakiness"), not a restatement of the type. Add \`description\` only if the title alone would leave out something that matters.
 - Always include \`message_ids\` — the specific message id(s) that are direct evidence for this task. Never omit this.
 - Use \`child_tasks\` when the point is naturally a sub-part of an existing task, rather than creating an unrelated duplicate.
-- Set \`assigned\`/\`deadline\` only when the thread actually states them — leave them unset otherwise rather than guessing. Use \`assigned: "agent"\` when the task is for you yourself to pick up.
+- Set \`assigned\`/\`deadline\` only when the thread actually states them — leave them unset otherwise rather than guessing. When the thread assigns the task to a specific person, set \`assigned\` to their \`id\` from the space members list above, not their name — match by who's speaking/mentioned in the messages you're extracting from. Use \`assigned: "agent"\` when the task is for you yourself to pick up. If the person clearly isn't in the list, fall back to their name as free text rather than inventing an id.
 - **Status, human-assigned or unassigned tasks**: free — set \`status\` only if the thread clearly shows real progress already exists (e.g. someone says they already started it, or it's already done); otherwise leave it unset and the default applies. No \`confidence\` needed for these.
 - **Status, agent-assigned tasks** (\`assigned: "agent"\`): never set \`status\` yourself. Instead, set \`confidence\` (0-1) — the system decides the outcome deterministically from it, either holding the task for human approval or auto-starting it. Weigh two things: how explicitly you were actually directed to do this, and how well it fits a safe, clearly in-scope pickup (e.g. a small, low-risk contribution that naturally follows from a design conversation can still warrant real confidence even without an explicit instruction — but anything ambiguous or higher-stakes should score low). Rough bands: 0.8+ for an explicit, unambiguous instruction; 0.4-0.7 for a reasonable but not certain pickup; below 0.4 for a speculative or risky one.
 

@@ -3,13 +3,16 @@
 const assert = require('node:assert/strict');
 const { describe, test } = require('node:test');
 
+const { makeTempWorkspace } = require('./helpers.cjs');
 const { getSpaceMembers, AGENT_ASSIGNEE } = require('../config/members');
+const { writeCachedMembers } = require('../config/store');
 
 // ---------------------------------------------------------------------------
-// config/members.js — dummy space-member list backing the board's assignee
-// dropdown. Deliberately hardcoded/placeholder (see the module's own header
-// comment) ahead of a future real Webex-membership integration; these tests
-// only cover the shape/contract the board depends on, not real data.
+// config/members.js — reads real, cached Webex space membership (config
+// card consolidation), refreshed elsewhere (config/handle-request.js) into
+// config/store.js's active.json. These tests cover the read side only:
+// an empty cache, a populated one, and the always-present AGENT_ASSIGNEE
+// entry.
 // ---------------------------------------------------------------------------
 
 describe('getSpaceMembers', () => {
@@ -17,26 +20,39 @@ describe('getSpaceMembers', () => {
     await assert.rejects(getSpaceMembers({}), /spaceId is required/);
   });
 
-  test('returns a non-empty dummy member list plus the special Agent entry', async () => {
-    const members = await getSpaceMembers({ spaceId: 'space-1' });
+  test('returns just AGENT_ASSIGNEE when no members have ever been cached', async (t) => {
+    const root = await makeTempWorkspace(t);
 
-    assert.ok(Array.isArray(members));
-    assert.ok(members.length > 1);
-    for (const member of members) {
-      assert.equal(typeof member.id, 'string');
-      assert.equal(typeof member.name, 'string');
-    }
-    assert.ok(members.some((member) => member.id === AGENT_ASSIGNEE.id));
-    assert.deepEqual(
-      members.find((member) => member.id === AGENT_ASSIGNEE.id),
-      AGENT_ASSIGNEE
-    );
+    const members = await getSpaceMembers({ spaceId: 'space-1', explicitRoot: root });
+
+    assert.deepEqual(members, [AGENT_ASSIGNEE]);
   });
 
-  test('returns the same list regardless of spaceId (dummy data, not yet space-specific)', async () => {
-    const a = await getSpaceMembers({ spaceId: 'space-1' });
-    const b = await getSpaceMembers({ spaceId: 'space-2' });
+  test('returns cached members plus AGENT_ASSIGNEE', async (t) => {
+    const root = await makeTempWorkspace(t);
+    const cached = [
+      { id: 'person-1', email: 'alice@example.com', name: 'Alice', source: 'webex' },
+      { id: 'person-2', email: 'bob@example.com', name: 'Bob', source: 'override' },
+    ];
+    await writeCachedMembers({ spaceId: 'space-1', members: cached, explicitRoot: root });
 
-    assert.deepEqual(a, b);
+    const members = await getSpaceMembers({ spaceId: 'space-1', explicitRoot: root });
+
+    assert.deepEqual(members, [...cached, AGENT_ASSIGNEE]);
+  });
+
+  test('members are per-space, not shared', async (t) => {
+    const root = await makeTempWorkspace(t);
+    await writeCachedMembers({
+      spaceId: 'space-1',
+      members: [{ id: 'person-1', email: 'alice@example.com', name: 'Alice', source: 'webex' }],
+      explicitRoot: root,
+    });
+
+    const spaceOne = await getSpaceMembers({ spaceId: 'space-1', explicitRoot: root });
+    const spaceTwo = await getSpaceMembers({ spaceId: 'space-2', explicitRoot: root });
+
+    assert.equal(spaceOne.length, 2);
+    assert.deepEqual(spaceTwo, [AGENT_ASSIGNEE]);
   });
 });

@@ -16,9 +16,10 @@ const path = require('node:path');
 
 const { getThread, MAIN_THREAD_KEY } = require('../../storage/threads-store');
 const { getActiveTasks } = require('../../storage/tasks-store');
+const { getSpaceMembers } = require('../../config/members');
 const { safeSegment } = require('../../storage/paths');
 const { buildRespondInstruction } = require('./instruction');
-const { getRoutingAgentId } = require('../../runtime');
+const { getCollabAgentId } = require('../../runtime');
 const { deriveBoardUrl } = require('../board-url');
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -37,11 +38,17 @@ async function runRespondStep({
 }) {
   if (!spaceId) throw new Error('spaceId is required');
   if (!threadKey) throw new Error('threadKey is required');
-  if (!Array.isArray(messageIds)) throw new Error('messageIds array is required');
+  if (!Array.isArray(messageIds))
+    throw new Error('messageIds array is required');
 
   const window = await getThread({ spaceId, threadKey, explicitRoot });
   const activeTasks = await getActiveTasks({ spaceId, explicitRoot });
-  const knownFacts = { spaceId, boardUrl: deriveBoardUrl({ account, spaceId }) };
+  const members = await getSpaceMembers({ spaceId, explicitRoot });
+  const knownFacts = {
+    spaceId,
+    boardUrl: deriveBoardUrl({ account, spaceId }),
+    members,
+  };
 
   // Replies always go into a thread, never posted bare in the main space —
   // the agent should always be replying under whatever message it understood
@@ -81,12 +88,15 @@ async function runRespondStep({
     knownFacts,
   });
 
-  const agentId = getRoutingAgentId();
+  const agentId = getCollabAgentId();
   const sessionKey = `agent:${agentId}:webex:${spaceId}:respond:${safeSegment(threadKey)}`;
   const runId = `respond-${Date.now()}`;
 
   const cfg = pluginRuntime.config.current();
-  const workspaceDir = pluginRuntime.agent.resolveAgentWorkspaceDir(cfg, agentId);
+  const workspaceDir = pluginRuntime.agent.resolveAgentWorkspaceDir(
+    cfg,
+    agentId
+  );
   const agentDir = pluginRuntime.agent.resolveAgentDir(cfg, agentId);
 
   let tempDir;
@@ -135,7 +145,9 @@ async function runRespondStep({
       // ever reaching a tool call. Remove once both are confirmed working
       // live and no longer need this to diagnose them.
       stopReason: result?.meta?.stopReason ?? null,
-      payloadCount: Array.isArray(result?.payloads) ? result.payloads.length : null,
+      payloadCount: Array.isArray(result?.payloads)
+        ? result.payloads.length
+        : null,
       messagingToolSentTargets: result?.messagingToolSentTargets ?? null,
       messagingToolSentTexts: result?.messagingToolSentTexts ?? null,
     })}`

@@ -32,6 +32,12 @@ function formatKnownFacts(knownFacts) {
   if (knownFacts?.boardUrl) {
     lines.push(`- Task board URL for this space: ${knownFacts.boardUrl}`);
   }
+  if (Array.isArray(knownFacts?.members) && knownFacts.members.length > 0) {
+    const memberList = knownFacts.members
+      .map((member) => `${member.name} (id: \`${member.id}\`)`)
+      .join(', ');
+    lines.push(`- Members of this space: ${memberList}`);
+  }
   return lines.join('\n');
 }
 

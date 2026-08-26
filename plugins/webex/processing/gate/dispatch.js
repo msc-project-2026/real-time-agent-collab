@@ -28,7 +28,7 @@ const { safeSegment } = require('../../storage/paths');
 const { buildTaggingInstruction } = require('./instruction');
 const { takePendingTagResult } = require('./tool');
 const { appendTaggingValidationRecord } = require('./validation-log');
-const { getRoutingAgentId } = require('../../runtime');
+const { getCollabAgentId } = require('../../runtime');
 
 const DEFAULT_WAIT_TIMEOUT_MS = 15_000;
 // The gate's context is deliberately narrow (§4: pending slice only, cheap,
@@ -64,7 +64,7 @@ async function runTaggingGate({
     botId,
   });
 
-  const agentId = getRoutingAgentId();
+  const agentId = getCollabAgentId();
   const sessionKey = `agent:${agentId}:webex:${spaceId}:tagging-gate:${safeSegment(threadKey)}`;
   const runId = `tagging-gate-${Date.now()}`;
 

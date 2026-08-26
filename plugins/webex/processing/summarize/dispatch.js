@@ -21,7 +21,7 @@ const { getThread } = require('../../storage/threads-store');
 const { readRecallEntries } = require('../../storage/recall-store');
 const { safeSegment } = require('../../storage/paths');
 const { buildSummarizeInstruction } = require('./instruction');
-const { getRoutingAgentId } = require('../../runtime');
+const { getCollabAgentId } = require('../../runtime');
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_RECENT_SUMMARY_COUNT = 3;
@@ -68,7 +68,7 @@ async function runSummarizeStep({
     recentSummaries,
   });
 
-  const agentId = getRoutingAgentId();
+  const agentId = getCollabAgentId();
   const sessionKey = `agent:${agentId}:webex:${spaceId}:summarize:${safeSegment(threadKey)}`;
   const runId = `summarize-${Date.now()}`;
 

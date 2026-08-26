@@ -24,7 +24,7 @@ describe('runSummarizeStep', () => {
         processed: [],
       })),
       readRecallEntries: t.mock.fn(async () => []),
-      getRoutingAgentId: t.mock.fn(() => 'main'),
+      getCollabAgentId: t.mock.fn(() => 'main'),
       ...overrides,
     };
 
@@ -36,7 +36,7 @@ describe('runSummarizeStep', () => {
         readRecallEntries: collaborators.readRecallEntries,
       },
       [require.resolve('../runtime')]: {
-        getRoutingAgentId: collaborators.getRoutingAgentId,
+        getCollabAgentId: collaborators.getCollabAgentId,
       },
     });
     t.after(loaded.restore);

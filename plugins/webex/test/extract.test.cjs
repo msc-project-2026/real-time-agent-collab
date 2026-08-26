@@ -24,7 +24,8 @@ describe('runExtractStep', () => {
         processed: [],
       })),
       getActiveTasks: t.mock.fn(async () => []),
-      getRoutingAgentId: t.mock.fn(() => 'main'),
+      getSpaceMembers: t.mock.fn(async () => []),
+      getCollabAgentId: t.mock.fn(() => 'main'),
       ...overrides,
     };
 
@@ -35,8 +36,11 @@ describe('runExtractStep', () => {
       [require.resolve('../storage/tasks-store')]: {
         getActiveTasks: collaborators.getActiveTasks,
       },
+      [require.resolve('../config/members')]: {
+        getSpaceMembers: collaborators.getSpaceMembers,
+      },
       [require.resolve('../runtime')]: {
-        getRoutingAgentId: collaborators.getRoutingAgentId,
+        getCollabAgentId: collaborators.getCollabAgentId,
       },
     });
     t.after(loaded.restore);
@@ -115,6 +119,34 @@ describe('runExtractStep', () => {
 
     assert.match(runCalls[0].prompt, /task_1/);
     assert.match(runCalls[0].prompt, /"assigned": "bob"/);
+  });
+
+  test('includes space members in the prompt so assigned can resolve to a real id', async (t) => {
+    const runCalls = [];
+    const runEmbeddedAgent = t.mock.fn(async (params) => {
+      runCalls.push(params);
+      return { payloads: [] };
+    });
+    const pluginRuntime = makeAgentRuntime(t, { runEmbeddedAgent });
+    const { runExtractStep } = loadExtract(t, {
+      getSpaceMembers: t.mock.fn(async () => [
+        { id: 'person-1', email: 'ada@example.com', name: 'Ada', source: 'webex' },
+        { id: 'agent', name: 'Agent' },
+      ]),
+    });
+
+    await runExtractStep({
+      pluginRuntime,
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      messageIds: ['msg-1'],
+      log: makeLog(t),
+    });
+
+    assert.match(runCalls[0].prompt, /"id": "person-1"/);
+    assert.match(runCalls[0].prompt, /"name": "Ada"/);
+    // Only id/name reach the prompt — email/source are irrelevant to the model.
+    assert.doesNotMatch(runCalls[0].prompt, /ada@example\.com/);
   });
 
   test('propagates a spawn failure instead of swallowing it', async (t) => {

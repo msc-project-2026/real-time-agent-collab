@@ -5,8 +5,43 @@ const { webexFetch } = require('../api');
 const { sendWebexMessage } = require('../send');
 const { MAIN_THREAD_KEY } = require('../storage/threads-store');
 const { valueOrEmpty, buildCardEnvelope, sendAdaptiveCard } = require('../card/shared');
+const { PROACTIVITY_LEVELS, DEFAULT_PROACTIVITY_THRESHOLD } = require('./proactivity');
 
-function buildConfigCard({ config }) {
+// One ColumnSet row per known space member — server-side generated for N
+// known members at build time, not a client-side dynamic input (Adaptive
+// Cards can't do that), the same way the rest of this card's body is built
+// from data. Email is read-only (always Webex's own value, never
+// human-editable); name is the one editable field, pre-filled from the
+// cache (config/handle-request.js already refreshed it from Webex before
+// this card was built).
+function buildMemberRow(member) {
+  return {
+    type: 'ColumnSet',
+    columns: [
+      {
+        type: 'Column',
+        width: 'auto',
+        items: [{ type: 'TextBlock', text: valueOrEmpty(member.email), wrap: true }],
+      },
+      {
+        type: 'Column',
+        width: 'stretch',
+        items: [
+          {
+            type: 'Input.Text',
+            id: `member_name_${member.id}`,
+            placeholder: 'Display name',
+            value: valueOrEmpty(member.name),
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function buildConfigCard({ config, members }) {
+  const memberRows = (Array.isArray(members) ? members : []).map(buildMemberRow);
+
   return buildCardEnvelope({
     body: [
       {
@@ -38,20 +73,14 @@ function buildConfigCard({ config }) {
       },
       {
         type: 'Input.ChoiceSet',
-        id: 'responseMode',
-        label: 'Agent response mode',
+        id: 'proactivityThreshold',
+        label: 'Agent proactivity',
         style: 'compact',
-        value: valueOrEmpty(config.responseMode || 'proactive_when_useful'),
-        choices: [
-          {
-            title: 'Only respond when directly asked',
-            value: 'direct_only',
-          },
-          {
-            title: 'Respond proactively when useful',
-            value: 'proactive_when_useful',
-          },
-        ],
+        value: valueOrEmpty(config.proactivityThreshold ?? DEFAULT_PROACTIVITY_THRESHOLD),
+        choices: PROACTIVITY_LEVELS.map((level) => ({
+          title: level.title,
+          value: String(level.value),
+        })),
       },
       {
         type: 'Input.Text',
@@ -60,6 +89,21 @@ function buildConfigCard({ config }) {
         placeholder: 'org/repo',
         value: valueOrEmpty(config.githubRepo),
       },
+      {
+        type: 'TextBlock',
+        text: 'Space members',
+        weight: 'Bolder',
+        size: 'Medium',
+        spacing: 'Medium',
+      },
+      {
+        type: 'TextBlock',
+        text: 'Names come from Webex automatically — only correct one if it’s missing or wrong.',
+        wrap: true,
+        spacing: 'Small',
+        isSubtle: true,
+      },
+      ...memberRows,
     ],
     actions: [
       {
@@ -81,12 +125,13 @@ async function sendConfigCard({
   botId,
   log,
   config,
+  members,
   sendFn = sendWebexMessage,
 }) {
   if (!spaceId) throw new Error('spaceId is required');
   if (!account) throw new Error('account is required');
 
-  const card = buildConfigCard({ config: config ?? {} });
+  const card = buildConfigCard({ config: config ?? {}, members });
   const replyThreadId = threadKey === MAIN_THREAD_KEY ? message?.id : threadKey;
 
   return sendAdaptiveCard({
@@ -104,5 +149,6 @@ async function sendConfigCard({
 }
 
 module.exports = {
+  buildConfigCard,
   sendConfigCard,
 };

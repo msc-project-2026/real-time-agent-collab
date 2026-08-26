@@ -66,7 +66,7 @@ const { sendThinkingAck } = require('../processing/thinking-ack');
 const { appendJobLogEntry } = require('./job-log');
 const { withLock } = require('./keyed-lock');
 const { safeSegment } = require('../storage/paths');
-const { getPluginRuntime, getRoutingAgentId } = require('../runtime');
+const { getPluginRuntime, getCollabAgentId } = require('../runtime');
 
 const LOG_PREFIX = '[collab-agent:flow-orchestration]';
 
@@ -105,7 +105,7 @@ async function runMessageFlow({
   if (!threadKey) throw new Error('threadKey is required');
 
   const pluginRuntime = getPluginRuntime();
-  const agentId = getRoutingAgentId();
+  const agentId = getCollabAgentId();
   const sessionKey = `agent:${agentId}:webex:${spaceId}:${safeSegment(threadKey)}`;
 
   let bound = null;

@@ -21,15 +21,17 @@ describe('write_task tool', () => {
       overrides.upsertTask ?? t.mock.fn(async () => ({ id: 'task_abc', type: 'development' }));
     const readTasksState =
       overrides.readTasksState ?? t.mock.fn(async () => ({ tasks: [] }));
+    const readActiveConfig = overrides.readActiveConfig ?? t.mock.fn(async () => null);
     const loaded = loadWithMocks(require.resolve('../processing/extract/tool'), {
       [require.resolve('../storage/tasks-store')]: {
         upsertTask,
         readTasksState,
         CONFIDENCE_AUTO_APPROVE_THRESHOLD: 0.7,
       },
+      [require.resolve('../config/store')]: { readActiveConfig },
     });
     t.after(loaded.restore);
-    return { ...loaded.subject, upsertTask, readTasksState };
+    return { ...loaded.subject, upsertTask, readTasksState, readActiveConfig };
   }
 
   test('creating a task delegates to upsertTask with the given fields', async (t) => {
@@ -286,6 +288,58 @@ describe('write_task tool', () => {
       title: 'Investigate flaky test',
       type: 'development',
       assigned: 'alice',
+    });
+
+    assert.equal(upsertTask.mock.callCount(), 1);
+  });
+
+  test('uses the space\'s configured proactivityThreshold instead of the fixed default', async (t) => {
+    const readActiveConfig = t.mock.fn(async () => ({ config: { proactivityThreshold: 0.5 } }));
+    const upsertTask = t.mock.fn(async (params) => {
+      if (params.patch?.status === 'in_progress') {
+        return { id: 'task_abc', type: 'development', assigned: 'agent', confidence: 0.6, status: 'in_progress' };
+      }
+      return { id: 'task_abc', type: 'development', assigned: 'agent', confidence: 0.6, status: 'unapproved' };
+    });
+    const { writeTaskTool } = loadTool(t, { upsertTask, readActiveConfig });
+    const tool = writeTaskTool();
+
+    // 0.6 sits below the fixed 0.7 default but above this space's lowered
+    // 0.5 threshold — auto-approval should fire only because of the
+    // per-space override.
+    const result = await tool.execute('id-1', {
+      spaceId: 'space-1',
+      title: 'Investigate flaky test',
+      type: 'development',
+      assigned: 'agent',
+      confidence: 0.6,
+    });
+
+    assert.equal(readActiveConfig.mock.callCount(), 1);
+    assert.equal(upsertTask.mock.callCount(), 2);
+    assert.equal(result.task.status, 'in_progress');
+  });
+
+  test('falls back to the fixed default threshold when the space has no active config', async (t) => {
+    const readActiveConfig = t.mock.fn(async () => null);
+    const upsertTask = t.mock.fn(async () => ({
+      id: 'task_abc',
+      type: 'development',
+      assigned: 'agent',
+      confidence: 0.6,
+      status: 'unapproved',
+    }));
+    const { writeTaskTool } = loadTool(t, { upsertTask, readActiveConfig });
+    const tool = writeTaskTool();
+
+    // 0.6 clears no configured space threshold, so it must fall back to the
+    // mocked CONFIDENCE_AUTO_APPROVE_THRESHOLD of 0.7 and not auto-approve.
+    await tool.execute('id-1', {
+      spaceId: 'space-1',
+      title: 'Investigate flaky test',
+      type: 'development',
+      assigned: 'agent',
+      confidence: 0.6,
     });
 
     assert.equal(upsertTask.mock.callCount(), 1);

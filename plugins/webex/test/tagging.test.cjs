@@ -243,7 +243,7 @@ describe('dispatchTaggingGate', () => {
         pendingThreadWindowDecision: { sliceReady: true, reason: 'Complete ask.' },
       })),
       appendTaggingValidationRecord: t.mock.fn(async () => undefined),
-      getRoutingAgentId: t.mock.fn(() => 'main'),
+      getCollabAgentId: t.mock.fn(() => 'main'),
       ...overrides,
     };
 
@@ -258,7 +258,7 @@ describe('dispatchTaggingGate', () => {
         appendTaggingValidationRecord: collaborators.appendTaggingValidationRecord,
       },
       [require.resolve('../runtime')]: {
-        getRoutingAgentId: collaborators.getRoutingAgentId,
+        getCollabAgentId: collaborators.getCollabAgentId,
       },
     });
     t.after(loaded.restore);

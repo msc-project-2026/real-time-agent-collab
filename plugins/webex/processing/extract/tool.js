@@ -12,6 +12,7 @@ const {
   readTasksState,
   CONFIDENCE_AUTO_APPROVE_THRESHOLD,
 } = require('../../storage/tasks-store');
+const { readActiveConfig } = require('../../config/store');
 
 // Mirrors board/src/App.jsx's own dummy delegation-target mapping — same
 // literal target strings, so a task reads consistently whether seen via the
@@ -189,10 +190,18 @@ function writeTaskTool() {
         // marking an already-in-flight task `done`) that happens to also
         // carry a high confidence value could get silently reset back to
         // `in_progress`.
+        //
+        // Threshold is per-space configurable (config card consolidation) —
+        // the space's own proactivityThreshold if it's ever been set,
+        // otherwise tasks-store.js's documented default.
+        const activeConfig = await readActiveConfig({ spaceId });
+        const confidenceThreshold =
+          activeConfig?.config?.proactivityThreshold ?? CONFIDENCE_AUTO_APPROVE_THRESHOLD;
+
         if (
           task.assigned === 'agent' &&
           typeof task.confidence === 'number' &&
-          task.confidence >= CONFIDENCE_AUTO_APPROVE_THRESHOLD &&
+          task.confidence >= confidenceThreshold &&
           priorStatus === 'unapproved'
         ) {
           task = await upsertTask({

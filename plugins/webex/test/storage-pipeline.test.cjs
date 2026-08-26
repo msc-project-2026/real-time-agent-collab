@@ -14,7 +14,7 @@ const {
   getThread,
   getThreads,
 } = require('../storage/threads-store');
-const { readActiveConfig, writeActiveConfig } = require('../config/store');
+const { readActiveConfig, writeActiveConfig, writeCachedMembers } = require('../config/store');
 const { makeTempWorkspace } = require('./helpers.cjs');
 
 // Category: Safe per-space storage paths.
@@ -261,6 +261,72 @@ describe('pending/processed thread window', () => {
     assert.deepEqual(thread.processed.map((message) => message.id), ['bot-1-reply']);
   });
 
+  // config card consolidation, §2a: a sender's email is substituted for a
+  // friendly name once, at write time, using the space's cached member
+  // mapping — every downstream prompt-builder then reads the already-stored
+  // name for free.
+  test('resolves senderName through the cached member mapping when one exists', async (t) => {
+    const root = await makeTempWorkspace(t);
+    await writeCachedMembers({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      members: [{ id: 'person-1', email: 'dev@example.com', name: 'Ada', source: 'webex' }],
+    });
+
+    await appendMessageToThreadWindow({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      message: {
+        id: 'message-1',
+        text: 'Hello',
+        personId: 'person-1',
+        personEmail: 'dev@example.com',
+        created: '2026-01-01T00:00:00.000Z',
+      },
+    });
+
+    const thread = await getThread({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      threadKey: MAIN_THREAD_KEY,
+    });
+    assert.equal(thread.pending[0].senderName, 'Ada');
+  });
+
+  test('falls back to personEmail then personId when no cached mapping matches', async (t) => {
+    const root = await makeTempWorkspace(t);
+
+    await appendMessageToThreadWindow({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      message: {
+        id: 'message-1',
+        text: 'Hello',
+        personId: 'person-1',
+        personEmail: 'dev@example.com',
+        created: '2026-01-01T00:00:00.000Z',
+      },
+    });
+    await appendMessageToThreadWindow({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      message: {
+        id: 'message-2',
+        text: 'Hello again',
+        personId: 'person-2',
+        created: '2026-01-01T00:00:01.000Z',
+      },
+    });
+
+    const thread = await getThread({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      threadKey: MAIN_THREAD_KEY,
+    });
+    assert.equal(thread.pending[0].senderName, 'dev@example.com');
+    assert.equal(thread.pending[1].senderName, 'person-2');
+  });
+
   test('exposes the pending slice directly for the tagging gate', async (t) => {
     const root = await makeTempWorkspace(t);
     await appendMessageToThreadWindow({
@@ -468,13 +534,63 @@ describe('active configuration store', () => {
     const written = await writeActiveConfig({
       spaceId: 'space-1',
       explicitRoot: root,
-      config: { projectName: 'Project', responseMode: 'calibrated' },
+      config: { projectName: 'Project', proactivityThreshold: 0.7 },
       source: { submittedBy: 'person-1' },
     });
     const read = await readActiveConfig({ spaceId: 'space-1', explicitRoot: root });
 
     assert.equal(written.revision, 1);
-    assert.deepEqual(read.config, { projectName: 'Project', responseMode: 'calibrated' });
+    assert.deepEqual(read.config, { projectName: 'Project', proactivityThreshold: 0.7 });
     assert.deepEqual(read.source, { submittedBy: 'person-1' });
+  });
+
+  // config card consolidation: membership cache lives in the same active.json
+  // record but through its own narrower write path, so a passive refresh
+  // never bumps revision/source the way a deliberate user submission does.
+  test('writeCachedMembers updates the member cache without touching revision or config', async (t) => {
+    const root = await makeTempWorkspace(t);
+
+    const written = await writeActiveConfig({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      config: { projectName: 'Project' },
+      source: { submittedBy: 'person-1' },
+    });
+    assert.equal(written.revision, 1);
+
+    const members = [{ id: 'person-1', email: 'alice@example.com', name: 'Alice', source: 'webex' }];
+    const cached = await writeCachedMembers({ spaceId: 'space-1', explicitRoot: root, members });
+
+    assert.deepEqual(cached.members, members);
+    assert.equal(cached.revision, 1);
+    assert.deepEqual(cached.config, { projectName: 'Project' });
+    assert.deepEqual(cached.source, { submittedBy: 'person-1' });
+
+    const read = await readActiveConfig({ spaceId: 'space-1', explicitRoot: root });
+    assert.deepEqual(read.members, members);
+    assert.equal(read.revision, 1);
+
+    // A later real submission still bumps revision independently of the
+    // member cache having been written in between.
+    const resubmitted = await writeActiveConfig({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      config: { projectName: 'Project Renamed' },
+      source: { submittedBy: 'person-1' },
+    });
+    assert.equal(resubmitted.revision, 2);
+    assert.deepEqual(resubmitted.members, members);
+  });
+
+  test('writeCachedMembers requires a spaceId and a members array', async (t) => {
+    const root = await makeTempWorkspace(t);
+    await assert.rejects(
+      writeCachedMembers({ members: [], explicitRoot: root }),
+      /spaceId is required/
+    );
+    await assert.rejects(
+      writeCachedMembers({ spaceId: 'space-1', explicitRoot: root }),
+      /members array is required/
+    );
   });
 });

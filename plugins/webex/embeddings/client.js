@@ -10,7 +10,7 @@
 // Two gotchas below, both confirmed live, not guessed:
 // - The endpoint resolves its embedding provider from whichever agent's
 //   `memorySearch` config `getEmbeddingsAgentId()` points at (host-owned
-//   config, same pattern as routingAgentId — see runtime.js; a separate
+//   config, same pattern as collabAgentId — see runtime.js; a separate
 //   field on principle, since "which agent handles message-routing spawns"
 //   and "which agent's memorySearch config to resolve embeddings from" are
 //   independent concerns that happen to default to the same value). If it's

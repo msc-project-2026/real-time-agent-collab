@@ -1,8 +1,11 @@
 // ********* CONFIG/HANDLE-SUBMISSION.JS *********
 'use strict';
 
-const { writeActiveConfig } = require('./store');
+const { writeActiveConfig, readActiveConfig, writeCachedMembers } = require('./store');
 const { sendWebexMessage } = require('../send');
+const { PROACTIVITY_LEVELS, DEFAULT_PROACTIVITY_THRESHOLD } = require('./proactivity');
+
+const ALLOWED_PROACTIVITY_THRESHOLDS = new Set(PROACTIVITY_LEVELS.map((level) => level.value));
 
 // *** Helpers
 
@@ -11,11 +14,13 @@ function normaliseString(value) {
 }
 
 function validateConfigInputs(inputs = {}) {
+  const proactivityThreshold = Number(inputs.proactivityThreshold);
+
   const config = {
     projectName: normaliseString(inputs.projectName),
     projectDescription: normaliseString(inputs.projectDescription),
     githubRepo: normaliseString(inputs.githubRepo),
-    responseMode: normaliseString(inputs.responseMode),
+    proactivityThreshold,
   };
 
   const errors = [];
@@ -35,15 +40,9 @@ function validateConfigInputs(inputs = {}) {
     errors.push('GitHub repository must use the format owner/repo.');
   }
 
-  const allowedResponseModes = new Set([
-    'direct_only',
-    'calibrated',
-    'proactive',
-  ]);
-
-  if (!allowedResponseModes.has(config.responseMode)) {
+  if (!ALLOWED_PROACTIVITY_THRESHOLDS.has(proactivityThreshold)) {
     errors.push(
-      `Response mode must be one of: ${Array.from(allowedResponseModes).join(', ')}.`
+      `Agent proactivity must be one of: ${PROACTIVITY_LEVELS.map((level) => level.title).join(', ')}.`
     );
   }
 
@@ -52,6 +51,35 @@ function validateConfigInputs(inputs = {}) {
     config,
     errors,
   };
+}
+
+// Member name overrides — a submitted `member_name_<personId>` field only
+// becomes a `source: 'override'` write if it actually differs from what's
+// currently cached (the same value the card was just built from). An
+// untouched field is left alone entirely, so the next config-request's live
+// Webex refresh (config/handle-request.js) keeps it in sync rather than
+// freezing it as a permanent override the first time the card is ever
+// submitted.
+async function applyMemberNameOverrides({ spaceId, inputs = {} }) {
+  const existing = (await readActiveConfig({ spaceId }))?.members ?? [];
+  if (existing.length === 0) return;
+
+  let changed = false;
+
+  const updated = existing.map((member) => {
+    const submitted = inputs[`member_name_${member.id}`];
+    if (typeof submitted !== 'string') return member;
+
+    const trimmed = submitted.trim();
+    if (!trimmed || trimmed === member.name) return member;
+
+    changed = true;
+    return { ...member, name: trimmed, source: 'override' };
+  });
+
+  if (changed) {
+    await writeCachedMembers({ spaceId, members: updated });
+  }
 }
 
 // *** Handle submission
@@ -100,6 +128,8 @@ async function handleConfigSubmission({ action, account, log }) {
     },
   });
 
+  await applyMemberNameOverrides({ spaceId: action.roomId, inputs: action.inputs });
+
   await sendWebexMessage({
     token: account.config.token,
     to: action.roomId,
@@ -108,7 +138,10 @@ async function handleConfigSubmission({ action, account, log }) {
       '',
       `**Project:** ${validation.config.projectName}`,
       `**Repository:** ${validation.config.githubRepo}`,
-      `**Response mode:** ${validation.config.responseMode}`,
+      `**Proactivity:** ${
+        PROACTIVITY_LEVELS.find((level) => level.value === validation.config.proactivityThreshold)
+          ?.title ?? validation.config.proactivityThreshold
+      }`,
     ].join('\n'),
     parentId: action.messageId,
   });
@@ -118,7 +151,7 @@ async function handleConfigSubmission({ action, account, log }) {
       roomId: action.roomId,
       projectName: validation.config.projectName,
       githubRepo: validation.config.githubRepo,
-      responseMode: validation.config.responseMode,
+      proactivityThreshold: validation.config.proactivityThreshold,
     })}`
   );
 
@@ -131,4 +164,6 @@ async function handleConfigSubmission({ action, account, log }) {
 
 module.exports = {
   handleConfigSubmission,
+  validateConfigInputs,
+  DEFAULT_PROACTIVITY_THRESHOLD,
 };

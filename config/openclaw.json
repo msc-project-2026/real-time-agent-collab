@@ -80,6 +80,18 @@
             "apiKey": "${CISCO_LLM_API_KEY}"
           }
         }
+      },
+      {
+        "id": "collab-agent",
+        "agentDir": "plugins/webex/agent-identity",
+        "memorySearch": {
+          "provider": "openai",
+          "model": "azure/text-embedding-3-small",
+          "remote": {
+            "baseUrl": "https://llm-proxy.dev.outshift.ai/",
+            "apiKey": "${CISCO_LLM_API_KEY}"
+          }
+        }
       }
     ]
   },
@@ -120,7 +132,7 @@
     "token": "${OPENCLAW_WEBHOOK_SECRET}",
     "path": "/hooks",
     "allowRequestSessionKey": true,
-    "allowedSessionKeyPrefixes": ["agent:main:webex:", "hook:"],
+    "allowedSessionKeyPrefixes": ["agent:collab-agent:webex:", "hook:"],
     "defaultSessionKey": "hook:collab-sync"
   },
   "plugins": {
@@ -130,7 +142,10 @@
     },
     "entries": {
       "webex": {
-        "enabled": true
+        "enabled": true,
+        "config": {
+          "collabAgentId": "collab-agent"
+        }
       }
     }
   }

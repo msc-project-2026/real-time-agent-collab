@@ -20,9 +20,10 @@ const path = require('node:path');
 
 const { getThread } = require('../../storage/threads-store');
 const { getActiveTasks } = require('../../storage/tasks-store');
+const { getSpaceMembers } = require('../../config/members');
 const { safeSegment } = require('../../storage/paths');
 const { buildExtractInstruction } = require('./instruction');
-const { getRoutingAgentId } = require('../../runtime');
+const { getCollabAgentId } = require('../../runtime');
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -41,10 +42,11 @@ async function runExtractStep({
 
   const window = await getThread({ spaceId, threadKey, explicitRoot });
   const activeTasks = await getActiveTasks({ spaceId, explicitRoot });
+  const members = await getSpaceMembers({ spaceId, explicitRoot });
 
-  const instruction = buildExtractInstruction({ spaceId, window, messageIds, activeTasks });
+  const instruction = buildExtractInstruction({ spaceId, window, messageIds, activeTasks, members });
 
-  const agentId = getRoutingAgentId();
+  const agentId = getCollabAgentId();
   const sessionKey = `agent:${agentId}:webex:${spaceId}:extract:${safeSegment(threadKey)}`;
   const runId = `extract-${Date.now()}`;
 

@@ -49,7 +49,7 @@ function loadFlow(t, overrides = {}) {
     getPluginRuntime: t.mock.fn(() => ({
       tasks: { flow: { bindSession: t.mock.fn(() => boundFlow) } },
     })),
-    getRoutingAgentId: t.mock.fn(() => 'main'),
+    getCollabAgentId: t.mock.fn(() => 'main'),
     dispatchTaggingGate: t.mock.fn(async () => ({
       messageTags: { isAddressed: false, configRequest: false },
       pendingThreadWindowDecision: { sliceReady: false, reason: 'Not yet.' },
@@ -89,7 +89,7 @@ function loadFlow(t, overrides = {}) {
   const loaded = loadWithMocks(require.resolve('../flow/run-message-flow'), {
     [require.resolve('../runtime')]: {
       getPluginRuntime: collaborators.getPluginRuntime,
-      getRoutingAgentId: collaborators.getRoutingAgentId,
+      getCollabAgentId: collaborators.getCollabAgentId,
     },
     [require.resolve('../processing/gate/dispatch')]: {
       dispatchTaggingGate: collaborators.dispatchTaggingGate,

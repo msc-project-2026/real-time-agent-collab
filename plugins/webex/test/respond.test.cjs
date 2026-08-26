@@ -23,7 +23,8 @@ describe('runRespondStep', () => {
         processed: [],
       })),
       getActiveTasks: t.mock.fn(async () => []),
-      getRoutingAgentId: t.mock.fn(() => 'main'),
+      getSpaceMembers: t.mock.fn(async () => []),
+      getCollabAgentId: t.mock.fn(() => 'main'),
       ...overrides,
     };
 
@@ -35,8 +36,11 @@ describe('runRespondStep', () => {
       [require.resolve('../storage/tasks-store')]: {
         getActiveTasks: collaborators.getActiveTasks,
       },
+      [require.resolve('../config/members')]: {
+        getSpaceMembers: collaborators.getSpaceMembers,
+      },
       [require.resolve('../runtime')]: {
-        getRoutingAgentId: collaborators.getRoutingAgentId,
+        getCollabAgentId: collaborators.getCollabAgentId,
       },
     });
     t.after(loaded.restore);
@@ -181,6 +185,55 @@ describe('runRespondStep', () => {
 
     assert.match(runCalls[0].prompt, /This Webex space's id: `space-1`/);
     assert.doesNotMatch(runCalls[0].prompt, /Task board URL/);
+  });
+
+  test('includes space members as a known fact so the model can address people correctly', async (t) => {
+    const runCalls = [];
+    const runEmbeddedAgent = t.mock.fn(async (params) => {
+      runCalls.push(params);
+      return { payloads: [] };
+    });
+    const pluginRuntime = makeAgentRuntime(t, { runEmbeddedAgent });
+    const { runRespondStep } = loadRespond(t, {
+      getSpaceMembers: t.mock.fn(async () => [
+        { id: 'person-1', email: 'ada@example.com', name: 'Ada', source: 'webex' },
+        { id: 'agent', name: 'Agent' },
+      ]),
+    });
+
+    await runRespondStep({
+      pluginRuntime,
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      message: { id: 'msg-1' },
+      messageIds: ['msg-1'],
+      decision: { shouldRespond: true, ready: false, reason: 'Addressed.' },
+      log: makeLog(t),
+    });
+
+    assert.match(runCalls[0].prompt, /Members of this space: Ada \(id: `person-1`\), Agent \(id: `agent`\)/);
+  });
+
+  test('omits the members fact (without crashing) when the space has no members cached', async (t) => {
+    const runCalls = [];
+    const runEmbeddedAgent = t.mock.fn(async (params) => {
+      runCalls.push(params);
+      return { payloads: [] };
+    });
+    const pluginRuntime = makeAgentRuntime(t, { runEmbeddedAgent });
+    const { runRespondStep } = loadRespond(t);
+
+    await runRespondStep({
+      pluginRuntime,
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      message: { id: 'msg-1' },
+      messageIds: ['msg-1'],
+      decision: { shouldRespond: true, ready: false, reason: 'Addressed.' },
+      log: makeLog(t),
+    });
+
+    assert.doesNotMatch(runCalls[0].prompt, /Members of this space/);
   });
 
   test('threads a main-space reply under the triggering message, never posts bare to main', async (t) => {

@@ -188,9 +188,10 @@ describe('configuration submission and card flow', () => {
 
   test('validates submission ownership and reports an absent repository', async (t) => {
     const writeActiveConfig = t.mock.fn();
+    const readActiveConfig = t.mock.fn(async () => ({ members: [] }));
     const sendWebexMessage = t.mock.fn(async () => ({}));
     const loaded = loadWithMocks(require.resolve('../config/handle-submission'), {
-      [require.resolve('../config/store')]: { writeActiveConfig },
+      [require.resolve('../config/store')]: { writeActiveConfig, readActiveConfig },
       [require.resolve('../send')]: { sendWebexMessage },
     });
     t.after(loaded.restore);
@@ -209,7 +210,7 @@ describe('configuration submission and card flow', () => {
         inputs: {
           projectName: 'Project',
           githubRepo: '',
-          responseMode: 'calibrated',
+          proactivityThreshold: '0.7',
         },
       },
       account: { accountId: 'default', config: { token: 'bot-token' } },
@@ -221,9 +222,10 @@ describe('configuration submission and card flow', () => {
 
   test('persists normalised valid input and sends confirmation', async (t) => {
     const writeActiveConfig = t.mock.fn(async () => ({ revision: 1 }));
+    const readActiveConfig = t.mock.fn(async () => ({ members: [] }));
     const sendWebexMessage = t.mock.fn(async () => ({ id: 'message-1' }));
     const loaded = loadWithMocks(require.resolve('../config/handle-submission'), {
-      [require.resolve('../config/store')]: { writeActiveConfig },
+      [require.resolve('../config/store')]: { writeActiveConfig, readActiveConfig },
       [require.resolve('../send')]: { sendWebexMessage },
     });
     t.after(loaded.restore);
@@ -236,7 +238,7 @@ describe('configuration submission and card flow', () => {
         projectName: ' Project ',
         projectDescription: ' Description ',
         githubRepo: ' owner/repo ',
-        responseMode: 'calibrated',
+        proactivityThreshold: '0.7',
       },
     };
 
@@ -252,7 +254,7 @@ describe('configuration submission and card flow', () => {
       projectName: 'Project',
       projectDescription: 'Description',
       githubRepo: 'owner/repo',
-      responseMode: 'calibrated',
+      proactivityThreshold: 0.7,
     });
     assert.equal(writeArgs.source.actionId, 'action-1');
     assert.equal(writeArgs.source.submittedBy, 'person-1');
@@ -289,6 +291,7 @@ describe('configuration submission and card flow', () => {
       botId: 'bot-1',
       log,
       config: active.config,
+      members: [],
       sendFn: undefined,
     });
   });

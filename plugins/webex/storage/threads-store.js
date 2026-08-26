@@ -6,6 +6,7 @@ const fs = require('node:fs/promises');
 const { contextDir, threadsPath } = require('./paths');
 const { writeJsonFileAtomic } = require('./atomic-write');
 const { withLock } = require('../flow/keyed-lock');
+const { readActiveConfig } = require('../config/store');
 
 const MAIN_THREAD_KEY = '__main__';
 const DEFAULT_PROCESSED_WINDOW_SIZE = 10;
@@ -35,7 +36,26 @@ function getThreadKey(message) {
 // processing / processed) is its status; a redundant per-entry field pointing
 // at the same information was flagged as two sources of truth for one fact
 // during phase-6 review and dropped in favor of array membership alone.
-function formatMessageForThreadWindow({ message, botId }) {
+//
+// senderName resolution (config card consolidation, §2a): substituting a
+// friendly name for a raw email happens once, here, at write time — every
+// downstream prompt-builder (gate/extract/summarize/respond) reads the
+// already-stored value, not the raw message again, so this is the single
+// point that needs to know about the member cache. Resolution order: cached
+// name (override or Webex-refreshed, matched by email) → personEmail →
+// personId → null, same fallback chain as before, with a real lookup
+// inserted at the front.
+async function resolveSenderName({ message, spaceId, explicitRoot }) {
+  if (message.senderName) return message.senderName;
+  if (!spaceId || !message.personEmail) return message.personEmail ?? message.personId ?? null;
+
+  const members = (await readActiveConfig({ spaceId, explicitRoot }))?.members ?? [];
+  const match = members.find((member) => member.email === message.personEmail);
+
+  return match?.name ?? message.personEmail ?? message.personId ?? null;
+}
+
+async function formatMessageForThreadWindow({ message, botId, spaceId, explicitRoot }) {
   const botIsMentioned =
     Boolean(botId) &&
     Array.isArray(message.mentionedPeople) &&
@@ -45,8 +65,7 @@ function formatMessageForThreadWindow({ message, botId }) {
     id: message.id,
     threadId: message.parentId ?? null,
     senderId: message.personId ?? null,
-    senderName:
-      message.senderName ?? message.personEmail ?? message.personId ?? null,
+    senderName: await resolveSenderName({ message, spaceId, explicitRoot }),
     content: message.text ?? '',
     botIsMentioned,
     datetime: message.created ?? null,
@@ -108,7 +127,14 @@ async function writeThreadsState({ spaceId, state, explicitRoot }) {
   return record;
 }
 
-function applyMessageToPendingWindow({ state, message, botId, threadKeyOverride }) {
+async function applyMessageToPendingWindow({
+  state,
+  message,
+  botId,
+  threadKeyOverride,
+  spaceId,
+  explicitRoot,
+}) {
   if (!state || typeof state !== 'object') {
     throw new Error('state object is required');
   }
@@ -130,7 +156,7 @@ function applyMessageToPendingWindow({ state, message, botId, threadKeyOverride 
   // is a signal for the dispatch layer to force a flush, not a storage eviction.
   const pending = [
     ...existingPending.filter((entry) => entry.id !== message.id),
-    formatMessageForThreadWindow({ message, botId }),
+    await formatMessageForThreadWindow({ message, botId, spaceId, explicitRoot }),
   ];
 
   return {
@@ -163,12 +189,14 @@ function applyMessageToPendingWindow({ state, message, botId, threadKeyOverride 
 // window, without inflating pendingCount/the backstop — those are meant to
 // reflect unaddressed human backlog specifically, not resurrect something
 // that already triggered its own response elsewhere.
-function applyMessageDirectlyToProcessedWindow({
+async function applyMessageDirectlyToProcessedWindow({
   state,
   message,
   botId,
   threadKeyOverride,
   processedWindowSize = DEFAULT_PROCESSED_WINDOW_SIZE,
+  spaceId,
+  explicitRoot,
 }) {
   if (!state || typeof state !== 'object') {
     throw new Error('state object is required');
@@ -188,7 +216,7 @@ function applyMessageDirectlyToProcessedWindow({
 
   const processed = [
     ...existingProcessed.filter((entry) => entry.id !== message.id),
-    formatMessageForThreadWindow({ message, botId }),
+    await formatMessageForThreadWindow({ message, botId, spaceId, explicitRoot }),
   ].slice(-processedWindowSize);
 
   return {
@@ -269,11 +297,13 @@ async function appendMessageToThreadWindow({
             // otherwise get resurrected as pending here, double-counting it
             // and inflating pendingCount for a message nobody still needs to
             // act on.
-            state = applyMessageDirectlyToProcessedWindow({
+            state = await applyMessageDirectlyToProcessedWindow({
               state,
               message: rootMessage,
               botId,
               threadKeyOverride: threadKey,
+              spaceId,
+              explicitRoot,
             });
           } else {
             log?.warn?.(
@@ -302,10 +332,12 @@ async function appendMessageToThreadWindow({
       Boolean(botId) && message.personId === botId
         ? applyMessageDirectlyToProcessedWindow
         : applyMessageToPendingWindow;
-    const newState = applyMessage({
+    const newState = await applyMessage({
       state,
       message,
       botId,
+      spaceId,
+      explicitRoot,
     });
 
     await writeThreadsState({
