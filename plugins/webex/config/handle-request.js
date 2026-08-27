@@ -22,14 +22,19 @@ async function refreshCachedMembers({ spaceId, account, log }) {
 
   let memberships;
   try {
-    const response = await webexFetch(token, `/memberships?roomId=${encodeURIComponent(spaceId)}`);
+    const response = await webexFetch(
+      token,
+      `/memberships?roomId=${encodeURIComponent(spaceId)}`
+    );
     memberships = Array.isArray(response?.items) ? response.items : [];
   } catch (err) {
     log?.warn?.(
-      `[collab-agent:config-request] failed to fetch space memberships ${JSON.stringify({
-        spaceId,
-        error: err?.message ?? String(err),
-      })}`
+      `[collab-agent:config-request] failed to fetch space memberships ${JSON.stringify(
+        {
+          spaceId,
+          error: err?.message ?? String(err),
+        }
+      )}`
     );
     return existing;
   }
@@ -47,7 +52,9 @@ async function refreshCachedMembers({ spaceId, account, log }) {
         email: membership.personEmail ?? prior?.email ?? null,
         name: isOverride
           ? prior.name
-          : membership.personDisplayName ?? membership.personEmail ?? membership.personId,
+          : (membership.personDisplayName ??
+            membership.personEmail ??
+            membership.personId),
         source: isOverride ? 'override' : 'webex',
       };
     });
@@ -58,7 +65,15 @@ async function refreshCachedMembers({ spaceId, account, log }) {
 }
 
 // Handler
-async function handleConfigRequest({ spaceId, threadKey, message, account, botId, log, sendFn }) {
+async function handleConfigRequest({
+  spaceId,
+  threadKey,
+  message,
+  account,
+  botId,
+  log,
+  sendFn,
+}) {
   if (!spaceId) throw new Error('spaceId is required');
   if (!account) throw new Error('account is required');
 

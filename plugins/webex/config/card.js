@@ -48,7 +48,7 @@ function buildMemberRow(member) {
   };
 }
 
-function buildConfigCard({ config, members }) {
+function buildConfigCard({ config, members, replyThreadId }) {
   const memberRows = (Array.isArray(members) ? members : []).map(
     buildMemberRow
   );
@@ -122,8 +122,17 @@ function buildConfigCard({ config, members }) {
       {
         type: 'Action.Submit',
         title: 'Submit configuration',
+        // replyThreadId round-trips back as action.inputs.replyThreadId on
+        // submission (Webex merges Action.Submit's data into the resulting
+        // attachmentAction's inputs — the same mechanism already used to
+        // detect `action: 'submit_config'`). This card message is itself
+        // always a reply (see sendConfigCard below) — Webex rejects a reply
+        // to a reply, so the submission handler needs the *original* thread
+        // root, not this card's own message id, to thread its confirmation
+        // correctly.
         data: {
           action: 'submit_config',
+          replyThreadId,
         },
       },
     ],
@@ -144,8 +153,8 @@ async function sendConfigCard({
   if (!spaceId) throw new Error('spaceId is required');
   if (!account) throw new Error('account is required');
 
-  const card = buildConfigCard({ config: config ?? {}, members });
   const replyThreadId = threadKey === MAIN_THREAD_KEY ? message?.id : threadKey;
+  const card = buildConfigCard({ config: config ?? {}, members, replyThreadId });
 
   return sendAdaptiveCard({
     spaceId,

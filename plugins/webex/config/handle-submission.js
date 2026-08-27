@@ -88,6 +88,19 @@ async function handleConfigSubmission({ action, account, log }) {
   if (!action?.roomId) throw new Error('action.roomId is required');
   if (!account) throw new Error('account is required');
 
+  // The card message itself is always a reply (see config/card.js's
+  // sendConfigCard) — Webex rejects a reply to a reply, so replying to
+  // action.messageId (the card's own id) 400s with "Cannot reply to a
+  // reply." replyThreadId round-trips through the card's own submit-action
+  // data back into action.inputs, carrying the *original* thread root
+  // instead. NOT falling back to action.messageId here — it would 400 the
+  // exact same way, since the card is unconditionally a reply. A card
+  // opened before this fix deployed and submitted after (its inputs won't
+  // have replyThreadId) instead falls back to no parentId at all —
+  // send.js only sets parentId when truthy, so this posts as an ordinary
+  // top-level message rather than failing.
+  const replyThreadId = action.inputs?.replyThreadId;
+
   const validation = validateConfigInputs(action.inputs);
 
   if (!validation.ok) {
@@ -101,7 +114,7 @@ async function handleConfigSubmission({ action, account, log }) {
         '',
         'Please update the configuration card and submit it again.',
       ].join('\n'),
-      parentId: action.messageId,
+      parentId: replyThreadId,
     });
 
     log?.warn?.(
@@ -143,7 +156,7 @@ async function handleConfigSubmission({ action, account, log }) {
           ?.title ?? validation.config.proactivityThreshold
       }`,
     ].join('\n'),
-    parentId: action.messageId,
+    parentId: replyThreadId,
   });
 
   log?.info?.(

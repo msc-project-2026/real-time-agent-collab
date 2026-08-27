@@ -174,7 +174,12 @@ describe('configuration submission and card flow', () => {
       action: {
         roomId: 'space-1',
         messageId: 'card-message',
-        inputs: { projectName: '', githubRepo: 'bad repo', responseMode: 'unknown' },
+        inputs: {
+          projectName: '',
+          githubRepo: 'bad repo',
+          responseMode: 'unknown',
+          replyThreadId: 'thread-root-1',
+        },
       },
       account: { accountId: 'default', config: { token: 'bot-token' } },
       log: makeLog(t),
@@ -184,6 +189,35 @@ describe('configuration submission and card flow', () => {
     assert.equal(writeActiveConfig.mock.callCount(), 0);
     assert.match(sendWebexMessage.mock.calls[0].arguments[0].markdown, /Configuration was not saved/);
     assert.equal(response.errors.length, 3);
+    // The card message is itself always a reply (config/card.js) — Webex
+    // rejects a reply to a reply, so this must thread under the original
+    // root (replyThreadId), never the card's own message id.
+    assert.equal(sendWebexMessage.mock.calls[0].arguments[0].parentId, 'thread-root-1');
+  });
+
+  test('posts as a top-level message (no parentId) when replyThreadId is absent — a card opened before this fix deployed', async (t) => {
+    const writeActiveConfig = t.mock.fn();
+    const sendWebexMessage = t.mock.fn(async () => ({ id: 'message-1' }));
+    const loaded = loadWithMocks(require.resolve('../config/handle-submission'), {
+      [require.resolve('../config/store')]: { writeActiveConfig },
+      [require.resolve('../send')]: { sendWebexMessage },
+    });
+    t.after(loaded.restore);
+
+    await loaded.subject.handleConfigSubmission({
+      action: {
+        roomId: 'space-1',
+        messageId: 'card-message',
+        inputs: { projectName: '', githubRepo: 'bad repo' },
+      },
+      account: { accountId: 'default', config: { token: 'bot-token' } },
+      log: makeLog(t),
+    });
+
+    // NOT action.messageId — the card is unconditionally a reply, so that
+    // would 400 the same way. send.js only sets parentId when truthy, so
+    // undefined here means it posts as an ordinary top-level message.
+    assert.equal(sendWebexMessage.mock.calls[0].arguments[0].parentId, undefined);
   });
 
   test('validates submission ownership and reports an absent repository', async (t) => {
@@ -239,6 +273,7 @@ describe('configuration submission and card flow', () => {
         projectDescription: ' Description ',
         githubRepo: ' owner/repo ',
         proactivityThreshold: '0.7',
+        replyThreadId: 'thread-root-1',
       },
     };
 
@@ -259,6 +294,9 @@ describe('configuration submission and card flow', () => {
     assert.equal(writeArgs.source.actionId, 'action-1');
     assert.equal(writeArgs.source.submittedBy, 'person-1');
     assert.match(sendWebexMessage.mock.calls[0].arguments[0].markdown, /Configuration saved/);
+    // Same reply-to-a-reply concern as the rejection path — the confirmation
+    // must thread under the original root, not the card's own message id.
+    assert.equal(sendWebexMessage.mock.calls[0].arguments[0].parentId, 'thread-root-1');
   });
 
   test('loads active configuration and delegates adaptive-card sending', async (t) => {
@@ -354,6 +392,10 @@ describe('configuration submission and card flow', () => {
     assert.equal(card.type, 'AdaptiveCard');
     assert.ok(card.body.some((field) => field.id === 'githubRepo' && field.value === 'owner/repo'));
     assert.equal(card.actions[0].data.action, 'submit_config');
+    // Round-trips back as action.inputs.replyThreadId on submission — the
+    // fix for "Cannot reply to a reply" (the card message is itself always
+    // a reply, so the submission handler needs this, not its own id).
+    assert.equal(card.actions[0].data.replyThreadId, 'msg-1');
   });
 
   test('threads the config card under threadKey when the request came from an existing thread', async (t) => {
@@ -373,7 +415,10 @@ describe('configuration submission and card flow', () => {
       config: {},
     });
 
-    assert.equal(sendWebexMessage.mock.calls[0].arguments[0].parentId, 'thread-root-1');
+    const request = sendWebexMessage.mock.calls[0].arguments[0];
+    assert.equal(request.parentId, 'thread-root-1');
+    const card = request.attachments[0].content;
+    assert.equal(card.actions[0].data.replyThreadId, 'thread-root-1');
   });
 
   test('validates card delivery inputs before sending', async (t) => {
