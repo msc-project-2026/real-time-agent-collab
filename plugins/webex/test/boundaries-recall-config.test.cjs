@@ -334,6 +334,46 @@ describe('configuration submission and card flow', () => {
     });
   });
 
+  // Manual testing surfaced this: the bot is technically a Webex member of
+  // its own space, so an unfiltered membership fetch put it on the config
+  // card as an editable "member" — and, more seriously, into extract's own
+  // "Space members" list alongside config/members.js's synthetic
+  // AGENT_ASSIGNEE ({id: 'agent'}), risking `assigned` landing on the bot's
+  // real personId instead of the 'agent' sentinel write_task's
+  // auto-approval check looks for.
+  test('excludes the bot\'s own membership when refreshing the member cache', async (t) => {
+    const webexFetch = t.mock.fn(async () => ({
+      items: [
+        { personId: 'person-1', personEmail: 'ada@example.com', personDisplayName: 'Ada' },
+        { personId: 'bot-1', personEmail: 'collab-agent@webex.bot', personDisplayName: 'collab-agent' },
+      ],
+    }));
+    const readActiveConfig = t.mock.fn(async () => null);
+    const writeCachedMembers = t.mock.fn(async () => undefined);
+    const sendConfigCard = t.mock.fn(async () => ({ ok: true }));
+    const loaded = loadWithMocks(require.resolve('../config/handle-request'), {
+      [require.resolve('../api')]: { webexFetch },
+      [require.resolve('../config/store')]: { readActiveConfig, writeCachedMembers },
+      [require.resolve('../config/card')]: { sendConfigCard },
+    });
+    t.after(loaded.restore);
+
+    await loaded.subject.handleConfigRequest({
+      spaceId: 'space-1',
+      account: { accountId: 'default', config: { token: 'bot-token' } },
+      botId: 'bot-1',
+      log: makeLog(t),
+    });
+
+    const members = sendConfigCard.mock.calls[0].arguments[0].members;
+    assert.equal(members.length, 1);
+    assert.equal(members[0].id, 'person-1');
+    assert.deepEqual(
+      writeCachedMembers.mock.calls[0].arguments[0].members.map((m) => m.id),
+      ['person-1']
+    );
+  });
+
   test('validates config requests and presents an empty card for a new space', async (t) => {
     const readActiveConfig = t.mock.fn(async () => null);
     const sendConfigCard = t.mock.fn(async () => ({ ok: true }));

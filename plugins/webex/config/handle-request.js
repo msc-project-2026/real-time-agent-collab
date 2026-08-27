@@ -14,7 +14,7 @@ const { sendConfigCard } = require('./card');
 // Webex's own `personDisplayName` (falling back to email if Webex has
 // none). A fetch failure falls back to whatever's already cached rather
 // than blocking the card entirely.
-async function refreshCachedMembers({ spaceId, account, log }) {
+async function refreshCachedMembers({ spaceId, account, botId, log }) {
   const token = account?.config?.token;
   const existing = (await readActiveConfig({ spaceId }))?.members ?? [];
 
@@ -42,7 +42,14 @@ async function refreshCachedMembers({ spaceId, account, log }) {
   const existingById = new Map(existing.map((member) => [member.id, member]));
 
   const merged = memberships
-    .filter((membership) => membership.personId)
+    // The bot is technically a Webex member of its own space, but it's
+    // already represented separately by config/members.js's synthetic
+    // AGENT_ASSIGNEE ({id: 'agent', ...}) — including its real membership
+    // here too would give extract/respond two different ids for "the
+    // agent," risking `assigned` landing on the bot's real personId instead
+    // of the literal 'agent' sentinel that write_task's auto-approval
+    // check actually looks for.
+    .filter((membership) => membership.personId && membership.personId !== botId)
     .map((membership) => {
       const prior = existingById.get(membership.personId);
       const isOverride = prior?.source === 'override';
@@ -78,7 +85,7 @@ async function handleConfigRequest({
   if (!account) throw new Error('account is required');
 
   const activeConfig = await readActiveConfig({ spaceId });
-  const members = await refreshCachedMembers({ spaceId, account, log });
+  const members = await refreshCachedMembers({ spaceId, account, botId, log });
 
   log?.info?.(
     `[collab-agent:config-request] handling config request ${JSON.stringify({
