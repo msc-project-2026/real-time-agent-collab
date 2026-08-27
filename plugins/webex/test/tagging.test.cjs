@@ -100,9 +100,10 @@ describe('submit_gate_decision tool validation', () => {
     assert.equal(takePendingTagResult('space-1', '__main__'), null);
   });
 
-  test('non-boolean isAddressed/configRequest/batchReady returns validation error', async () => {
+  test('non-boolean isAddressed/configRequest/batchReady returns validation error', async (t) => {
     const { tagMessageTool } = loadTool();
     const tool = tagMessageTool();
+    const warnSpy = t.mock.method(console, 'warn', () => {});
 
     const result = await tool.execute('id-1', {
       ...validParams,
@@ -115,6 +116,10 @@ describe('submit_gate_decision tool validation', () => {
     assert.ok(result.errors.some((e) => e.includes('isAddressed')));
     assert.ok(result.errors.some((e) => e.includes('configRequest')));
     assert.ok(result.errors.some((e) => e.includes('batchReady')));
+    // A rejected call previously left no trace anywhere to diagnose a
+    // string of failed retries (see dispatch.js's timeout/give-up path).
+    assert.equal(warnSpy.mock.callCount(), 1);
+    assert.match(warnSpy.mock.calls[0].arguments[0], /rejected: invalid parameters/);
   });
 
   test('empty reason string returns validation error and does not store', async () => {

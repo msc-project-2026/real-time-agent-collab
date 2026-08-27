@@ -100,6 +100,17 @@ function tagMessageTool() {
       }
 
       if (errors.length > 0) {
+        // Same reasoning as write_task's equivalent log (processing/extract/
+        // tool.js): a rejected call here previously left no trace anywhere
+        // — the model just retried or gave up (see dispatch.js's "did not
+        // call submit_gate_decision" fallback), with nothing to diagnose
+        // after the fact why the retries failed.
+        console.warn(
+          `[collab-agent:submit-gate-decision] rejected: invalid parameters ${JSON.stringify({
+            params,
+            errors,
+          })}`
+        );
         return { ok: false, errors };
       }
 
