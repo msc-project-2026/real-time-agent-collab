@@ -53,6 +53,8 @@ function loadFlow(t, overrides = {}) {
     dispatchTaggingGate: t.mock.fn(async () => ({
       messageTags: { isAddressed: false, configRequest: false },
       pendingThreadWindowDecision: { sliceReady: false, reason: 'Not yet.' },
+      sessionKey: 'agent:main:webex:space-1:tagging-gate:__main__',
+      runId: 'tagging-gate-123',
     })),
     handleConfigRequest: t.mock.fn(async () => undefined),
     getPendingSlice: t.mock.fn(async () => [{ id: 'message-1' }]),
@@ -156,6 +158,35 @@ describe('runMessageFlow — nothing warranted', () => {
     assert.equal(collaborators.runTaskNotifyStep.mock.callCount(), 0);
     assert.equal(finishSpy.mock.callCount(), 1);
     assert.equal(finishSpy.mock.calls[0].arguments[0].flowId, 'flow-1');
+  });
+
+  // Gate is the one step whose own dispatch.js never logs a completion line
+  // itself (only warn/error) — so its sessionKey/runId have to reach both
+  // the job-log entry and the dispatch-decision log via what
+  // dispatchTaggingGate returns, the same way extract/respond/summarize
+  // already thread theirs through.
+  test('threads the gate\'s sessionKey/runId into the job log and the dispatch-decision log', async (t) => {
+    const { runMessageFlow, collaborators } = loadFlow(t);
+    const log = makeLog(t);
+
+    await runMessageFlow(baseParams(t, { log }));
+
+    const gateLogCall = collaborators.appendJobLogEntry.mock.calls.find(
+      (call) => call.arguments[0].step === 'gate'
+    );
+    assert.ok(gateLogCall, 'expected a job-log entry for the gate step');
+    assert.equal(gateLogCall.arguments[0].sessionKey, 'agent:main:webex:space-1:tagging-gate:__main__');
+    assert.equal(gateLogCall.arguments[0].runId, 'tagging-gate-123');
+
+    const dispatchDecisionCall = log.info.mock.calls.find((call) =>
+      call.arguments[0].includes('dispatch decision')
+    );
+    assert.ok(dispatchDecisionCall, 'expected the dispatch-decision log line');
+    const logged = JSON.parse(
+      dispatchDecisionCall.arguments[0].slice(dispatchDecisionCall.arguments[0].indexOf('{'))
+    );
+    assert.equal(logged.gateSessionKey, 'agent:main:webex:space-1:tagging-gate:__main__');
+    assert.equal(logged.gateRunId, 'tagging-gate-123');
   });
 });
 

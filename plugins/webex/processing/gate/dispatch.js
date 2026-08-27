@@ -136,7 +136,14 @@ async function runTaggingGate({
     explicitRoot,
   });
 
-  return tagResult;
+  // sessionKey/runId are attached to a fresh object here, after the
+  // validation record above — that record is a pure audit trail of what
+  // the model actually produced via tag_message, and shouldn't be
+  // contaminated with plugin-internal call metadata. The caller
+  // (run-message-flow.js) needs these two fields for its own job-log entry
+  // and dispatch-decision log line, the same way extract/respond/summarize
+  // already thread runId/sessionKey back to their callers.
+  return { ...tagResult, sessionKey, runId };
 }
 
 function randomSessionSuffix() {
