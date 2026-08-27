@@ -182,6 +182,17 @@ function writeTaskTool() {
               ?.status ?? null)
           : 'unapproved';
 
+        // Creating a task with no explicit status: default to 'backlog' for
+        // a human-assigned (or unassigned) task, since there's no approval
+        // step for those — a human simply owns it. Self-assigned-to-agent
+        // tasks keep upsertTask's own 'unapproved' default (leave status
+        // unset here), since that's what the confidence auto-approval
+        // override below depends on. Patching an existing task is untouched
+        // either way — omitting status there already preserves the prior
+        // value in upsertTask.
+        const effectiveStatus =
+          status !== undefined ? status : !id && assigned !== 'agent' ? 'backlog' : undefined;
+
         let task = await upsertTask({
           spaceId,
           id,
@@ -191,7 +202,7 @@ function writeTaskTool() {
             type,
             assigned,
             deadline,
-            status,
+            status: effectiveStatus,
             confidence,
             message_ids: messageIds,
             child_tasks: childTasks,

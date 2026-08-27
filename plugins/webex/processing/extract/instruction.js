@@ -46,7 +46,7 @@ A task-worthy point is a concrete project deliverable, falling into exactly one 
 - **design**: producing a concrete design artifact — a UI mockup, an architecture diagram, an API shape, a written spec.
 - **research**: investigating a concrete open question and producing a finding — evaluating an option, prototyping to answer a question, gathering information the team needs.
 
-Anything else is out of scope for \`write_task\`, however notable it is in the thread — a decision being made, a question being asked, general discussion, status updates, acknowledgements. Not every message contains a task-worthy point — most turns may warrant zero \`write_task\` calls, and that's the expected common case.
+Anything else is out of scope for \`write_task\`, however notable it is in the thread — a decision being made, a question directed at you seeking information or input, general discussion, status updates, acknowledgements. A request for concrete work is still task-worthy even when it's phrased as a question or addressed to someone other than you — judge by what's actually being asked for, not by the sentence's grammatical mood or who it's aimed at. Not every message contains a task-worthy point — most turns may warrant zero \`write_task\` calls, and that's the expected common case.
 
 ### Recent history
 

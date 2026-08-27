@@ -57,12 +57,55 @@ describe('write_task tool', () => {
         type: 'development',
         assigned: 'alice',
         deadline: undefined,
-        status: undefined,
+        // No status given and not self-assigned to the agent: defaults to
+        // 'backlog' on create — a human-assigned task needs no approval step.
+        status: 'backlog',
         confidence: undefined,
         message_ids: ['msg-1'],
         child_tasks: undefined,
       },
     });
+  });
+
+  test('creating a self-assigned (agent) task with no explicit status leaves status unset, not backlog', async (t) => {
+    const { writeTaskTool, upsertTask } = loadTool(t);
+    const tool = writeTaskTool();
+
+    await tool.execute('id-1', {
+      spaceId: 'space-1',
+      title: 'Pick up small fix',
+      type: 'development',
+      assigned: 'agent',
+      confidence: 0.5,
+    });
+
+    // Left undefined so upsertTask's own default ('unapproved') applies —
+    // that's what the confidence auto-approval override depends on.
+    assert.equal(upsertTask.mock.calls[0].arguments[0].patch.status, undefined);
+  });
+
+  test('an explicit status from the model is passed through unchanged, even on create', async (t) => {
+    const { writeTaskTool, upsertTask } = loadTool(t);
+    const tool = writeTaskTool();
+
+    await tool.execute('id-1', {
+      spaceId: 'space-1',
+      title: 'Already-started work',
+      type: 'development',
+      assigned: 'alice',
+      status: 'in_progress',
+    });
+
+    assert.equal(upsertTask.mock.calls[0].arguments[0].patch.status, 'in_progress');
+  });
+
+  test('patching an existing human-assigned task with no status leaves it unset (no forced backlog)', async (t) => {
+    const { writeTaskTool, upsertTask } = loadTool(t);
+    const tool = writeTaskTool();
+
+    await tool.execute('id-1', { spaceId: 'space-1', id: 'task_abc', assigned: 'alice' });
+
+    assert.equal(upsertTask.mock.calls[0].arguments[0].patch.status, undefined);
   });
 
   test('patching passes the given id through', async (t) => {
