@@ -99,6 +99,13 @@
     "enabled": true,
     "maxConcurrentRuns": 8
   },
+  "session": {
+    "maintenance": {
+      "mode": "enforce",
+      "maxDiskBytes": 20000000,
+      "highWaterBytes": 5000000
+    }
+  },
   "bindings": [
     {
       "agentId": "main",

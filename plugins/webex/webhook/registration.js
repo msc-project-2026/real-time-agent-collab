@@ -126,6 +126,22 @@ async function ensureWebhooks({ cfg, account, log }) {
     },
   });
 
+  // Ensure membership-removal webhook — same target/identity as the bot
+  // action handler (routes by resource/event, not a separate URL), so the
+  // bot can clean up its own per-space storage the moment it's removed from
+  // a space rather than that state sitting there forever.
+  const membershipWebhook = await ensureWebhook({
+    token: botToken,
+    log,
+    webhook: {
+      name: 'OpenClaw Bot Membership Observer',
+      targetUrl: cfg.botWebhookUrl,
+      resource: 'memberships',
+      event: 'deleted',
+      secret: cfg.webhookSecret,
+    },
+  });
+
   // Log registration
   log?.info?.(
     `[webex:${account.accountId}] webhooks registered ${JSON.stringify({
@@ -133,6 +149,7 @@ async function ensureWebhooks({ cfg, account, log }) {
       botWebhookUrl: cfg.botWebhookUrl,
       oauthWebhookId: oauthWebhook.id,
       oauthWebhookUrl: cfg.oauthWebhookUrl,
+      membershipWebhookId: membershipWebhook.id,
     })}`
   );
 
@@ -162,6 +179,7 @@ async function ensureWebhooks({ cfg, account, log }) {
   return {
     botWebhook,
     oauthWebhook,
+    membershipWebhook,
   };
 }
 

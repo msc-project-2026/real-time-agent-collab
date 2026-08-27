@@ -3,6 +3,7 @@
 
 const { handleInboundWebexMessage } = require('./message');
 const { handleInboundWebexAttachmentAction } = require('./attachment-actions');
+const { handleInboundWebexMembershipDeleted } = require('./membership');
 
 /// Inbound webhook handler
 async function handleInboundWebexWebhook(payload, ctx) {
@@ -36,6 +37,14 @@ async function handleInboundWebexWebhook(payload, ctx) {
     return handleInboundWebexAttachmentAction(payload, ctx);
   }
 
+  if (
+    identity === 'bot' &&
+    payload.resource === 'memberships' &&
+    payload.event === 'deleted'
+  ) {
+    return handleInboundWebexMembershipDeleted(payload, ctx);
+  }
+
   log?.info?.(
     `[collab-agent:inbound] ignored webhook payload ${JSON.stringify({
       identity,
@@ -49,4 +58,5 @@ module.exports = {
   handleInboundWebexWebhook,
   handleInboundWebexMessage,
   handleInboundWebexAttachmentAction,
+  handleInboundWebexMembershipDeleted,
 };

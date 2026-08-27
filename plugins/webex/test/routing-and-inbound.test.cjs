@@ -15,10 +15,14 @@ describe('inbound webhook identity dispatch', () => {
   test('routes only the supported identity/resource combinations', async (t) => {
     const handleInboundWebexMessage = t.mock.fn(async () => 'message-result');
     const handleInboundWebexAttachmentAction = t.mock.fn(async () => 'action-result');
+    const handleInboundWebexMembershipDeleted = t.mock.fn(async () => 'membership-result');
     const loaded = loadWithMocks(require.resolve('../inbound/index'), {
       [require.resolve('../inbound/message')]: { handleInboundWebexMessage },
       [require.resolve('../inbound/attachment-actions')]: {
         handleInboundWebexAttachmentAction,
+      },
+      [require.resolve('../inbound/membership')]: {
+        handleInboundWebexMembershipDeleted,
       },
     });
     t.after(loaded.restore);
@@ -32,6 +36,10 @@ describe('inbound webhook identity dispatch', () => {
       { resource: 'attachmentActions', event: 'created', data: { id: 'action-1' } },
       { ...ctx, identity: 'bot' }
     );
+    const membershipResult = await loaded.subject.handleInboundWebexWebhook(
+      { resource: 'memberships', event: 'deleted', data: { roomId: 'space-1', personId: 'bot-1' } },
+      { ...ctx, identity: 'bot' }
+    );
     const ignored = await loaded.subject.handleInboundWebexWebhook(
       { resource: 'messages', event: 'deleted' },
       { ...ctx, identity: 'oauth' }
@@ -39,9 +47,96 @@ describe('inbound webhook identity dispatch', () => {
 
     assert.equal(messageResult, 'message-result');
     assert.equal(actionResult, 'action-result');
+    assert.equal(membershipResult, 'membership-result');
     assert.equal(ignored, undefined);
     assert.equal(handleInboundWebexMessage.mock.callCount(), 1);
     assert.equal(handleInboundWebexAttachmentAction.mock.callCount(), 1);
+    assert.equal(handleInboundWebexMembershipDeleted.mock.callCount(), 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Category: Membership-deletion cleanup (tidying feature).
+// A memberships:deleted webhook carries the full membership object inline
+// (no follow-up fetch needed) — only the bot's own removal should trigger
+// anything, since another member leaving isn't this plugin's concern.
+// ---------------------------------------------------------------------------
+
+describe('membership-deletion cleanup', () => {
+  const fsPromises = require('node:fs/promises');
+  const { handleInboundWebexMembershipDeleted } = require('../inbound/membership');
+
+  function loadMembershipHandler(t) {
+    // node:fs/promises is a builtin — loadWithMocks' require.cache swap
+    // doesn't intercept it, so patch the real method directly instead (same
+    // pattern as t.mock.method(globalThis, 'fetch', ...) elsewhere).
+    const fsRm = t.mock.method(fsPromises, 'rm', async () => undefined);
+    return { handleInboundWebexMembershipDeleted, fsRm };
+  }
+
+  test('deletes the space\'s collab storage when the bot itself is removed', async (t) => {
+    const { handleInboundWebexMembershipDeleted, fsRm } = loadMembershipHandler(t);
+
+    await handleInboundWebexMembershipDeleted(
+      {
+        resource: 'memberships',
+        event: 'deleted',
+        data: { roomId: 'space-1', personId: 'bot-1' },
+      },
+      { botId: 'bot-1', account: { accountId: 'default' }, log: makeLog(t) }
+    );
+
+    assert.equal(fsRm.mock.callCount(), 1);
+    const [dirArg, optsArg] = fsRm.mock.calls[0].arguments;
+    assert.match(dirArg, /space-1$/);
+    assert.deepEqual(optsArg, { recursive: true, force: true });
+  });
+
+  test('ignores another member leaving the space', async (t) => {
+    const { handleInboundWebexMembershipDeleted, fsRm } = loadMembershipHandler(t);
+
+    await handleInboundWebexMembershipDeleted(
+      {
+        resource: 'memberships',
+        event: 'deleted',
+        data: { roomId: 'space-1', personId: 'person-1' },
+      },
+      { botId: 'bot-1', account: { accountId: 'default' }, log: makeLog(t) }
+    );
+
+    assert.equal(fsRm.mock.callCount(), 0);
+  });
+
+  test('ignores non-deletion or non-membership payloads', async (t) => {
+    const { handleInboundWebexMembershipDeleted, fsRm } = loadMembershipHandler(t);
+    const ctx = { botId: 'bot-1', account: { accountId: 'default' }, log: makeLog(t) };
+
+    await handleInboundWebexMembershipDeleted(
+      { resource: 'memberships', event: 'created', data: { roomId: 'space-1', personId: 'bot-1' } },
+      ctx
+    );
+    await handleInboundWebexMembershipDeleted(
+      { resource: 'messages', event: 'deleted', data: { roomId: 'space-1', personId: 'bot-1' } },
+      ctx
+    );
+
+    assert.equal(fsRm.mock.callCount(), 0);
+  });
+
+  test('tolerates a payload missing roomId or personId', async (t) => {
+    const { handleInboundWebexMembershipDeleted, fsRm } = loadMembershipHandler(t);
+    const ctx = { botId: 'bot-1', account: { accountId: 'default' }, log: makeLog(t) };
+
+    await handleInboundWebexMembershipDeleted(
+      { resource: 'memberships', event: 'deleted', data: { personId: 'bot-1' } },
+      ctx
+    );
+    await handleInboundWebexMembershipDeleted(
+      { resource: 'memberships', event: 'deleted', data: { roomId: 'space-1' } },
+      ctx
+    );
+
+    assert.equal(fsRm.mock.callCount(), 0);
   });
 });
 

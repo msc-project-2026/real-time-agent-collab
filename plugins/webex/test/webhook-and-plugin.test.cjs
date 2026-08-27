@@ -341,7 +341,11 @@ describe('webhook registration lifecycle', () => {
         return null;
       }
       if (apiPath === '/webhooks' && options.method === 'POST') {
-        const created = { id: 'oauth-created', status: 'active', ...options.body };
+        const created = {
+          id: `created-${state[token].length + 1}`,
+          status: 'active',
+          ...options.body,
+        };
         state[token].push(created);
         return created;
       }
@@ -365,8 +369,16 @@ describe('webhook registration lifecycle', () => {
     });
 
     assert.equal(result.botWebhook.id, 'bot-keep');
-    assert.equal(result.oauthWebhook.id, 'oauth-created');
-    assert.deepEqual(state['bot-token'].map((entry) => entry.id), ['bot-keep']);
+    assert.equal(result.oauthWebhook.id, 'created-1');
+    // Membership-removal webhook shares the bot's own target — created
+    // fresh alongside the kept attachmentActions one.
+    assert.equal(result.membershipWebhook.id, 'created-2');
+    assert.equal(result.membershipWebhook.resource, 'memberships');
+    assert.equal(result.membershipWebhook.event, 'deleted');
+    assert.deepEqual(state['bot-token'].map((entry) => entry.id), [
+      'bot-keep',
+      'created-2',
+    ]);
     assert.equal(state['oauth-token'][0].secret, 'webhook-secret');
   });
 
@@ -400,8 +412,10 @@ describe('webhook registration lifecycle', () => {
 
     assert.equal(result.botWebhook.id, 'created-1');
     assert.equal(result.oauthWebhook.id, 'created-2');
+    assert.equal(result.membershipWebhook.id, 'created-3');
     assert.equal(Object.hasOwn(createdBodies[0], 'secret'), false);
     assert.equal(Object.hasOwn(createdBodies[1], 'secret'), false);
+    assert.equal(Object.hasOwn(createdBodies[2], 'secret'), false);
   });
 
   test('requires both ownership tokens and both target URLs', async (t) => {
