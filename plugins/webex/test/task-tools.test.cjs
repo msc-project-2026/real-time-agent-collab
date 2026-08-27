@@ -161,6 +161,11 @@ describe('write_task tool', () => {
       }),
     });
     const tool = writeTaskTool();
+    // execute() has no threaded log (writeTaskTool() is instantiated once
+    // at plugin registration, not per spawn — no flowId/log to close over),
+    // so a rejection that would otherwise be completely invisible logs via
+    // console.warn instead, reaching the same aggregation as everything else.
+    const warnSpy = t.mock.method(console, 'warn', () => {});
 
     const result = await tool.execute('id-1', {
       spaceId: 'space-1',
@@ -170,6 +175,9 @@ describe('write_task tool', () => {
 
     assert.equal(result.ok, false);
     assert.ok(result.errors.some((e) => e.includes('cycle')));
+    assert.equal(warnSpy.mock.callCount(), 1);
+    assert.match(warnSpy.mock.calls[0].arguments[0], /rejected: threw during write/);
+    assert.match(warnSpy.mock.calls[0].arguments[0], /cycle/);
   });
 
   test('coordination is no longer an accepted type', async (t) => {
@@ -189,6 +197,7 @@ describe('write_task tool', () => {
   test('confidence outside 0-1 or non-numeric is rejected, and never calls the store', async (t) => {
     const { writeTaskTool, upsertTask } = loadTool(t);
     const tool = writeTaskTool();
+    const warnSpy = t.mock.method(console, 'warn', () => {});
 
     const tooHigh = await tool.execute('id-1', {
       spaceId: 'space-1',
@@ -208,6 +217,10 @@ describe('write_task tool', () => {
     assert.equal(notNumber.ok, false);
     assert.ok(notNumber.errors.some((e) => e.includes('confidence')));
     assert.equal(upsertTask.mock.callCount(), 0);
+    // One rejected call logged, one per attempt — a validation rejection
+    // previously left no trace anywhere for us to diagnose after the fact.
+    assert.equal(warnSpy.mock.callCount(), 2);
+    assert.match(warnSpy.mock.calls[0].arguments[0], /rejected: invalid parameters/);
   });
 
   test('auto-approves and delegates a self-assigned task that clears the confidence threshold on create', async (t) => {

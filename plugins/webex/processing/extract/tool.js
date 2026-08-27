@@ -152,6 +152,22 @@ function writeTaskTool() {
       }
 
       if (errors.length > 0) {
+        // write_task's execute() has no threaded `log` — writeTaskTool() is
+        // instantiated once at plugin registration (index.js), not per
+        // spawn, so there's no flowId/log to close over. Unlike the job-log
+        // file (flow/job-log.js, one entry per *step*, written by the
+        // orchestrator after the whole spawn completes), a validation
+        // rejection happens per *tool call* and was previously invisible
+        // anywhere — the model just silently retried or gave up, with
+        // nothing for us to diagnose after the fact. console.warn here
+        // reaches the same log aggregation everything else does, and is
+        // correlatable by timestamp against the surrounding job-log entries.
+        console.warn(
+          `[collab-agent:write-task] rejected: invalid parameters ${JSON.stringify({
+            params,
+            errors,
+          })}`
+        );
         return { ok: false, errors };
       }
 
@@ -219,6 +235,13 @@ function writeTaskTool() {
 
         return { ok: true, task };
       } catch (err) {
+        console.warn(
+          `[collab-agent:write-task] rejected: threw during write ${JSON.stringify({
+            params,
+            error: err?.message ?? String(err),
+            stack: err?.stack ?? null,
+          })}`
+        );
         return { ok: false, errors: [err?.message ?? String(err)] };
       }
     },
