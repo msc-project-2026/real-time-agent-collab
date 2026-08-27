@@ -5,7 +5,7 @@
   "channels": ["webex"],
   "contracts": {
     "tools": [
-      "tag_message",
+      "submit_gate_decision",
       "write_task",
       "search_tasks",
       "write_summary",

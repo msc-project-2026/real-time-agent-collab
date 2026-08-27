@@ -1073,4 +1073,31 @@ describe('plugin registration and tool exposure', () => {
       [tagTool, writeTaskToolStub, searchTasksToolStub, writeSummaryToolStub, searchRecallToolStub]
     );
   });
+
+  // Regression guard for a real live bug (2026-08-27): the tag_message ->
+  // submit_gate_decision rename updated the tool's own name but not
+  // openclaw.plugin.json's contracts.tools list, which the gateway silently
+  // fell back from on load — the gate session ended up with the entire
+  // default toolset (gateway, exec, cron, write_task, ...) instead of just
+  // its one tool, confusing the model into wasting turns until the run
+  // timed out. Same class of bug as the earlier routingAgentId ->
+  // collabAgentId miss in configSchema.
+  test('contracts.tools in openclaw.plugin.json matches every tool this plugin actually registers', () => {
+    const manifest = require('../openclaw.plugin.json');
+    const { tagMessageTool } = require('../processing/gate/tool');
+    const { writeTaskTool } = require('../processing/extract/tool');
+    const { searchTasksTool } = require('../processing/search-tasks-tool');
+    const { writeSummaryTool } = require('../processing/summarize/tool');
+    const { searchRecallTool } = require('../processing/search-recall-tool');
+
+    const actualToolNames = [
+      tagMessageTool(),
+      writeTaskTool(),
+      searchTasksTool(),
+      writeSummaryTool(),
+      searchRecallTool(),
+    ].map((tool) => tool.name);
+
+    assert.deepEqual(new Set(manifest.contracts.tools), new Set(actualToolNames));
+  });
 });
