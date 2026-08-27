@@ -2,7 +2,39 @@
 'use strict';
 
 const { webexFetch } = require('./api');
-const { appendMessageToThreadWindow } = require('./storage/threads-store');
+const { appendMessageToThreadWindow, getThread, MAIN_THREAD_KEY } = require('./storage/threads-store');
+
+// Webex bots can only see messages that explicitly @-mention them — a real
+// platform restriction, distinct from this plugin's own OAuth-based
+// "message observer" identity (channel.js), which sees every message for
+// classification purposes but never sends. Using a message the bot's own
+// token has never seen — or an existing thread's root, which may equally
+// be invisible — as `parentId` 400s with "Parent activity ID not found or
+// invalid" (or "Cannot reply to a reply" for the config card specifically,
+// since it's always sent as a reply to begin with). Decided once, up
+// front, rather than reactively retrying after Webex rejects it, so every
+// reply-sending call site (config card, respond, task-notify,
+// thinking-ack) gets a consistent answer instead of each duplicating the
+// same ternary.
+//
+// Two different mention facts matter here, not one: for the main space,
+// the *triggering* message is the candidate root, so its own
+// (deterministic) mention status is what's checked. For an existing
+// thread, the candidate root is a *different* message — whichever one
+// started that thread — so what matters is whether *that* message
+// mentions the bot, not the triggering one. Being mentioned in a reply
+// several messages deep into a thread doesn't tell you whether the bot's
+// token can see that thread's root. `rootBotIsMentioned` is stamped onto
+// the thread record once, at creation (storage/threads-store.js's
+// root-backfill), from the root's own Webex data — a single stored
+// property read here, no per-call fetch or scan.
+async function resolveReplyThreadId({ spaceId, explicitRoot, threadKey, message, isBotMentioned }) {
+  if (threadKey === MAIN_THREAD_KEY) {
+    return isBotMentioned ? message?.id : null;
+  }
+  const thread = await getThread({ spaceId, threadKey, explicitRoot });
+  return thread?.rootBotIsMentioned ? threadKey : null;
+}
 
 // Some callers (e.g. OpenClaw core's durable delivery queue) pass targets in
 // the generic `<channel>:<id>` form instead of the bare Webex id. Left
@@ -94,4 +126,4 @@ async function sendOutboundMessage({
   return msg;
 }
 
-module.exports = { buildMsgBody, sendWebexMessage, sendOutboundMessage };
+module.exports = { buildMsgBody, sendWebexMessage, sendOutboundMessage, resolveReplyThreadId };

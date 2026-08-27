@@ -65,6 +65,38 @@ describe('thread context windows', () => {
     // Only the actual reply that created the thread is pending.
     assert.deepEqual(thread.pending.map((message) => message.id), ['reply-1']);
     assert.deepEqual(thread.processed.map((message) => message.id), ['root-1']);
+    // No mentionedPeople on the root at all — safe default, not mentioned.
+    assert.equal(thread.rootBotIsMentioned, false);
+  });
+
+  // send.js's resolveReplyThreadId reads this to decide whether the bot's
+  // own token can see (and therefore reply to) this thread's root — stamped
+  // once, here, at creation, from the root's own Webex data, not the
+  // reply's.
+  test('stamps rootBotIsMentioned from the backfilled root, not the reply that created the thread', async (t) => {
+    const root = await makeTempWorkspace(t);
+
+    await appendMessageToThreadWindow({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      botId: 'bot-1',
+      message: {
+        id: 'reply-1',
+        parentId: 'root-1',
+        text: 'Reply',
+        personId: 'person-2',
+        mentionedPeople: [], // the reply itself does NOT mention the bot
+      },
+      fetchMessageById: async () => ({
+        id: 'root-1',
+        personId: 'person-1',
+        mentionedPeople: ['bot-1'], // but the root does
+      }),
+      log: { info: t.mock.fn(), warn: t.mock.fn() },
+    });
+
+    const thread = await getThread({ spaceId: 'space-1', explicitRoot: root, threadKey: 'root-1' });
+    assert.equal(thread.rootBotIsMentioned, true);
   });
 
   test('seeds a new reply thread with a bot-authored root directly into processed', async (t) => {

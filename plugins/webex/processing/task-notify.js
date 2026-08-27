@@ -33,8 +33,7 @@
 //   silently flip to in_progress+delegated with no ack ever sent, since by
 //   then createdAt no longer equals updatedAt.
 const { getTasks } = require('../storage/tasks-store');
-const { MAIN_THREAD_KEY } = require('../storage/threads-store');
-const { sendWebexMessage, sendOutboundMessage } = require('../send');
+const { sendWebexMessage, sendOutboundMessage, resolveReplyThreadId } = require('../send');
 const { deriveBoardUrl } = require('./board-url');
 const { sendTaskApprovalCard } = require('../task-card/card');
 
@@ -62,6 +61,7 @@ async function runTaskNotifyStep({
   threadKey,
   messageIds,
   message,
+  isBotMentioned,
   account,
   botId,
   log,
@@ -88,7 +88,13 @@ async function runTaskNotifyStep({
     return { outcome: 'success', notified: [] };
   }
 
-  const replyThreadId = threadKey === MAIN_THREAD_KEY ? message?.id : threadKey;
+  const replyThreadId = await resolveReplyThreadId({
+    spaceId,
+    explicitRoot,
+    threadKey,
+    message,
+    isBotMentioned,
+  });
   const boardUrl = deriveBoardUrl({ account, spaceId });
   const fetchMessageById = async () => message;
   // Only the last-arrived message in the batch could possibly be the one

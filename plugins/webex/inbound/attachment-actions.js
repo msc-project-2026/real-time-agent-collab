@@ -7,7 +7,7 @@ const { handleConfigSubmission } = require('../config/handle-submission');
 
 async function handleInboundWebexAttachmentAction(
   payload,
-  { cfg, account, log }
+  { cfg, botId, account, log }
 ) {
   if (payload.resource !== 'attachmentActions' || payload.event !== 'created')
     return;
@@ -42,7 +42,7 @@ async function handleInboundWebexAttachmentAction(
 
   switch (actionType) {
     case 'submit_config': {
-      await handleConfigSubmission({ action, account, log });
+      await handleConfigSubmission({ action, account, botId, log });
       return;
     }
 

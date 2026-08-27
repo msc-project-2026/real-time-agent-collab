@@ -5,6 +5,15 @@ const { describe, test } = require('node:test');
 
 const { loadWithMocks } = require('./helpers.cjs');
 
+// resolveReplyThreadId's own correctness (main vs. existing thread, the
+// root-mention lookup) is covered directly in test/send-outbound.test.cjs
+// against real storage. Mocked here to the same simple contract — these
+// tests are about runTaskNotifyStep's own wiring, not re-deriving that logic.
+async function resolveReplyThreadId({ threadKey, message, isBotMentioned }) {
+  if (!isBotMentioned) return null;
+  return threadKey === '__main__' ? message?.id : threadKey;
+}
+
 // ---------------------------------------------------------------------------
 // Category: task-notify — the deterministic (no model call) step that runs
 // after extract settles. Silent for human-assigned tasks (the direct fix for
@@ -31,10 +40,10 @@ describe('runTaskNotifyStep', () => {
 
     const loaded = loadWithMocks(require.resolve('../processing/task-notify'), {
       [require.resolve('../storage/tasks-store')]: { getTasks: collaborators.getTasks },
-      [require.resolve('../storage/threads-store')]: { MAIN_THREAD_KEY: '__main__' },
       [require.resolve('../send')]: {
         sendWebexMessage: collaborators.sendWebexMessage,
         sendOutboundMessage,
+        resolveReplyThreadId,
       },
       [require.resolve('../processing/board-url')]: { deriveBoardUrl: collaborators.deriveBoardUrl },
     });
@@ -49,6 +58,10 @@ describe('runTaskNotifyStep', () => {
       threadKey: '__main__',
       messageIds: ['msg-1'],
       message: { id: 'msg-1' },
+      // Defaults to the happy path (bot was actually @-mentioned) for tests
+      // that aren't specifically about threading — see the dedicated
+      // threading test below for both branches.
+      isBotMentioned: true,
       account: { config: { token: 'tok-1' } },
       ...overrides,
     };
@@ -219,6 +232,42 @@ describe('runTaskNotifyStep', () => {
     sendWebexMessage.mock.resetCalls();
     await runTaskNotifyStep(baseParams({ threadKey: 'thread-root-1', message: { id: 'msg-2' } }));
     assert.equal(sendWebexMessage.mock.calls[0].arguments[0].parentId, 'thread-root-1');
+  });
+
+  // Webex bots can only see messages that @-mention them — a platform
+  // restriction, not a bug (see send.js's resolveReplyThreadId). A message
+  // judged addressed via the gate's own semantic inference alone
+  // (isBotMentioned: false) is invisible to the bot's own token, so using
+  // it — or an existing thread's root — as parentId would 400. Posting bare
+  // in the main space is the correct, safe fallback.
+  test('posts with no parentId when the bot was not actually @-mentioned, regardless of thread', async (t) => {
+    const sendWebexMessage = t.mock.fn(async () => ({ id: 'sent' }));
+    const agentTask = {
+      id: 'task-1',
+      title: 'x',
+      type: 'development',
+      status: 'in_progress',
+      assigned: 'agent',
+      delegation: { target: 'dev-swarm', delegatedAt: '2026-08-25T00:00:00.000Z' },
+      createdAt: '2026-08-25T00:00:00.000Z',
+      updatedAt: '2026-08-25T00:00:00.000Z',
+      message_ids: ['msg-1', 'msg-2'],
+    };
+    const { runTaskNotifyStep } = loadTaskNotify(t, {
+      sendWebexMessage,
+      getTasks: async () => [agentTask],
+    });
+
+    await runTaskNotifyStep(
+      baseParams({ threadKey: '__main__', message: { id: 'msg-1' }, isBotMentioned: false })
+    );
+    assert.equal(sendWebexMessage.mock.calls[0].arguments[0].parentId, null);
+
+    sendWebexMessage.mock.resetCalls();
+    await runTaskNotifyStep(
+      baseParams({ threadKey: 'thread-root-1', message: { id: 'msg-2' }, isBotMentioned: false })
+    );
+    assert.equal(sendWebexMessage.mock.calls[0].arguments[0].parentId, null);
   });
 
   test('does nothing when the account has no Webex token, without throwing', async (t) => {

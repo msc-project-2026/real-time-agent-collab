@@ -106,7 +106,11 @@ This conversation is happening in ${
     threadKey === '__main__'
       ? 'the main space (not an existing threaded reply)'
       : `a threaded reply (thread root message id: ${threadKey})`
-  }. If you decide to reply, use the message tool and set both its \`threadId\` and \`replyTo\` parameters to \`${replyThreadId}\` so the reply lands in the right place — do not omit them, an untargeted reply lands in the main space regardless of where this conversation is actually happening. Keep it natural — you're a participant in this Webex space, not a system announcing an action.
+  }. ${
+    replyThreadId
+      ? `If you decide to reply, use the message tool and set its \`replyTo\` parameter to \`${replyThreadId}\` so the reply lands in the right place — do not omit it, an untargeted reply lands in the main space regardless of where this conversation is actually happening.`
+      : `If you decide to reply, use the message tool and do not set \`replyTo\` at all — this specific message isn't one you have visibility into, so an untargeted reply (posted directly in the main space) is correct here, not a mistake.`
+  } Keep it natural — you're a participant in this Webex space, not a system announcing an action.
 
 If you decide not to reply, don't call the message tool at all. Once you've made your decision (and sent whatever messages were warranted, one or more, via however many tool calls that took), respond with exactly the word \`done\` and nothing else — no explanation, no punctuation.
 `.trim();

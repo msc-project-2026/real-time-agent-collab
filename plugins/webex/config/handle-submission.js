@@ -2,7 +2,7 @@
 'use strict';
 
 const { writeActiveConfig, readActiveConfig, writeCachedMembers } = require('./store');
-const { sendWebexMessage } = require('../send');
+const { sendOutboundMessage } = require('../send');
 const { PROACTIVITY_LEVELS, DEFAULT_PROACTIVITY_THRESHOLD } = require('./proactivity');
 
 const ALLOWED_PROACTIVITY_THRESHOLDS = new Set(PROACTIVITY_LEVELS.map((level) => level.value));
@@ -84,7 +84,7 @@ async function applyMemberNameOverrides({ spaceId, inputs = {} }) {
 
 // *** Handle submission
 
-async function handleConfigSubmission({ action, account, log }) {
+async function handleConfigSubmission({ action, account, botId, log }) {
   if (!action?.roomId) throw new Error('action.roomId is required');
   if (!account) throw new Error('account is required');
 
@@ -104,7 +104,9 @@ async function handleConfigSubmission({ action, account, log }) {
   const validation = validateConfigInputs(action.inputs);
 
   if (!validation.ok) {
-    await sendWebexMessage({
+    await sendOutboundMessage({
+      spaceId: action.roomId,
+      botId,
       token: account.config.token,
       to: action.roomId,
       markdown: [
@@ -143,7 +145,9 @@ async function handleConfigSubmission({ action, account, log }) {
 
   await applyMemberNameOverrides({ spaceId: action.roomId, inputs: action.inputs });
 
-  await sendWebexMessage({
+  await sendOutboundMessage({
+    spaceId: action.roomId,
+    botId,
     token: account.config.token,
     to: action.roomId,
     markdown: [

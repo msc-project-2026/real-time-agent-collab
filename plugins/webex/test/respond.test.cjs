@@ -5,6 +5,15 @@ const { describe, test } = require('node:test');
 
 const { loadWithMocks, makeLog } = require('./helpers.cjs');
 
+// resolveReplyThreadId's own correctness (main vs. existing thread, the
+// root-mention lookup) is covered directly in test/send-outbound.test.cjs
+// against real storage. Mocked here to the same simple contract — these
+// tests are about runRespondStep's own wiring, not re-deriving that logic.
+async function resolveReplyThreadId({ threadKey, message, isBotMentioned }) {
+  if (!isBotMentioned) return null;
+  return threadKey === '__main__' ? message?.id : threadKey;
+}
+
 // ---------------------------------------------------------------------------
 // Category: runRespondStep — the v3 phase 5 respond step. Same isolated,
 // fresh-context spawn shape as dispatchTaggingGate (tagging/dispatch.js),
@@ -42,6 +51,9 @@ describe('runRespondStep', () => {
       [require.resolve('../runtime')]: {
         getCollabAgentId: collaborators.getCollabAgentId,
       },
+      [require.resolve('../send')]: {
+        resolveReplyThreadId,
+      },
     });
     t.after(loaded.restore);
 
@@ -78,7 +90,7 @@ describe('runRespondStep', () => {
       threadKey: '__main__',
       message: { id: 'msg-1' },
       messageIds: ['msg-1'],
-      decision: { shouldRespond: true, ready: false, reason: 'Addressed.' },
+      decision: { shouldRespond: true, ready: false, reason: 'Addressed.', isBotMentioned: true },
       log: makeLog(t),
     });
 
@@ -99,7 +111,7 @@ describe('runRespondStep', () => {
     // mechanism. The model is told to set threadId/replyTo itself instead.
     assert.equal(params.currentThreadTs, undefined);
     assert.equal(params.messageThreadId, undefined);
-    assert.match(params.prompt, /threadId.*and `replyTo`.*parameters to `msg-1`/);
+    assert.match(params.prompt, /set its `replyTo` parameter to `msg-1`/);
 
     assert.equal(result.outcome, 'success');
     assert.equal(result.toolCalls, 1);
@@ -123,7 +135,7 @@ describe('runRespondStep', () => {
       threadKey: '__main__',
       message: { id: 'msg-1' },
       messageIds: ['msg-1'],
-      decision: { shouldRespond: true, ready: false, reason: 'Addressed.' },
+      decision: { shouldRespond: true, ready: false, reason: 'Addressed.', isBotMentioned: true },
       account: {
         config: {
           botWebhookUrl: 'https://example.up.railway.app/webhooks/webex/bot/default',
@@ -154,7 +166,7 @@ describe('runRespondStep', () => {
       threadKey: '__main__',
       message: { id: 'msg-1' },
       messageIds: ['msg-1'],
-      decision: { shouldRespond: true, ready: false, reason: 'Addressed.' },
+      decision: { shouldRespond: true, ready: false, reason: 'Addressed.', isBotMentioned: true },
       // No account at all — mirrors any caller that hasn't threaded it through.
       log: makeLog(t),
     });
@@ -178,7 +190,7 @@ describe('runRespondStep', () => {
       threadKey: '__main__',
       message: { id: 'msg-1' },
       messageIds: ['msg-1'],
-      decision: { shouldRespond: true, ready: false, reason: 'Addressed.' },
+      decision: { shouldRespond: true, ready: false, reason: 'Addressed.', isBotMentioned: true },
       account: { config: { botWebhookUrl: 'not-a-url' } },
       log: makeLog(t),
     });
@@ -207,7 +219,7 @@ describe('runRespondStep', () => {
       threadKey: '__main__',
       message: { id: 'msg-1' },
       messageIds: ['msg-1'],
-      decision: { shouldRespond: true, ready: false, reason: 'Addressed.' },
+      decision: { shouldRespond: true, ready: false, reason: 'Addressed.', isBotMentioned: true },
       log: makeLog(t),
     });
 
@@ -229,7 +241,7 @@ describe('runRespondStep', () => {
       threadKey: '__main__',
       message: { id: 'msg-1' },
       messageIds: ['msg-1'],
-      decision: { shouldRespond: true, ready: false, reason: 'Addressed.' },
+      decision: { shouldRespond: true, ready: false, reason: 'Addressed.', isBotMentioned: true },
       log: makeLog(t),
     });
 
@@ -251,13 +263,13 @@ describe('runRespondStep', () => {
       threadKey: '__main__',
       message: { id: 'msg-1' },
       messageIds: ['msg-1'],
-      decision: { shouldRespond: false, ready: true, reason: 'Ready.' },
+      decision: { shouldRespond: false, ready: true, reason: 'Ready.', isBotMentioned: true },
       log: makeLog(t),
     });
 
     assert.equal(runCalls[0].currentThreadTs, undefined);
     assert.equal(runCalls[0].messageThreadId, undefined);
-    assert.match(runCalls[0].prompt, /threadId.*and `replyTo`.*parameters to `msg-1`/);
+    assert.match(runCalls[0].prompt, /set its `replyTo` parameter to `msg-1`/);
   });
 
   test('targets the reply thread for a non-main thread, so it does not land in the main space', async (t) => {
@@ -275,13 +287,42 @@ describe('runRespondStep', () => {
       threadKey: 'thread-root-message-1',
       message: { id: 'msg-1' },
       messageIds: ['msg-1'],
-      decision: { shouldRespond: true, ready: false, reason: 'Addressed.' },
+      decision: { shouldRespond: true, ready: false, reason: 'Addressed.', isBotMentioned: true },
       log: makeLog(t),
     });
 
     assert.equal(runCalls[0].currentThreadTs, undefined);
     assert.equal(runCalls[0].messageThreadId, undefined);
-    assert.match(runCalls[0].prompt, /threadId.*and `replyTo`.*parameters to `thread-root-message-1`/);
+    assert.match(runCalls[0].prompt, /set its `replyTo` parameter to `thread-root-message-1`/);
+  });
+
+  // Webex bots can only see messages that @-mention them — a platform
+  // restriction, not a bug (see send.js's resolveReplyThreadId). A message
+  // judged addressed via the gate's own semantic inference alone
+  // (isBotMentioned: false) is invisible to the bot's own token, so using
+  // it — or an existing thread's root — as parentId would 400 with "Parent
+  // activity ID not found or invalid." Instructing the model to target
+  // `null` posts bare in the main space instead, the correct safe fallback.
+  test('instructs the model to omit replyTo (post bare in main) when the bot was not actually @-mentioned', async (t) => {
+    const runCalls = [];
+    const runEmbeddedAgent = t.mock.fn(async (params) => {
+      runCalls.push(params);
+      return { payloads: [] };
+    });
+    const pluginRuntime = makeAgentRuntime(t, { runEmbeddedAgent });
+    const { runRespondStep } = loadRespond(t);
+
+    await runRespondStep({
+      pluginRuntime,
+      spaceId: 'space-1',
+      threadKey: 'thread-root-message-1',
+      message: { id: 'msg-1' },
+      messageIds: ['msg-1'],
+      decision: { shouldRespond: true, ready: false, reason: 'Addressed.', isBotMentioned: false },
+      log: makeLog(t),
+    });
+
+    assert.match(runCalls[0].prompt, /do not set `replyTo` at all/);
   });
 
   test('reports didSend false and toolCalls 0 for a silent "done" reply', async (t) => {
@@ -324,7 +365,7 @@ describe('runRespondStep', () => {
       threadKey: '__main__',
       message: { id: 'msg-1' },
       messageIds: ['msg-1'],
-      decision: { shouldRespond: true, ready: false, reason: 'Addressed.' },
+      decision: { shouldRespond: true, ready: false, reason: 'Addressed.', isBotMentioned: true },
       log: makeLog(t),
     });
 
@@ -347,7 +388,7 @@ describe('runRespondStep', () => {
         threadKey: '__main__',
         message: { id: 'msg-1' },
       messageIds: ['msg-1'],
-        decision: { shouldRespond: true, ready: false, reason: 'Addressed.' },
+        decision: { shouldRespond: true, ready: false, reason: 'Addressed.', isBotMentioned: true },
         log: makeLog(t),
       }),
       /provider timeout/
@@ -372,7 +413,7 @@ describe('runRespondStep', () => {
       threadKey: '__main__',
       message: { id: 'msg-1' },
       messageIds: ['msg-1'],
-      decision: { shouldRespond: true, ready: false, reason: 'Addressed.' },
+      decision: { shouldRespond: true, ready: false, reason: 'Addressed.', isBotMentioned: true },
       log: makeLog(t),
     });
 

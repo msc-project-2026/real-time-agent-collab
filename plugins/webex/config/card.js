@@ -2,8 +2,7 @@
 'use strict';
 
 const { webexFetch } = require('../api');
-const { sendWebexMessage } = require('../send');
-const { MAIN_THREAD_KEY } = require('../storage/threads-store');
+const { sendWebexMessage, resolveReplyThreadId } = require('../send');
 const {
   valueOrEmpty,
   buildCardEnvelope,
@@ -143,6 +142,7 @@ async function sendConfigCard({
   spaceId,
   threadKey,
   message,
+  isBotMentioned,
   account,
   botId,
   log,
@@ -153,7 +153,7 @@ async function sendConfigCard({
   if (!spaceId) throw new Error('spaceId is required');
   if (!account) throw new Error('account is required');
 
-  const replyThreadId = threadKey === MAIN_THREAD_KEY ? message?.id : threadKey;
+  const replyThreadId = await resolveReplyThreadId({ spaceId, threadKey, message, isBotMentioned });
   const card = buildConfigCard({ config: config ?? {}, members, replyThreadId });
 
   return sendAdaptiveCard({

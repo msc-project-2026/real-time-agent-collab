@@ -97,6 +97,7 @@ describe('context state defaults and filtering', () => {
       key: MAIN_THREAD_KEY,
       kind: 'main',
       rootMessageId: null,
+      rootBotIsMentioned: false,
       pending: [],
       processing: [],
       processed: [],

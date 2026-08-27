@@ -81,6 +81,14 @@ function createThreadRecordFromKey({ key }) {
     key,
     kind: isMainThread ? 'main' : 'webex_thread',
     rootMessageId: isMainThread ? null : key,
+    // Only meaningful for a non-main thread — whether the root message that
+    // started it @-mentions the bot (send.js's resolveReplyThreadId reads
+    // this to decide whether the bot's own token can see, and therefore
+    // reply to, this thread's root at all — see §3b of the architecture
+    // doc). Defaults false: an unconfirmed root (backfill fetch failed, or
+    // never attempted) is treated the same as "not mentioned" — the safe
+    // fallback either way is posting bare in main, not guessing.
+    rootBotIsMentioned: false,
     pending: [],
     processing: [],
     processed: [],
@@ -305,6 +313,27 @@ async function appendMessageToThreadWindow({
               spaceId,
               explicitRoot,
             });
+
+            // Stamped once, at thread creation, from the root's own Webex
+            // mention data (fetched above via the OAuth-scoped
+            // fetchMessageById, which has full visibility regardless of the
+            // bot's own restricted one) — not the triggering message's
+            // mention status, which only tells you about itself, not
+            // whether the bot's own token can see the thread's root.
+            const rootBotIsMentioned =
+              Boolean(botId) &&
+              Array.isArray(rootMessage.mentionedPeople) &&
+              rootMessage.mentionedPeople.includes(botId);
+            state = {
+              ...state,
+              threads: {
+                ...state.threads,
+                [threadKey]: {
+                  ...state.threads[threadKey],
+                  rootBotIsMentioned,
+                },
+              },
+            };
           } else {
             log?.warn?.(
               `[webex] root message fetch returned invalid message ${JSON.stringify(
@@ -496,6 +525,7 @@ function getThreadFromState({ state, threadKey, excludeMessageIds = [] } = {}) {
       key: threadKey,
       kind: isMainThread ? 'main' : 'webex_thread',
       rootMessageId: isMainThread ? null : threadKey,
+      rootBotIsMentioned: false,
       pending: [],
       processing: [],
       processed: [],

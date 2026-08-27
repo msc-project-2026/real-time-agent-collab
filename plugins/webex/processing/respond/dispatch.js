@@ -14,13 +14,14 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 
-const { getThread, MAIN_THREAD_KEY } = require('../../storage/threads-store');
+const { getThread } = require('../../storage/threads-store');
 const { getActiveTasks } = require('../../storage/tasks-store');
 const { getSpaceMembers } = require('../../config/members');
 const { safeSegment } = require('../../storage/paths');
 const { buildRespondInstruction } = require('./instruction');
 const { getCollabAgentId } = require('../../runtime');
 const { deriveBoardUrl } = require('../board-url');
+const { resolveReplyThreadId } = require('../../send');
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -50,17 +51,17 @@ async function runRespondStep({
     members,
   };
 
-  // Replies always go into a thread, never posted bare in the main space —
-  // the agent should always be replying under whatever message it understood
-  // as addressing it. For a non-main thread, threadKey IS already the Webex
-  // message id the thread is rooted at (storage/threads-store.js's
-  // getThreadKey), the exact value Webex needs as parentId. For a main-space
-  // message, there's no existing thread to anchor to, so the reply threads
-  // under the triggering message's own id instead, starting a new one —
-  // confirmed against live thread data that Webex threading is flat (every
-  // reply in a thread carries the same parentId as the root, not the
-  // immediately-preceding message), so anchoring to the root/triggering
-  // message id is correct either way, never a specific mid-thread reply.
+  // The agent should always be replying under whatever message it understood
+  // as addressing it, when it can. For a non-main thread, threadKey IS
+  // already the Webex message id the thread is rooted at
+  // (storage/threads-store.js's getThreadKey), the exact value Webex needs
+  // as parentId. For a main-space message, there's no existing thread to
+  // anchor to, so the reply threads under the triggering message's own id
+  // instead, starting a new one — confirmed against live thread data that
+  // Webex threading is flat (every reply in a thread carries the same
+  // parentId as the root, not the immediately-preceding message), so
+  // anchoring to the root/triggering message id is correct either way,
+  // never a specific mid-thread reply.
   //
   // Threading has been wrong twice in a row from static bundle reading alone
   // (once mis-attributing a cron-tool field as the message tool's, once
@@ -75,7 +76,23 @@ async function runRespondStep({
   // sendText/sendMedia now log the raw replyToId they receive, which will
   // show directly whether this works — read that before changing anything
   // else here.
-  const replyThreadId = threadKey === MAIN_THREAD_KEY ? message?.id : threadKey;
+  //
+  // Correction (manual testing): "when it can" above is now load-bearing,
+  // not throwaway phrasing — resolveReplyThreadId (send.js) returns null
+  // whenever isBotMentioned is false, since a message the gate judged
+  // addressed only via its own semantic inference is invisible to the
+  // bot's own token (Webex bots can only see messages that @-mention them
+  // — a platform restriction, not a bug). Using that message's id, or an
+  // existing thread's root, as parentId in that case 400s with "Parent
+  // activity ID not found or invalid." A reply posted bare in the main
+  // space is the correct, safe fallback, not a threading regression.
+  const replyThreadId = await resolveReplyThreadId({
+    spaceId,
+    explicitRoot,
+    threadKey,
+    message,
+    isBotMentioned: decision?.isBotMentioned,
+  });
 
   const instruction = buildRespondInstruction({
     spaceId,

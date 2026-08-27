@@ -3,7 +3,9 @@
 const assert = require('node:assert/strict');
 const { describe, test } = require('node:test');
 
-const { loadWithMocks, makeLog } = require('./helpers.cjs');
+const { loadWithMocks, makeLog, makeTempWorkspace } = require('./helpers.cjs');
+const { resolveReplyThreadId } = require('../send');
+const { appendMessageToThreadWindow, MAIN_THREAD_KEY } = require('../storage/threads-store');
 
 // ---------------------------------------------------------------------------
 // Category: sendOutboundMessage — the single choke point every sender in
@@ -149,5 +151,117 @@ describe('sendOutboundMessage', () => {
     });
 
     assert.equal(appendMessageToThreadWindow.mock.calls[0].arguments[0].fetchMessageById, fetchMessageById);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Category: resolveReplyThreadId — the shared reply-target decision every
+// sender (config card, respond, task-notify, thinking-ack) goes through
+// instead of its own inline ternary. Two distinct mention facts matter: for
+// the main space, the triggering message's own mention status; for an
+// existing thread, the *root's* mention status (stamped onto the thread
+// record once, at creation — storage/threads-store.js's root-backfill),
+// since a mention in a later reply doesn't establish the bot's token can
+// see that thread's root. Exercised here against real storage (not
+// mocked), since it's the one place these two facts actually get read.
+// ---------------------------------------------------------------------------
+
+describe('resolveReplyThreadId', () => {
+  test('main space: targets the message id when mentioned, null otherwise', async (t) => {
+    const root = await makeTempWorkspace(t);
+
+    const mentioned = await resolveReplyThreadId({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      threadKey: MAIN_THREAD_KEY,
+      message: { id: 'msg-1' },
+      isBotMentioned: true,
+    });
+    assert.equal(mentioned, 'msg-1');
+
+    const unmentioned = await resolveReplyThreadId({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      threadKey: MAIN_THREAD_KEY,
+      message: { id: 'msg-1' },
+      isBotMentioned: false,
+    });
+    assert.equal(unmentioned, null);
+  });
+
+  test('existing thread: targets the root when the root itself was mentioned, regardless of the triggering message', async (t) => {
+    const root = await makeTempWorkspace(t);
+
+    // Root-seed a thread whose root message @-mentions the bot — the
+    // triggering message below does NOT, proving the check is against the
+    // root, not the triggering message.
+    await appendMessageToThreadWindow({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      botId: 'bot-1',
+      message: { id: 'reply-1', parentId: 'root-1', personId: 'person-1', mentionedPeople: [] },
+      fetchMessageById: async () => ({
+        id: 'root-1',
+        personId: 'person-1',
+        mentionedPeople: ['bot-1'],
+      }),
+    });
+
+    const result = await resolveReplyThreadId({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      threadKey: 'root-1',
+      message: { id: 'reply-1', mentionedPeople: [] },
+      isBotMentioned: false,
+    });
+    assert.equal(result, 'root-1');
+  });
+
+  test('existing thread: null when the root itself was never mentioned, even if the triggering message was', async (t) => {
+    const root = await makeTempWorkspace(t);
+
+    await appendMessageToThreadWindow({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      botId: 'bot-1',
+      message: { id: 'reply-1', parentId: 'root-1', personId: 'person-1', mentionedPeople: ['bot-1'] },
+      fetchMessageById: async () => ({
+        id: 'root-1',
+        personId: 'person-1',
+        mentionedPeople: [],
+      }),
+    });
+
+    const result = await resolveReplyThreadId({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      threadKey: 'root-1',
+      message: { id: 'reply-1', mentionedPeople: ['bot-1'] },
+      isBotMentioned: true,
+    });
+    assert.equal(result, null);
+  });
+
+  test('existing thread: null when the root-backfill fetch never happened (unconfirmed treated as not-mentioned)', async (t) => {
+    const root = await makeTempWorkspace(t);
+
+    // No fetchMessageById provided — root-backfill is skipped entirely
+    // (storage/threads-store.js only attempts it when the function exists),
+    // so the thread record's rootBotIsMentioned stays at its safe default.
+    await appendMessageToThreadWindow({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      botId: 'bot-1',
+      message: { id: 'reply-1', parentId: 'root-1', personId: 'person-1', mentionedPeople: ['bot-1'] },
+    });
+
+    const result = await resolveReplyThreadId({
+      spaceId: 'space-1',
+      explicitRoot: root,
+      threadKey: 'root-1',
+      message: { id: 'reply-1', mentionedPeople: ['bot-1'] },
+      isBotMentioned: true,
+    });
+    assert.equal(result, null);
   });
 });

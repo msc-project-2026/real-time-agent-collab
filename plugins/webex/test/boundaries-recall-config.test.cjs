@@ -5,6 +5,16 @@ const { describe, test } = require('node:test');
 
 const { loadWithMocks, makeLog, mockCalls } = require('./helpers.cjs');
 
+// resolveReplyThreadId's own correctness (main vs. existing thread, the
+// root-mention lookup) is covered directly in test/send-outbound.test.cjs
+// against real storage. Mocked here to the same simple contract — these
+// tests are about sendConfigCard/handleConfigSubmission's own wiring, not
+// re-deriving that logic.
+async function resolveReplyThreadId({ threadKey, message, isBotMentioned }) {
+  if (!isBotMentioned) return null;
+  return threadKey === '__main__' ? message?.id : threadKey;
+}
+
 // Category: Webex REST boundary.
 // These tests verify authentication, request serialisation, successful JSON decoding, harmless DELETE 404s, and informative HTTP failures.
 describe('Webex REST boundary', () => {
@@ -163,10 +173,10 @@ describe('Webex message construction and sending', () => {
 describe('configuration submission and card flow', () => {
   test('rejects invalid fields without writing configuration', async (t) => {
     const writeActiveConfig = t.mock.fn();
-    const sendWebexMessage = t.mock.fn(async () => ({ id: 'message-1' }));
+    const sendOutboundMessage = t.mock.fn(async () => ({ id: 'message-1' }));
     const loaded = loadWithMocks(require.resolve('../config/handle-submission'), {
       [require.resolve('../config/store')]: { writeActiveConfig },
-      [require.resolve('../send')]: { sendWebexMessage },
+      [require.resolve('../send')]: { sendOutboundMessage },
     });
     t.after(loaded.restore);
 
@@ -182,25 +192,31 @@ describe('configuration submission and card flow', () => {
         },
       },
       account: { accountId: 'default', config: { token: 'bot-token' } },
+      botId: 'bot-1',
       log: makeLog(t),
     });
 
     assert.equal(response.ok, false);
     assert.equal(writeActiveConfig.mock.callCount(), 0);
-    assert.match(sendWebexMessage.mock.calls[0].arguments[0].markdown, /Configuration was not saved/);
+    assert.match(sendOutboundMessage.mock.calls[0].arguments[0].markdown, /Configuration was not saved/);
     assert.equal(response.errors.length, 3);
     // The card message is itself always a reply (config/card.js) — Webex
     // rejects a reply to a reply, so this must thread under the original
     // root (replyThreadId), never the card's own message id.
-    assert.equal(sendWebexMessage.mock.calls[0].arguments[0].parentId, 'thread-root-1');
+    assert.equal(sendOutboundMessage.mock.calls[0].arguments[0].parentId, 'thread-root-1');
+    // Confirmation/error messages must be recorded to the thread window
+    // like every other sender — this was a real gap (handleConfigSubmission
+    // used to call the bare sendWebexMessage, skipping recording entirely).
+    assert.equal(sendOutboundMessage.mock.calls[0].arguments[0].spaceId, 'space-1');
+    assert.equal(sendOutboundMessage.mock.calls[0].arguments[0].botId, 'bot-1');
   });
 
   test('posts as a top-level message (no parentId) when replyThreadId is absent — a card opened before this fix deployed', async (t) => {
     const writeActiveConfig = t.mock.fn();
-    const sendWebexMessage = t.mock.fn(async () => ({ id: 'message-1' }));
+    const sendOutboundMessage = t.mock.fn(async () => ({ id: 'message-1' }));
     const loaded = loadWithMocks(require.resolve('../config/handle-submission'), {
       [require.resolve('../config/store')]: { writeActiveConfig },
-      [require.resolve('../send')]: { sendWebexMessage },
+      [require.resolve('../send')]: { sendOutboundMessage },
     });
     t.after(loaded.restore);
 
@@ -211,22 +227,23 @@ describe('configuration submission and card flow', () => {
         inputs: { projectName: '', githubRepo: 'bad repo' },
       },
       account: { accountId: 'default', config: { token: 'bot-token' } },
+      botId: 'bot-1',
       log: makeLog(t),
     });
 
     // NOT action.messageId — the card is unconditionally a reply, so that
     // would 400 the same way. send.js only sets parentId when truthy, so
     // undefined here means it posts as an ordinary top-level message.
-    assert.equal(sendWebexMessage.mock.calls[0].arguments[0].parentId, undefined);
+    assert.equal(sendOutboundMessage.mock.calls[0].arguments[0].parentId, undefined);
   });
 
   test('validates submission ownership and reports an absent repository', async (t) => {
     const writeActiveConfig = t.mock.fn();
     const readActiveConfig = t.mock.fn(async () => ({ members: [] }));
-    const sendWebexMessage = t.mock.fn(async () => ({}));
+    const sendOutboundMessage = t.mock.fn(async () => ({}));
     const loaded = loadWithMocks(require.resolve('../config/handle-submission'), {
       [require.resolve('../config/store')]: { writeActiveConfig, readActiveConfig },
-      [require.resolve('../send')]: { sendWebexMessage },
+      [require.resolve('../send')]: { sendOutboundMessage },
     });
     t.after(loaded.restore);
     await assert.rejects(
@@ -257,10 +274,10 @@ describe('configuration submission and card flow', () => {
   test('persists normalised valid input and sends confirmation', async (t) => {
     const writeActiveConfig = t.mock.fn(async () => ({ revision: 1 }));
     const readActiveConfig = t.mock.fn(async () => ({ members: [] }));
-    const sendWebexMessage = t.mock.fn(async () => ({ id: 'message-1' }));
+    const sendOutboundMessage = t.mock.fn(async () => ({ id: 'message-1' }));
     const loaded = loadWithMocks(require.resolve('../config/handle-submission'), {
       [require.resolve('../config/store')]: { writeActiveConfig, readActiveConfig },
-      [require.resolve('../send')]: { sendWebexMessage },
+      [require.resolve('../send')]: { sendOutboundMessage },
     });
     t.after(loaded.restore);
     const action = {
@@ -280,6 +297,7 @@ describe('configuration submission and card flow', () => {
     const response = await loaded.subject.handleConfigSubmission({
       action,
       account: { accountId: 'default', config: { token: 'bot-token' } },
+      botId: 'bot-1',
       log: makeLog(t),
     });
 
@@ -293,10 +311,14 @@ describe('configuration submission and card flow', () => {
     });
     assert.equal(writeArgs.source.actionId, 'action-1');
     assert.equal(writeArgs.source.submittedBy, 'person-1');
-    assert.match(sendWebexMessage.mock.calls[0].arguments[0].markdown, /Configuration saved/);
+    assert.match(sendOutboundMessage.mock.calls[0].arguments[0].markdown, /Configuration saved/);
     // Same reply-to-a-reply concern as the rejection path — the confirmation
     // must thread under the original root, not the card's own message id.
-    assert.equal(sendWebexMessage.mock.calls[0].arguments[0].parentId, 'thread-root-1');
+    assert.equal(sendOutboundMessage.mock.calls[0].arguments[0].parentId, 'thread-root-1');
+    // Confirmation messages must be recorded to the thread window like
+    // every other sender — this was a real gap before this fix.
+    assert.equal(sendOutboundMessage.mock.calls[0].arguments[0].spaceId, 'space-1');
+    assert.equal(sendOutboundMessage.mock.calls[0].arguments[0].botId, 'bot-1');
   });
 
   test('loads active configuration and delegates adaptive-card sending', async (t) => {
@@ -316,6 +338,7 @@ describe('configuration submission and card flow', () => {
       spaceId: 'space-1',
       threadKey: '__main__',
       message: triggeringMessage,
+      isBotMentioned: true,
       account: requestAccount,
       botId: 'bot-1',
       log,
@@ -325,6 +348,7 @@ describe('configuration submission and card flow', () => {
       spaceId: 'space-1',
       threadKey: '__main__',
       message: triggeringMessage,
+      isBotMentioned: true,
       account: requestAccount,
       botId: 'bot-1',
       log,
@@ -403,7 +427,7 @@ describe('configuration submission and card flow', () => {
     const sendWebexMessage = t.mock.fn(async () => ({ id: 'card-1' }));
     const loaded = loadWithMocks(require.resolve('../config/card'), {
       [require.resolve('../api')]: { webexFetch: t.mock.fn() },
-      [require.resolve('../send')]: { sendWebexMessage },
+      [require.resolve('../send')]: { sendWebexMessage, resolveReplyThreadId },
     });
     t.after(loaded.restore);
 
@@ -411,6 +435,7 @@ describe('configuration submission and card flow', () => {
       spaceId: 'space-1',
       threadKey: '__main__',
       message: { id: 'msg-1' },
+      isBotMentioned: true,
       account: { accountId: 'default', config: { token: 'bot-token' } },
       log: makeLog(t),
       config: {
@@ -438,11 +463,42 @@ describe('configuration submission and card flow', () => {
     assert.equal(card.actions[0].data.replyThreadId, 'msg-1');
   });
 
+  // Webex bots can only see messages that @-mention them — a platform
+  // restriction, not a bug (see send.js's resolveReplyThreadId). Threading
+  // this card under a message the bot never saw would 400 with "Cannot
+  // reply to a reply" (it's always a reply — see the fix above); posting
+  // bare in the main space is the correct, safe fallback, and its own
+  // submit data must also carry no replyThreadId, so a later submission
+  // doesn't independently hit the same wall.
+  test('posts the card with no parentId when the bot was not actually @-mentioned', async (t) => {
+    const sendWebexMessage = t.mock.fn(async () => ({ id: 'card-1' }));
+    const loaded = loadWithMocks(require.resolve('../config/card'), {
+      [require.resolve('../api')]: { webexFetch: t.mock.fn() },
+      [require.resolve('../send')]: { sendWebexMessage, resolveReplyThreadId },
+    });
+    t.after(loaded.restore);
+
+    await loaded.subject.sendConfigCard({
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      message: { id: 'msg-1' },
+      isBotMentioned: false,
+      account: { accountId: 'default', config: { token: 'bot-token' } },
+      log: makeLog(t),
+      config: {},
+    });
+
+    const request = sendWebexMessage.mock.calls[0].arguments[0];
+    assert.equal(request.parentId, null);
+    const card = request.attachments[0].content;
+    assert.equal(card.actions[0].data.replyThreadId, null);
+  });
+
   test('threads the config card under threadKey when the request came from an existing thread', async (t) => {
     const sendWebexMessage = t.mock.fn(async () => ({ id: 'card-1' }));
     const loaded = loadWithMocks(require.resolve('../config/card'), {
       [require.resolve('../api')]: { webexFetch: t.mock.fn() },
-      [require.resolve('../send')]: { sendWebexMessage },
+      [require.resolve('../send')]: { sendWebexMessage, resolveReplyThreadId },
     });
     t.after(loaded.restore);
 
@@ -450,6 +506,7 @@ describe('configuration submission and card flow', () => {
       spaceId: 'space-1',
       threadKey: 'thread-root-1',
       message: { id: 'msg-2' },
+      isBotMentioned: true,
       account: { accountId: 'default', config: { token: 'bot-token' } },
       log: makeLog(t),
       config: {},
@@ -465,7 +522,7 @@ describe('configuration submission and card flow', () => {
     const sendWebexMessage = t.mock.fn();
     const loaded = loadWithMocks(require.resolve('../config/card'), {
       [require.resolve('../api')]: { webexFetch: t.mock.fn() },
-      [require.resolve('../send')]: { sendWebexMessage },
+      [require.resolve('../send')]: { sendWebexMessage, resolveReplyThreadId },
     });
     t.after(loaded.restore);
     await assert.rejects(
@@ -517,6 +574,7 @@ describe('attachment-action ingress', () => {
     const log = makeLog(t);
     const context = {
       cfg: { token: 'bot-token' },
+      botId: 'bot-1',
       account: { accountId: 'default' },
       log,
     };
@@ -536,6 +594,10 @@ describe('attachment-action ingress', () => {
 
     assert.equal(webexFetch.mock.callCount(), 2);
     assert.equal(handleConfigSubmission.mock.callCount(), 1);
+    // botId must reach handleConfigSubmission so its confirmation/error
+    // messages can be recorded to the thread window like every other
+    // sender (config/handle-submission.js's sendOutboundMessage).
+    assert.equal(handleConfigSubmission.mock.calls[0].arguments[0].botId, 'bot-1');
     assert.ok(mockCalls(log.warn).some(([text]) => text.includes('missing id')));
     assert.ok(mockCalls(log.warn).some(([text]) => text.includes('unknown attachment')));
   });
