@@ -513,7 +513,15 @@ describe('runMessageFlow — shouldProcess', () => {
     assert.deepEqual(order, ['extract-start', 'extract-end', 'task-notify', 'respond-start', 'respond-end']);
   });
 
-  test('configRequest and shouldProcess both fire when the gate reports both', async (t) => {
+  // Manual testing surfaced this: asking to see the config also got judged
+  // "addressed" (a reasonable, direct question to the bot), which used to
+  // fire both the config card *and* a redundant conversational reply (plus
+  // a "thinking..." placeholder with nothing left to resolve it once
+  // respond ran anyway). The config card already is this message's reply,
+  // so respond (and its thinking-ack) must not also fire — but extract/
+  // summarize still should, since a message can legitimately both ask for
+  // the config *and* contain a task-worthy point.
+  test('configRequest suppresses respond and the thinking-ack, but not extract/summarize', async (t) => {
     const { runMessageFlow, collaborators } = loadFlow(t, {
       dispatchTaggingGate: (async () => ({
         messageTags: { isAddressed: true, configRequest: true },
@@ -526,7 +534,14 @@ describe('runMessageFlow — shouldProcess', () => {
     assert.equal(collaborators.handleConfigRequest.mock.callCount(), 1);
     assert.equal(collaborators.runExtractStep.mock.callCount(), 1);
     assert.equal(collaborators.runSummarizeStep.mock.callCount(), 1);
-    assert.equal(collaborators.runRespondStep.mock.callCount(), 1);
+    assert.equal(collaborators.sendThinkingAck.mock.callCount(), 0);
+    assert.equal(collaborators.runRespondStep.mock.callCount(), 0);
+
+    const respondLogCall = collaborators.appendJobLogEntry.mock.calls.find(
+      (call) => call.arguments[0].step === 'respond'
+    );
+    assert.equal(respondLogCall.arguments[0].outcome, 'skipped');
+    assert.equal(respondLogCall.arguments[0].inputSummary.skipRespondForConfigRequest, true);
   });
 
   test('respond is skipped entirely when task-notify already covered the triggering message', async (t) => {

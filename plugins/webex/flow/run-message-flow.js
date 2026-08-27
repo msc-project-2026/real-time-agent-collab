@@ -154,7 +154,8 @@ async function runMessageFlow({
     });
 
     const isBotMentioned =
-      Array.isArray(message.mentionedPeople) && message.mentionedPeople.includes(botId);
+      Array.isArray(message.mentionedPeople) &&
+      message.mentionedPeople.includes(botId);
 
     decision = decideDispatch({ tagResult, isBotMentioned });
 
@@ -232,7 +233,8 @@ async function runMessageFlow({
       gateSessionKey: tagResult?.sessionKey ?? null,
       gateIsAddressed: tagResult?.messageTags?.isAddressed ?? null,
       gateConfigRequest: tagResult?.messageTags?.configRequest ?? null,
-      gateSliceReady: tagResult?.pendingThreadWindowDecision?.sliceReady ?? null,
+      gateSliceReady:
+        tagResult?.pendingThreadWindowDecision?.sliceReady ?? null,
       isBotMentioned: decision.isBotMentioned,
       isBotAddressed: decision.isBotAddressed,
       shouldRespond: decision.shouldRespond,
@@ -249,7 +251,15 @@ async function runMessageFlow({
   // and holding the lock for that network call would needlessly delay the
   // next message's gate cycle for this thread.
   if (decision.configRequest) {
-    await handleConfigRequest({ spaceId, threadKey, message, account, botId, log, sendFn });
+    await handleConfigRequest({
+      spaceId,
+      threadKey,
+      message,
+      account,
+      botId,
+      log,
+      sendFn,
+    });
   }
 
   if (!shouldProcess) {
@@ -267,17 +277,34 @@ async function runMessageFlow({
   // typing indicator (Webex's bot API has no such endpoint); deliberately
   // never recorded to the thread window (see processing/thinking-ack.js).
   // Best-effort — a failure here must never block the rest of the flow.
-  if (decision.shouldRespond) {
-    await sendThinkingAck({ spaceId, threadKey, message, account, botId, log, sendFn }).catch(
-      (err) =>
-        log?.warn?.(
-          `${LOG_PREFIX} thinking-ack failed ${JSON.stringify({
-            spaceId,
-            threadKey,
-            flowId,
-            error: errorMessage(err),
-          })}`
-        )
+  //
+  // Skipped when configRequest is also true: the config card *is* the
+  // reply to this message (handleConfigRequest already ran above), so a
+  // "thinking..." placeholder here would either dangle unresolved (once
+  // respond is also skipped below) or precede a redundant natural-language
+  // reply on top of the card. Extract/summarize still run regardless — a
+  // message can legitimately both ask for the config *and* contain a
+  // task-worthy point, and that mixed-intent case is intentionally
+  // preserved (see the "configRequest and shouldProcess are independent"
+  // note above).
+  if (decision.shouldRespond && !decision.configRequest) {
+    await sendThinkingAck({
+      spaceId,
+      threadKey,
+      message,
+      account,
+      botId,
+      log,
+      sendFn,
+    }).catch((err) =>
+      log?.warn?.(
+        `${LOG_PREFIX} thinking-ack failed ${JSON.stringify({
+          spaceId,
+          threadKey,
+          flowId,
+          error: errorMessage(err),
+        })}`
+      )
     );
   }
 
@@ -300,10 +327,14 @@ async function runMessageFlow({
   const extractEndedAt = new Date().toISOString();
   const summarizeEndedAt = new Date().toISOString();
 
-  const extractResult = extractSettled.status === 'fulfilled' ? extractSettled.value : null;
-  const extractError = extractSettled.status === 'rejected' ? extractSettled.reason : null;
-  const summarizeResult = summarizeSettled.status === 'fulfilled' ? summarizeSettled.value : null;
-  const summarizeError = summarizeSettled.status === 'rejected' ? summarizeSettled.reason : null;
+  const extractResult =
+    extractSettled.status === 'fulfilled' ? extractSettled.value : null;
+  const extractError =
+    extractSettled.status === 'rejected' ? extractSettled.reason : null;
+  const summarizeResult =
+    summarizeSettled.status === 'fulfilled' ? summarizeSettled.value : null;
+  const summarizeError =
+    summarizeSettled.status === 'rejected' ? summarizeSettled.reason : null;
 
   if (flowId) {
     await appendJobLogEntry({
@@ -434,13 +465,20 @@ async function runMessageFlow({
   const skipRespondForTaskNotify = Boolean(
     taskNotifyResult?.notified?.some((entry) => entry.coversLastMessage)
   );
+  // Same reasoning as the thinking-ack skip above — the config card already
+  // is this message's reply.
+  const skipRespondForConfigRequest = Boolean(decision.configRequest);
 
   const respondStartedAt = new Date().toISOString();
 
   let respondResult = null;
   let respondError = null;
 
-  if (decision.shouldRespond && !skipRespondForTaskNotify) {
+  if (
+    decision.shouldRespond &&
+    !skipRespondForTaskNotify &&
+    !skipRespondForConfigRequest
+  ) {
     try {
       respondResult = await runRespondStep({
         pluginRuntime,
@@ -477,13 +515,14 @@ async function runMessageFlow({
       sessionKey: respondResult?.sessionKey ?? null,
       startedAt: respondStartedAt,
       endedAt: respondEndedAt,
-      outcome: respondError ? 'error' : respondResult?.outcome ?? 'success',
+      outcome: respondError ? 'error' : (respondResult?.outcome ?? 'success'),
       error: errorMessage(respondError),
       toolCalls: respondResult?.toolCalls ?? null,
       inputSummary: {
         messageId: message?.id ?? null,
         shouldRespond: decision.shouldRespond,
         skipRespondForTaskNotify,
+        skipRespondForConfigRequest,
         sliceReady: decision.sliceReady,
         pendingCount: messageIds.length,
       },

@@ -4,8 +4,15 @@
 const { webexFetch } = require('../api');
 const { sendWebexMessage } = require('../send');
 const { MAIN_THREAD_KEY } = require('../storage/threads-store');
-const { valueOrEmpty, buildCardEnvelope, sendAdaptiveCard } = require('../card/shared');
-const { PROACTIVITY_LEVELS, DEFAULT_PROACTIVITY_THRESHOLD } = require('./proactivity');
+const {
+  valueOrEmpty,
+  buildCardEnvelope,
+  sendAdaptiveCard,
+} = require('../card/shared');
+const {
+  PROACTIVITY_LEVELS,
+  DEFAULT_PROACTIVITY_THRESHOLD,
+} = require('./proactivity');
 
 // One ColumnSet row per known space member — server-side generated for N
 // known members at build time, not a client-side dynamic input (Adaptive
@@ -21,7 +28,9 @@ function buildMemberRow(member) {
       {
         type: 'Column',
         width: 'auto',
-        items: [{ type: 'TextBlock', text: valueOrEmpty(member.email), wrap: true }],
+        items: [
+          { type: 'TextBlock', text: valueOrEmpty(member.email), wrap: true },
+        ],
       },
       {
         type: 'Column',
@@ -40,7 +49,9 @@ function buildMemberRow(member) {
 }
 
 function buildConfigCard({ config, members }) {
-  const memberRows = (Array.isArray(members) ? members : []).map(buildMemberRow);
+  const memberRows = (Array.isArray(members) ? members : []).map(
+    buildMemberRow
+  );
 
   return buildCardEnvelope({
     body: [
@@ -76,7 +87,9 @@ function buildConfigCard({ config, members }) {
         id: 'proactivityThreshold',
         label: 'Agent proactivity',
         style: 'compact',
-        value: valueOrEmpty(config.proactivityThreshold ?? DEFAULT_PROACTIVITY_THRESHOLD),
+        value: valueOrEmpty(
+          config.proactivityThreshold ?? DEFAULT_PROACTIVITY_THRESHOLD
+        ),
         choices: PROACTIVITY_LEVELS.map((level) => ({
           title: level.title,
           value: String(level.value),
@@ -98,7 +111,7 @@ function buildConfigCard({ config, members }) {
       },
       {
         type: 'TextBlock',
-        text: 'Names come from Webex automatically — only correct one if it’s missing or wrong.',
+        text: 'Names come from Webex automatically (correct one if it’s missing or wrong).',
         wrap: true,
         spacing: 'Small',
         isSubtle: true,
