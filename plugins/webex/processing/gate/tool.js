@@ -22,11 +22,17 @@ function setPendingTagResult(spaceId, threadKey, result) {
   pendingTagResults.set(tagResultKey(spaceId, threadKey), result);
 }
 
+// The tool's own parameter is named `batchReady` — that's what the model
+// sees and reasons about (see instruction.js's "batch" framing). Internally
+// we keep calling the same concept `sliceReady` everywhere downstream
+// (decide.js, run-message-flow.js, tests) — renamed right here, once, at
+// the boundary, rather than rippling the rename through code the model
+// never sees.
 function tagMessageTool() {
   return {
-    name: 'tag_message',
+    name: 'submit_gate_decision',
     description:
-      "Record the tagging gate's classification of a thread's pending slice (v3 §4). Call this tool once successfully. If it returns { ok: false }, correct the parameters and retry (up to 3 attempts total). Do not answer the user or call any other tool.",
+      "Submit the gate's decision for this thread: tags for the current message (isAddressed, configRequest) plus a readiness call for the whole batch (batchReady). Call this tool once successfully. If it returns { ok: false }, correct the parameters and retry (up to 3 attempts total). Do not answer the user or call any other tool.",
     parameters: {
       type: 'object',
       properties: {
@@ -41,21 +47,21 @@ function tagMessageTool() {
         isAddressed: {
           type: 'boolean',
           description:
-            'Semantic addressing — is the pending slice addressed to the bot, independent of the deterministic mention flag.',
+            'Semantic addressing — is the current message addressed to you, independent of the deterministic mention flag.',
         },
         configRequest: {
           type: 'boolean',
           description:
-            'Semantic detection of a config ask, falling back to slash-command syntax where applicable.',
+            'Semantic detection of a config ask on the current message, falling back to slash-command syntax where applicable.',
         },
-        sliceReady: {
+        batchReady: {
           type: 'boolean',
           description:
-            'Whether the pending slice already contains a complete, coherent unit of meaning worth acting on.',
+            'Whether the batch of new messages already contains something concrete and actionable, rather than an obvious in-progress fragment.',
         },
         reason: {
           type: 'string',
-          description: 'A brief reason for the `sliceReady` judgment.',
+          description: 'A brief reason for the `batchReady` judgment.',
         },
       },
       required: [
@@ -63,13 +69,13 @@ function tagMessageTool() {
         'threadKey',
         'isAddressed',
         'configRequest',
-        'sliceReady',
+        'batchReady',
         'reason',
       ],
       additionalProperties: false,
     },
     async execute(_toolUseId, params) {
-      const { spaceId, threadKey, isAddressed, configRequest, sliceReady, reason } =
+      const { spaceId, threadKey, isAddressed, configRequest, batchReady, reason } =
         params ?? {};
 
       const errors = [];
@@ -86,8 +92,8 @@ function tagMessageTool() {
       if (typeof configRequest !== 'boolean') {
         errors.push('`configRequest` must be a boolean.');
       }
-      if (typeof sliceReady !== 'boolean') {
-        errors.push('`sliceReady` must be a boolean.');
+      if (typeof batchReady !== 'boolean') {
+        errors.push('`batchReady` must be a boolean.');
       }
       if (!reason || typeof reason !== 'string' || !reason.trim()) {
         errors.push('`reason` must be a non-empty string.');
@@ -100,14 +106,14 @@ function tagMessageTool() {
       const key = tagResultKey(spaceId, threadKey);
       if (pendingTagResults.has(key)) {
         console.warn(
-          '[webex:tag_message] overwriting pending result (tool called more than once)',
+          '[webex:submit_gate_decision] overwriting pending result (tool called more than once)',
           { spaceId, threadKey }
         );
       }
 
       pendingTagResults.set(key, {
         messageTags: { isAddressed, configRequest },
-        pendingThreadWindowDecision: { sliceReady, reason },
+        pendingThreadWindowDecision: { sliceReady: batchReady, reason },
       });
 
       return { ok: true };

@@ -1,15 +1,16 @@
 // ********* PROCESSING/RESPOND/INSTRUCTION.JS *********
 'use strict';
 
-// v3 phase 5 respond step. Unlike the tagging gate (narrow: pending slice
-// only), this step gets the full thread window — it needs enough context to
-// actually decide what, if anything, to say. Phase 6 adds the active-tasks
-// injection (so a reply can reference a task from a prior turn's extraction)
+// v3 phase 5 respond step. Unlike the tagging gate (narrow: current message
+// plus a small batch), this step gets the full thread window — it needs
+// enough context to actually decide what, if anything, to say. Phase 6 adds
+// the active-tasks injection (so a reply can reference a task from a prior
+// turn's extraction)
 // and the search_tasks tool for anything outside that set — task *writing*
 // stays extract's job; respond never gets write_task (see phase-6 plan:
 // Concurrency / tool visibility — no per-step tool allowlist exists, so the
 // only lever here is telling the model exactly which tools are its job,
-// the same pattern tag_message's own description already relies on).
+// the same pattern submit_gate_decision's own description already relies on).
 // Phase 7 adds search_recall (v3 §9) for on-demand recall of something from
 // earlier history — possibly a different thread — that isn't already in
 // the window above.

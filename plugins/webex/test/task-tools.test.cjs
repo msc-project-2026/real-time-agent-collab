@@ -7,7 +7,7 @@ const { loadWithMocks } = require('./helpers.cjs');
 
 // ---------------------------------------------------------------------------
 // Category: write_task / search_tasks tool validation and delegation.
-// Unlike tag_message (in-memory pending-result map), these tools write
+// Unlike submit_gate_decision (in-memory pending-result map), these tools write
 // straight through to context/tasks-store.js — mirrors the existing
 // tools/load-processing-batch.js test pattern (mock the underlying store
 // call, assert on validation + delegation), rather than hitting real

@@ -28,7 +28,7 @@ async function appendTaggingValidationRecord({
     messageId: messageId ?? null,
     runId: runId ?? null,
     pendingSliceSize: pendingSliceSize ?? null,
-    // How many tag_message attempts the gate itself reported making this
+    // How many submit_gate_decision attempts the gate itself reported making this
     // turn (self-reported, diagnostic only) — see gate/instruction.js.
     toolCallAttempts: toolCallAttempts ?? null,
     messageTags: tagResult?.messageTags ?? null,

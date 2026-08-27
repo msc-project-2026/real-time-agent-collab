@@ -5,6 +5,17 @@ const fs = require('node:fs/promises');
 const { describe, test } = require('node:test');
 
 const { loadWithMocks, makeLog, makeTempWorkspace } = require('./helpers.cjs');
+
+// The prompt now embeds two ```json blocks (space members, then the pending
+// slice) — this locates the one following a given heading rather than
+// grabbing indiscriminately between the first and last fence in the whole
+// document.
+function extractJsonBlockAfter(text, heading) {
+  const headingIndex = text.indexOf(heading);
+  const fenceStart = text.indexOf('```json', headingIndex) + 7;
+  const fenceEnd = text.indexOf('```', fenceStart);
+  return JSON.parse(text.slice(fenceStart, fenceEnd));
+}
 const { taggingValidationLogPath } = require('../storage/paths');
 const { buildTaggingInstruction } = require('../processing/gate/instruction');
 const {
@@ -12,12 +23,14 @@ const {
 } = require('../storage/threads-store');
 
 // ---------------------------------------------------------------------------
-// Category: tag_message tool validation.
+// Category: submit_gate_decision tool validation.
 // Mirrors routing/tool.js's contract: invalid inputs return structured
-// errors so the model can retry without the gateway throwing.
+// errors so the model can retry without the gateway throwing. The tool's
+// own param is `batchReady` (what the model sees); it's renamed back to the
+// internal `sliceReady` name inside execute() — see tool.js's comment.
 // ---------------------------------------------------------------------------
 
-describe('tag_message tool validation', () => {
+describe('submit_gate_decision tool validation', () => {
   function loadTool() {
     const resolved = require.resolve('../processing/gate/tool');
     delete require.cache[resolved];
@@ -29,7 +42,7 @@ describe('tag_message tool validation', () => {
     threadKey: '__main__',
     isAddressed: true,
     configRequest: false,
-    sliceReady: true,
+    batchReady: true,
     reason: 'Contains a complete request.',
   };
 
@@ -63,8 +76,8 @@ describe('tag_message tool validation', () => {
     const { tagMessageTool, takePendingTagResult } = loadTool();
     const tool = tagMessageTool();
 
-    await tool.execute('id-1', { ...validParams, threadKey: 'thread-a', sliceReady: true });
-    await tool.execute('id-2', { ...validParams, threadKey: 'thread-b', sliceReady: false });
+    await tool.execute('id-1', { ...validParams, threadKey: 'thread-a', batchReady: true });
+    await tool.execute('id-2', { ...validParams, threadKey: 'thread-b', batchReady: false });
 
     assert.equal(
       takePendingTagResult('space-1', 'thread-a').pendingThreadWindowDecision.sliceReady,
@@ -87,7 +100,7 @@ describe('tag_message tool validation', () => {
     assert.equal(takePendingTagResult('space-1', '__main__'), null);
   });
 
-  test('non-boolean isAddressed/configRequest/sliceReady returns validation error', async () => {
+  test('non-boolean isAddressed/configRequest/batchReady returns validation error', async () => {
     const { tagMessageTool } = loadTool();
     const tool = tagMessageTool();
 
@@ -95,13 +108,13 @@ describe('tag_message tool validation', () => {
       ...validParams,
       isAddressed: 'yes',
       configRequest: 0,
-      sliceReady: 'true',
+      batchReady: 'true',
     });
 
     assert.equal(result.ok, false);
     assert.ok(result.errors.some((e) => e.includes('isAddressed')));
     assert.ok(result.errors.some((e) => e.includes('configRequest')));
-    assert.ok(result.errors.some((e) => e.includes('sliceReady')));
+    assert.ok(result.errors.some((e) => e.includes('batchReady')));
   });
 
   test('empty reason string returns validation error and does not store', async () => {
@@ -145,7 +158,7 @@ describe('buildTaggingInstruction', () => {
       pendingSlice,
     });
 
-    assert.match(instruction, /tag_message/);
+    assert.match(instruction, /submit_gate_decision/);
     assert.match(instruction, /space-1/);
     assert.match(instruction, /__main__/);
     assert.match(instruction, /fix the login test\?/);
@@ -199,11 +212,7 @@ describe('buildTaggingInstruction', () => {
       botId: 'bot-1',
     });
 
-    const sliceJson = instruction.slice(
-      instruction.indexOf('```json') + 7,
-      instruction.lastIndexOf('```')
-    );
-    const parsed = JSON.parse(sliceJson);
+    const parsed = extractJsonBlockAfter(instruction, '## New messages');
 
     assert.equal(parsed[0].fromAgent, true);
     assert.equal(parsed[1].fromAgent, false);
@@ -217,11 +226,38 @@ describe('buildTaggingInstruction', () => {
       pendingSlice: [{ id: 'msg-1', senderId: 'bot-1', senderName: 'bot', content: 'hi' }],
     });
 
-    const sliceJson = instruction.slice(
-      instruction.indexOf('```json') + 7,
-      instruction.lastIndexOf('```')
-    );
-    assert.equal(JSON.parse(sliceJson)[0].fromAgent, false);
+    const parsed = extractJsonBlockAfter(instruction, '## New messages');
+    assert.equal(parsed[0].fromAgent, false);
+  });
+
+  test('embeds real space members, so the model can tell a named recipient apart from itself', () => {
+    const instruction = buildTaggingInstruction({
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      pendingSlice: [],
+      members: [
+        { id: 'person-1', name: 'Asa Bizanjo', email: 'asa@example.com' },
+        { id: 'agent', name: 'Agent' },
+      ],
+    });
+
+    assert.match(instruction, /Space members/);
+    assert.match(instruction, /Asa Bizanjo/);
+    // The synthetic 'agent' assignee sentinel (extract/write_task's, not a
+    // real space member) must not appear here — including it would just
+    // reintroduce the exact identity-conflation risk this list exists to
+    // rule out.
+    assert.ok(!instruction.includes('"id": "agent"'));
+  });
+
+  test('tolerates a missing/non-array members list', () => {
+    const instruction = buildTaggingInstruction({
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      pendingSlice: [],
+    });
+
+    assert.match(instruction, /Space members/);
   });
 });
 
@@ -244,6 +280,7 @@ describe('dispatchTaggingGate', () => {
       })),
       appendTaggingValidationRecord: t.mock.fn(async () => undefined),
       getCollabAgentId: t.mock.fn(() => 'main'),
+      getSpaceMembers: t.mock.fn(async () => []),
       ...overrides,
     };
 
@@ -259,6 +296,9 @@ describe('dispatchTaggingGate', () => {
       },
       [require.resolve('../runtime')]: {
         getCollabAgentId: collaborators.getCollabAgentId,
+      },
+      [require.resolve('../config/members')]: {
+        getSpaceMembers: collaborators.getSpaceMembers,
       },
     });
     t.after(loaded.restore);
@@ -303,7 +343,7 @@ describe('dispatchTaggingGate', () => {
     assert.equal(params.agentId, 'main');
     assert.equal(params.workspaceDir, '/workspace/main');
     assert.equal(params.agentDir, '/workspace/main/.agent');
-    assert.match(params.prompt, /tag_message/);
+    assert.match(params.prompt, /submit_gate_decision/);
     assert.equal(params.timeoutMs, 15_000);
     assert.ok(params.sessionFile.endsWith('session.jsonl'));
     assert.ok(typeof params.sessionId === 'string' && params.sessionId.length > 0);
@@ -348,21 +388,41 @@ describe('dispatchTaggingGate', () => {
       log: makeLog(t),
     });
 
-    const promptSlice = JSON.parse(
-      runCalls[0].prompt.slice(
-        runCalls[0].prompt.indexOf('```json') + 7,
-        runCalls[0].prompt.lastIndexOf('```')
-      )
-    );
+    const promptSlice = extractJsonBlockAfter(runCalls[0].prompt, '## New messages');
     assert.equal(promptSlice[0].fromAgent, true);
     assert.equal(promptSlice[1].fromAgent, false);
   });
 
-  test('reads a multi-attempt count from meta.toolSummary.calls (retried tag_message calls)', async (t) => {
+  test('fetches the real space member roster and embeds it in the prompt', async (t) => {
+    const runCalls = [];
+    const runEmbeddedAgent = t.mock.fn(async (params) => {
+      runCalls.push(params);
+      return { payloads: [{ text: 'done' }] };
+    });
+    const pluginRuntime = makeAgentRuntime(t, { runEmbeddedAgent });
+
+    const { dispatchTaggingGate, collaborators } = loadDispatch(t, {
+      getSpaceMembers: t.mock.fn(async () => [{ id: 'person-1', name: 'Asa Bizanjo' }]),
+    });
+
+    await dispatchTaggingGate({
+      pluginRuntime,
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      message: { id: 'msg-1' },
+      log: makeLog(t),
+    });
+
+    assert.equal(collaborators.getSpaceMembers.mock.callCount(), 1);
+    assert.equal(collaborators.getSpaceMembers.mock.calls[0].arguments[0].spaceId, 'space-1');
+    assert.match(runCalls[0].prompt, /Asa Bizanjo/);
+  });
+
+  test('reads a multi-attempt count from meta.toolSummary.calls (retried submit_gate_decision calls)', async (t) => {
     const pluginRuntime = makeAgentRuntime(t, {
       runEmbeddedAgent: async () => ({
         payloads: [{ text: 'done' }],
-        meta: { toolSummary: { calls: 2, tools: ['tag_message'], failures: 1 } },
+        meta: { toolSummary: { calls: 2, tools: ['submit_gate_decision'], failures: 1 } },
       }),
     });
     const { dispatchTaggingGate, collaborators } = loadDispatch(t);
@@ -462,7 +522,7 @@ describe('dispatchTaggingGate', () => {
     assert.equal(collaborators.appendTaggingValidationRecord.mock.callCount(), 0);
   });
 
-  test('logs and skips validation recording when the gate never calls tag_message', async (t) => {
+  test('logs and skips validation recording when the gate never calls submit_gate_decision', async (t) => {
     const pluginRuntime = makeAgentRuntime(t);
     const { dispatchTaggingGate, collaborators } = loadDispatch(t, {
       takePendingTagResult: () => null,

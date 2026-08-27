@@ -84,6 +84,8 @@ You have exactly two tools for this task: \`write_task\`, to create or update a 
 
 ### How to extract
 
+Check every new message on its own, even ones that arrive back-to-back on the same topic from the same person — a batch can contain more than one task-worthy point, and a later message continuing the thread doesn't retire an earlier one. Don't let an earlier point go uncaptured just because a later message in the same batch covered a related but distinct piece of work.
+
 For each task-worthy point:
 - Decide whether it's new or an update to one of the active tasks above (or found via \`search_tasks\`). Pass the existing task's \`id\` to update it; omit \`id\` to create a new one.
 - Always include a short \`title\` when creating a task — a few words summarizing what it actually is (e.g. "Fix login test flakiness"), not a restatement of the type. Add \`description\` only if the title alone would leave out something that matters.

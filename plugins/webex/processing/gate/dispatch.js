@@ -24,6 +24,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { getThread } = require('../../storage/threads-store');
+const { getSpaceMembers } = require('../../config/members');
 const { safeSegment } = require('../../storage/paths');
 const { buildTaggingInstruction } = require('./instruction');
 const { takePendingTagResult } = require('./tool');
@@ -55,6 +56,7 @@ async function runTaggingGate({
   const pendingSlice = Array.isArray(thread.pending) ? thread.pending : [];
   const processed = Array.isArray(thread.processed) ? thread.processed : [];
   const recentProcessed = processed.slice(-minContextSize);
+  const members = await getSpaceMembers({ spaceId, explicitRoot });
 
   const instruction = buildTaggingInstruction({
     spaceId,
@@ -62,6 +64,7 @@ async function runTaggingGate({
     pendingSlice,
     recentProcessed,
     botId,
+    members,
   });
 
   const agentId = getCollabAgentId();
@@ -94,7 +97,7 @@ async function runTaggingGate({
       prompt: instruction,
       timeoutMs: waitTimeoutMs,
       runId,
-      // No dedicated message/reply tool — the gate calls tag_message and
+      // No dedicated message/reply tool — the gate calls submit_gate_decision and
       // reports its own attempt count as plain text (see instruction.js),
       // never a channel reply.
       disableMessageTool: true,
@@ -118,7 +121,7 @@ async function runTaggingGate({
 
   if (!tagResult) {
     log?.warn?.(
-      `[collab-agent:tagging-dispatch] tagging gate did not call tag_message — no result to validate ${JSON.stringify(
+      `[collab-agent:tagging-dispatch] tagging gate did not call submit_gate_decision — no result to validate ${JSON.stringify(
         { spaceId, threadKey, runId, toolCallAttempts }
       )}`
     );
@@ -138,7 +141,7 @@ async function runTaggingGate({
 
   // sessionKey/runId are attached to a fresh object here, after the
   // validation record above — that record is a pure audit trail of what
-  // the model actually produced via tag_message, and shouldn't be
+  // the model actually produced via submit_gate_decision, and shouldn't be
   // contaminated with plugin-internal call metadata. The caller
   // (run-message-flow.js) needs these two fields for its own job-log entry
   // and dispatch-decision log line, the same way extract/respond/summarize
@@ -161,7 +164,7 @@ function readToolCallCount(result) {
 }
 
 // Entry point. Never throws — resolves to the tag result on success, or
-// `null` if the gate is unavailable, fails, or never calls tag_message. The
+// `null` if the gate is unavailable, fails, or never calls submit_gate_decision. The
 // caller (flow/run-message-flow.js) awaits this and feeds the result into
 // deterministic dispatch (gate/decide.js).
 //

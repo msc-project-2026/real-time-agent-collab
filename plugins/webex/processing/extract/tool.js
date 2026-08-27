@@ -2,7 +2,7 @@
 'use strict';
 
 // v3 §7c task schema (phase 6) — single upsert tool for the extract step.
-// Unlike tag_message (gate/tool.js), this tool's job IS the side effect:
+// Unlike submit_gate_decision (gate/tool.js), this tool's job IS the side effect:
 // it writes straight through to storage/tasks-store.js and returns the
 // result, no pending-result map to read back afterward — extract's own
 // completion is enough of a signal that whatever it wrote already landed.
