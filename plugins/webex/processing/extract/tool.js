@@ -13,6 +13,7 @@ const {
   CONFIDENCE_AUTO_APPROVE_THRESHOLD,
 } = require('../../storage/tasks-store');
 const { readActiveConfig } = require('../../config/store');
+const { looksLikeSpaceId } = require('../../storage/paths');
 
 // Mirrors board/src/App.jsx's own dummy delegation-target mapping — same
 // literal target strings, so a task reads consistently whether seen via the
@@ -125,6 +126,10 @@ function writeTaskTool() {
 
       if (!spaceId || typeof spaceId !== 'string') {
         errors.push('`spaceId` must be a non-empty string.');
+      } else if (!looksLikeSpaceId(spaceId)) {
+        errors.push(
+          '`spaceId` does not look like a real space id — copy it verbatim from the prompt\'s spaceId fact, never guess or reconstruct it.'
+        );
       }
       if (!id && !title) {
         errors.push('`title` is required when creating a task (no `id` given).');

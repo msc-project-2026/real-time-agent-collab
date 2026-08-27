@@ -19,6 +19,23 @@ function safeSegment(value) {
   return String(value).replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
+// A real Webex spaceId is base64 of a ciscospark:// URN containing /ROOM/
+// (send.js's buildMsgBody already relies on this same decode-and-check
+// shape for the outbound `to` field). Guards against a model passing a
+// fabricated or reconstructed value instead of copying the real one
+// verbatim (observed live: a decoded fragment of the real id, e.g.
+// "eu-central-1_k") — that failure mode reads as a confusing downstream
+// "task not found" with no hint that spaceId itself was ever the problem,
+// so tool-layer callers should reject it here instead, with a clear error.
+function looksLikeSpaceId(value) {
+  if (typeof value !== 'string' || !value) return false;
+  try {
+    return Buffer.from(value, 'base64').toString('utf-8').includes('/ROOM/');
+  } catch {
+    return false;
+  }
+}
+
 // Paths
 
 // -- .collab/spaces/
@@ -139,6 +156,7 @@ function jobLogPath(spaceId, flowId, explicitRoot) {
 module.exports = {
   getWorkspaceRoot,
   safeSegment,
+  looksLikeSpaceId,
   spacesRoot,
   spaceDir,
   pendingDir,

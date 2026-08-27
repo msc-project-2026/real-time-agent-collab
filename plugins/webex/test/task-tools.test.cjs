@@ -5,6 +5,11 @@ const { describe, test } = require('node:test');
 
 const { loadWithMocks } = require('./helpers.cjs');
 
+// A real-looking spaceId — both tools now reject anything that doesn't
+// base64-decode to a ciscospark room URN (storage/paths.js's
+// looksLikeSpaceId), so a bare placeholder like 'space-1' no longer passes.
+const SPACE_ID = Buffer.from('ciscospark://urn:TEAM:test/ROOM/space-1').toString('base64');
+
 // ---------------------------------------------------------------------------
 // Category: write_task / search_tasks tool validation and delegation.
 // Unlike submit_gate_decision (in-memory pending-result map), these tools write
@@ -39,7 +44,7 @@ describe('write_task tool', () => {
     const tool = writeTaskTool();
 
     const result = await tool.execute('id-1', {
-      spaceId: 'space-1',
+      spaceId: SPACE_ID,
       title: 'Fix login test',
       type: 'development',
       assigned: 'alice',
@@ -49,7 +54,7 @@ describe('write_task tool', () => {
     assert.equal(result.ok, true);
     assert.equal(upsertTask.mock.callCount(), 1);
     assert.deepEqual(upsertTask.mock.calls[0].arguments[0], {
-      spaceId: 'space-1',
+      spaceId: SPACE_ID,
       id: undefined,
       patch: {
         title: 'Fix login test',
@@ -72,7 +77,7 @@ describe('write_task tool', () => {
     const tool = writeTaskTool();
 
     await tool.execute('id-1', {
-      spaceId: 'space-1',
+      spaceId: SPACE_ID,
       title: 'Pick up small fix',
       type: 'development',
       assigned: 'agent',
@@ -89,7 +94,7 @@ describe('write_task tool', () => {
     const tool = writeTaskTool();
 
     await tool.execute('id-1', {
-      spaceId: 'space-1',
+      spaceId: SPACE_ID,
       title: 'Already-started work',
       type: 'development',
       assigned: 'alice',
@@ -103,7 +108,7 @@ describe('write_task tool', () => {
     const { writeTaskTool, upsertTask } = loadTool(t);
     const tool = writeTaskTool();
 
-    await tool.execute('id-1', { spaceId: 'space-1', id: 'task_abc', assigned: 'alice' });
+    await tool.execute('id-1', { spaceId: SPACE_ID, id: 'task_abc', assigned: 'alice' });
 
     assert.equal(upsertTask.mock.calls[0].arguments[0].patch.status, undefined);
   });
@@ -112,7 +117,7 @@ describe('write_task tool', () => {
     const { writeTaskTool, upsertTask } = loadTool(t);
     const tool = writeTaskTool();
 
-    await tool.execute('id-1', { spaceId: 'space-1', id: 'task_abc', status: 'done' });
+    await tool.execute('id-1', { spaceId: SPACE_ID, id: 'task_abc', status: 'done' });
 
     assert.equal(upsertTask.mock.calls[0].arguments[0].id, 'task_abc');
     assert.equal(upsertTask.mock.calls[0].arguments[0].patch.status, 'done');
@@ -129,11 +134,31 @@ describe('write_task tool', () => {
     assert.equal(upsertTask.mock.callCount(), 0);
   });
 
+  test('a spaceId that does not decode to a real room URN is rejected, not sent to the store', async (t) => {
+    const { writeTaskTool, upsertTask } = loadTool(t);
+    const tool = writeTaskTool();
+    const warnSpy = t.mock.method(console, 'warn', () => {});
+
+    // 'eu-central-1_k' is the exact fabricated value observed live — a
+    // decoded fragment of a real spaceId, not the real (still-encoded)
+    // thing itself.
+    const result = await tool.execute('id-1', {
+      spaceId: 'eu-central-1_k',
+      id: 'task_abc',
+      message_ids: ['msg-1'],
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(result.errors.some((e) => e.includes('spaceId')));
+    assert.equal(upsertTask.mock.callCount(), 0);
+    assert.equal(warnSpy.mock.callCount(), 1);
+  });
+
   test('creating without title or id returns a validation error', async (t) => {
     const { writeTaskTool, upsertTask } = loadTool(t);
     const tool = writeTaskTool();
 
-    const result = await tool.execute('id-1', { spaceId: 'space-1', type: 'development' });
+    const result = await tool.execute('id-1', { spaceId: SPACE_ID, type: 'development' });
 
     assert.equal(result.ok, false);
     assert.ok(result.errors.some((e) => e.includes('title')));
@@ -144,7 +169,7 @@ describe('write_task tool', () => {
     const { writeTaskTool, upsertTask } = loadTool(t);
     const tool = writeTaskTool();
 
-    const result = await tool.execute('id-1', { spaceId: 'space-1', title: 'Fix login test' });
+    const result = await tool.execute('id-1', { spaceId: SPACE_ID, title: 'Fix login test' });
 
     assert.equal(result.ok, false);
     assert.ok(result.errors.some((e) => e.includes('type')));
@@ -156,7 +181,7 @@ describe('write_task tool', () => {
     const tool = writeTaskTool();
 
     const result = await tool.execute('id-1', {
-      spaceId: 'space-1',
+      spaceId: SPACE_ID,
       title: 'Fix login test',
       type: 'not-a-real-type',
     });
@@ -170,7 +195,7 @@ describe('write_task tool', () => {
     const tool = writeTaskTool();
 
     const result = await tool.execute('id-1', {
-      spaceId: 'space-1',
+      spaceId: SPACE_ID,
       title: 'Fix login test',
       type: 'development',
       status: 'not-a-real-status',
@@ -185,7 +210,7 @@ describe('write_task tool', () => {
     const tool = writeTaskTool();
 
     const result = await tool.execute('id-1', {
-      spaceId: 'space-1',
+      spaceId: SPACE_ID,
       title: 'Fix login test',
       type: 'development',
       message_ids: 'msg-1',
@@ -211,7 +236,7 @@ describe('write_task tool', () => {
     const warnSpy = t.mock.method(console, 'warn', () => {});
 
     const result = await tool.execute('id-1', {
-      spaceId: 'space-1',
+      spaceId: SPACE_ID,
       id: 'task_a',
       child_tasks: ['task_b'],
     });
@@ -228,7 +253,7 @@ describe('write_task tool', () => {
     const tool = writeTaskTool();
 
     const result = await tool.execute('id-1', {
-      spaceId: 'space-1',
+      spaceId: SPACE_ID,
       title: 'Fix login test',
       type: 'coordination',
     });
@@ -243,13 +268,13 @@ describe('write_task tool', () => {
     const warnSpy = t.mock.method(console, 'warn', () => {});
 
     const tooHigh = await tool.execute('id-1', {
-      spaceId: 'space-1',
+      spaceId: SPACE_ID,
       title: 'Fix login test',
       type: 'development',
       confidence: 1.5,
     });
     const notNumber = await tool.execute('id-1', {
-      spaceId: 'space-1',
+      spaceId: SPACE_ID,
       title: 'Fix login test',
       type: 'development',
       confidence: 'high',
@@ -290,7 +315,7 @@ describe('write_task tool', () => {
     const tool = writeTaskTool();
 
     const result = await tool.execute('id-1', {
-      spaceId: 'space-1',
+      spaceId: SPACE_ID,
       title: 'Investigate flaky test',
       type: 'development',
       assigned: 'agent',
@@ -318,7 +343,7 @@ describe('write_task tool', () => {
     const tool = writeTaskTool();
 
     await tool.execute('id-1', {
-      spaceId: 'space-1',
+      spaceId: SPACE_ID,
       title: 'Investigate flaky test',
       type: 'development',
       assigned: 'agent',
@@ -340,7 +365,7 @@ describe('write_task tool', () => {
     const tool = writeTaskTool();
 
     await tool.execute('id-1', {
-      spaceId: 'space-1',
+      spaceId: SPACE_ID,
       title: 'Investigate flaky test',
       type: 'development',
       assigned: 'alice',
@@ -364,7 +389,7 @@ describe('write_task tool', () => {
     // 0.5 threshold — auto-approval should fire only because of the
     // per-space override.
     const result = await tool.execute('id-1', {
-      spaceId: 'space-1',
+      spaceId: SPACE_ID,
       title: 'Investigate flaky test',
       type: 'development',
       assigned: 'agent',
@@ -391,7 +416,7 @@ describe('write_task tool', () => {
     // 0.6 clears no configured space threshold, so it must fall back to the
     // mocked CONFIDENCE_AUTO_APPROVE_THRESHOLD of 0.7 and not auto-approve.
     await tool.execute('id-1', {
-      spaceId: 'space-1',
+      spaceId: SPACE_ID,
       title: 'Investigate flaky test',
       type: 'development',
       assigned: 'agent',
@@ -415,7 +440,7 @@ describe('write_task tool', () => {
     const { writeTaskTool } = loadTool(t, { upsertTask, readTasksState });
     const tool = writeTaskTool();
 
-    await tool.execute('id-1', { spaceId: 'space-1', id: 'task_abc', confidence: 0.95 });
+    await tool.execute('id-1', { spaceId: SPACE_ID, id: 'task_abc', confidence: 0.95 });
 
     assert.equal(upsertTask.mock.callCount(), 1);
   });
@@ -437,12 +462,12 @@ describe('search_tasks tool', () => {
     const { searchTasksTool, searchTasks } = loadTool(t);
     const tool = searchTasksTool();
 
-    const result = await tool.execute('id-1', { spaceId: 'space-1', query: 'alice' });
+    const result = await tool.execute('id-1', { spaceId: SPACE_ID, query: 'alice' });
 
     assert.equal(result.ok, true);
     assert.deepEqual(result.tasks, [{ id: 'task_abc', type: 'development' }]);
     assert.deepEqual(searchTasks.mock.calls[0].arguments[0], {
-      spaceId: 'space-1',
+      spaceId: SPACE_ID,
       query: 'alice',
       includeArchived: true,
     });
@@ -452,7 +477,7 @@ describe('search_tasks tool', () => {
     const { searchTasksTool, searchTasks } = loadTool(t);
     const tool = searchTasksTool();
 
-    await tool.execute('id-1', { spaceId: 'space-1', query: 'alice', includeArchived: false });
+    await tool.execute('id-1', { spaceId: SPACE_ID, query: 'alice', includeArchived: false });
 
     assert.equal(searchTasks.mock.calls[0].arguments[0].includeArchived, false);
   });
@@ -461,7 +486,7 @@ describe('search_tasks tool', () => {
     const { searchTasksTool, searchTasks } = loadTool(t);
     const tool = searchTasksTool();
 
-    const result = await tool.execute('id-1', { spaceId: 'space-1', query: '   ' });
+    const result = await tool.execute('id-1', { spaceId: SPACE_ID, query: '   ' });
 
     assert.equal(result.ok, false);
     assert.ok(result.errors.some((e) => e.includes('query')));
@@ -476,5 +501,16 @@ describe('search_tasks tool', () => {
 
     assert.equal(result.ok, false);
     assert.ok(result.errors.some((e) => e.includes('spaceId')));
+  });
+
+  test('a spaceId that does not decode to a real room URN is rejected, not searched', async (t) => {
+    const { searchTasksTool, searchTasks } = loadTool(t);
+    const tool = searchTasksTool();
+
+    const result = await tool.execute('id-1', { spaceId: 'eu-central-1_k', query: 'alice' });
+
+    assert.equal(result.ok, false);
+    assert.ok(result.errors.some((e) => e.includes('spaceId')));
+    assert.equal(searchTasks.mock.callCount(), 0);
   });
 });

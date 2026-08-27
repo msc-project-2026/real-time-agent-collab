@@ -78,6 +78,12 @@ ${JSON.stringify(tasks, null, 2)}
 ${JSON.stringify(spaceMembers, null, 2)}
 \`\`\`
 
+### Facts
+
+- spaceId: \`${spaceId}\`
+
+Always pass this exact spaceId to every \`write_task\`/\`search_tasks\` call — copy it verbatim, never guess or reconstruct it.
+
 ### Tools available to you
 
 You have exactly two tools for this task: \`write_task\`, to create or update a task, and \`search_tasks\`, to check for an existing task not listed above before creating a duplicate. Use only these.

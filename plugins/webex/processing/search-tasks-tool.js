@@ -7,6 +7,7 @@
 // — returns its result directly.
 
 const { searchTasks } = require('../storage/tasks-store');
+const { looksLikeSpaceId } = require('../storage/paths');
 
 function searchTasksTool() {
   return {
@@ -38,12 +39,22 @@ function searchTasksTool() {
       const errors = [];
       if (!spaceId || typeof spaceId !== 'string') {
         errors.push('`spaceId` must be a non-empty string.');
+      } else if (!looksLikeSpaceId(spaceId)) {
+        errors.push(
+          '`spaceId` does not look like a real space id — copy it verbatim from the prompt\'s spaceId fact, never guess or reconstruct it.'
+        );
       }
       if (!query || typeof query !== 'string' || !query.trim()) {
         errors.push('`query` must be a non-empty string.');
       }
 
       if (errors.length > 0) {
+        console.warn(
+          `[collab-agent:search-tasks] rejected: invalid parameters ${JSON.stringify({
+            params,
+            errors,
+          })}`
+        );
         return { ok: false, errors };
       }
 
@@ -56,6 +67,13 @@ function searchTasksTool() {
 
         return { ok: true, tasks };
       } catch (err) {
+        console.warn(
+          `[collab-agent:search-tasks] rejected: threw during search ${JSON.stringify({
+            params,
+            error: err?.message ?? String(err),
+            stack: err?.stack ?? null,
+          })}`
+        );
         return { ok: false, errors: [err?.message ?? String(err)] };
       }
     },

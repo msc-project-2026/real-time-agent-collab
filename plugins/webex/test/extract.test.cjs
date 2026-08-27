@@ -4,6 +4,37 @@ const assert = require('node:assert/strict');
 const { describe, test } = require('node:test');
 
 const { loadWithMocks, makeLog } = require('./helpers.cjs');
+const { buildExtractInstruction } = require('../processing/extract/instruction');
+
+// ---------------------------------------------------------------------------
+// Category: buildExtractInstruction — regression guard for a real live bug
+// (2026-08-27): write_task/search_tasks both promise "the spaceId from the
+// prompt, copy it verbatim," but the prompt never actually embedded it
+// anywhere, so the model sometimes fabricated one instead (observed: a
+// decoded fragment of the real, still-encoded spaceId). gate/respond/
+// summarize's instruction builders all embed spaceId directly; extract's
+// was the one gap.
+// ---------------------------------------------------------------------------
+
+describe('buildExtractInstruction', () => {
+  test('embeds the exact spaceId verbatim, so there is something concrete to copy', () => {
+    const instruction = buildExtractInstruction({
+      spaceId: 'ciscospark://urn:TEAM:eu-central-1_k/ROOM/1a4ea100',
+      window: { processed: [], processing: [] },
+      messageIds: [],
+      activeTasks: [],
+      members: [],
+    });
+
+    assert.match(instruction, /ciscospark:\/\/urn:TEAM:eu-central-1_k\/ROOM\/1a4ea100/);
+  });
+
+  test('requires spaceId', () => {
+    assert.throws(() =>
+      buildExtractInstruction({ spaceId: '', window: {}, messageIds: [] })
+    );
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Category: runExtractStep — the v3 §7c / phase 6 task-extraction step.

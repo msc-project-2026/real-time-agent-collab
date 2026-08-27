@@ -120,9 +120,15 @@ async function runTaggingGate({
   const tagResult = takePendingTagResult(spaceId, threadKey);
 
   if (!tagResult) {
+    // Full result dump, not just the derived attempt count — this failure
+    // mode (submit_gate_decision never lands despite multiple attempts,
+    // then the whole run times out) started showing up after the prompt
+    // rewrite with no validation rejections logged alongside it (ruling
+    // that out), so the next occurrence needs the raw stopReason/payloads/
+    // toolSummary to actually diagnose rather than guess again.
     log?.warn?.(
       `[collab-agent:tagging-dispatch] tagging gate did not call submit_gate_decision — no result to validate ${JSON.stringify(
-        { spaceId, threadKey, runId, toolCallAttempts }
+        { spaceId, threadKey, runId, toolCallAttempts, result }
       )}`
     );
     return null;

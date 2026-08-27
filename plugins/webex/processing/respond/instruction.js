@@ -91,7 +91,7 @@ Tasks currently tracked for this space, most recently updated first. You may ref
 ${JSON.stringify(tasks, null, 2)}
 \`\`\`
 
-### Known facts
+### Facts
 
 If asked about any of these, answer directly and exactly — never guess or invent a value for something not listed here.
 
