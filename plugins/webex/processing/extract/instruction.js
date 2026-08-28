@@ -86,7 +86,7 @@ ${JSON.stringify(spaceMembers, null, 2)}
 ### Rules
 
 - The \`write_task\` schema defines what each field means and when to set it.
-- Evidence comes from the new messages; history and active tasks are context only.
+- Evidence comes from the new messages; history, active tasks, and your own messages (\`fromAgent: true\`) are context only.
 - Prefer updating an existing task to creating one that overlaps it.
 - An update should leave the task accurate in every field the thread has since clarified, not only the one that changed.
 - One batch can carry several unrelated points, and a later message does not retire an earlier one.

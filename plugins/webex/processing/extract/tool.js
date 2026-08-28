@@ -116,7 +116,7 @@ function writeTaskTool() {
           type: 'string',
           enum: [...ALLOWED_STATUSES],
           description:
-            'Only when the thread shows progress that already happened, e.g. someone has started or finished it. Never set this on a task assigned to "agent" — pass `claim` instead and the outcome is decided from that.',
+            'Set only when `assigneeId` is a member and the thread shows progress that already happened, e.g. someone has started or finished the work. Never set it when `assigneeId` is "agent" — `claim` determines that task\'s status instead, and anything you set here is wrong.',
         },
         claim: {
           type: 'string',
