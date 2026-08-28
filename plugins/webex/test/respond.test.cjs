@@ -223,10 +223,44 @@ describe('runRespondStep', () => {
       log: makeLog(t),
     });
 
-    assert.match(runCalls[0].prompt, /Members of this space: Ada \(id: `person-1`\), Agent \(id: `agent`\)/);
+    assert.match(runCalls[0].prompt, /### Space members/);
+    assert.match(runCalls[0].prompt, /"id": "person-1"[\s\S]*"name": "Ada"/);
+    assert.match(runCalls[0].prompt, /"id": "agent"[\s\S]*"name": "Agent"/);
+    // email is real cached data but never shown to the model.
+    assert.ok(!runCalls[0].prompt.includes('ada@example.com'));
   });
 
-  test('omits the members fact (without crashing) when the space has no members cached', async (t) => {
+  test('resolves an active task\'s assigned id to the member\'s name, not the raw id', async (t) => {
+    const runCalls = [];
+    const runEmbeddedAgent = t.mock.fn(async (params) => {
+      runCalls.push(params);
+      return { payloads: [] };
+    });
+    const pluginRuntime = makeAgentRuntime(t, { runEmbeddedAgent });
+    const { runRespondStep } = loadRespond(t, {
+      getActiveTasks: t.mock.fn(async () => [
+        { id: 'task_1', title: 'Fix login test', type: 'development', status: 'backlog', assigned: 'person-1' },
+      ]),
+      getSpaceMembers: t.mock.fn(async () => [
+        { id: 'person-1', email: 'ada@example.com', name: 'Ada', source: 'webex' },
+      ]),
+    });
+
+    await runRespondStep({
+      pluginRuntime,
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      message: { id: 'msg-1' },
+      messageIds: ['msg-1'],
+      decision: { shouldRespond: true, ready: false, reason: 'Addressed.', isBotMentioned: true },
+      log: makeLog(t),
+    });
+
+    assert.match(runCalls[0].prompt, /"assigned": "Ada"/);
+    assert.ok(!runCalls[0].prompt.includes('"assigned": "person-1"'));
+  });
+
+  test('renders an empty space members list, without crashing, when the space has no members cached', async (t) => {
     const runCalls = [];
     const runEmbeddedAgent = t.mock.fn(async (params) => {
       runCalls.push(params);
@@ -245,7 +279,7 @@ describe('runRespondStep', () => {
       log: makeLog(t),
     });
 
-    assert.doesNotMatch(runCalls[0].prompt, /Members of this space/);
+    assert.match(runCalls[0].prompt, /### Space members[\s\S]*```json\n\[\]\n```/);
   });
 
   test('threads a main-space reply under the triggering message, never posts bare to main', async (t) => {

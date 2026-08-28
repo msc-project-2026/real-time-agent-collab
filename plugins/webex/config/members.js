@@ -18,7 +18,9 @@ async function getSpaceMembers({ spaceId, explicitRoot }) {
   if (!spaceId) throw new Error('spaceId is required');
 
   const activeConfig = await readActiveConfig({ spaceId, explicitRoot });
-  const members = Array.isArray(activeConfig?.members) ? activeConfig.members : [];
+  const members = Array.isArray(activeConfig?.members)
+    ? activeConfig.members
+    : [];
 
   return [...members, AGENT_ASSIGNEE];
 }

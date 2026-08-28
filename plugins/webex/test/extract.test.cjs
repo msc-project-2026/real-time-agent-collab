@@ -34,6 +34,23 @@ describe('buildExtractInstruction', () => {
       buildExtractInstruction({ spaceId: '', window: {}, messageIds: [] })
     );
   });
+
+  test('resolves an active task\'s assigned id to the member\'s name, not the raw id', () => {
+    const instruction = buildExtractInstruction({
+      spaceId: 'ciscospark://urn:TEAM:eu-central-1_k/ROOM/1a4ea100',
+      window: { processed: [], processing: [] },
+      messageIds: [],
+      activeTasks: [
+        { id: 'task_1', type: 'development', status: 'backlog', assigned: 'person-1' },
+      ],
+      members: [{ id: 'person-1', name: 'Ada', email: 'ada@example.com' }],
+    });
+
+    assert.match(instruction, /"assigned": "Ada"/);
+    // person-1 legitimately still appears in the Space members list — the
+    // thing that must never happen is the raw id showing up as an assignee.
+    assert.ok(!instruction.includes('"assigned": "person-1"'));
+  });
 });
 
 // ---------------------------------------------------------------------------

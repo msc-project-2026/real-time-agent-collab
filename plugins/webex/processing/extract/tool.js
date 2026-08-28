@@ -63,7 +63,8 @@ function writeTaskTool() {
         },
         title: {
           type: 'string',
-          description: 'Short human-readable summary. Required when creating a task.',
+          description:
+            'Short human-readable summary. Required when creating a task.',
         },
         description: {
           type: 'string',
@@ -72,11 +73,12 @@ function writeTaskTool() {
         type: {
           type: 'string',
           enum: [...ALLOWED_TYPES],
-          description: 'Required when creating a task. The kind of work this task represents.',
+          description:
+            'Required when creating a task. The kind of work this task represents.',
         },
         assigned: {
           type: 'string',
-          description: 'The member or sender id this task is assigned to, if known.',
+          description: 'The member or sender id this task is assigned to.',
         },
         deadline: {
           type: 'string',
@@ -91,17 +93,19 @@ function writeTaskTool() {
         confidence: {
           type: 'number',
           description:
-            'Only when `assigned` is "agent": your confidence (0-1) that this self-assigned task is genuinely warranted, weighing both how explicitly you were directed and how well it fits a safe, clearly in-scope pickup. Omit entirely when assigning to a human or leaving unassigned.',
+            'Only when `assigned` is "agent": your confidence (0-1) that this self-assigned task should be acted upon, weighing both how explicitly you were directed and how well it fits a safe, clearly in-scope pickup. Omit entirely when assigning to a human or leaving unassigned.',
         },
         message_ids: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Message ids that are direct evidence for this task. Accumulates — do not repeat ids already recorded.',
+          description:
+            'Message ids that are direct evidence for this task. Accumulates — do not repeat ids already recorded.',
         },
         child_tasks: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Existing task ids that are sub-tasks of this one. Accumulates. Rejected if it would create a cycle.',
+          description:
+            'Existing task ids that are sub-tasks of this one. Accumulates. Rejected if it would create a cycle.',
         },
       },
       required: ['spaceId'],
@@ -128,20 +132,26 @@ function writeTaskTool() {
         errors.push('`spaceId` must be a non-empty string.');
       } else if (!looksLikeSpaceId(spaceId)) {
         errors.push(
-          '`spaceId` does not look like a real space id — copy it verbatim from the prompt\'s spaceId fact, never guess or reconstruct it.'
+          "`spaceId` does not look like a real space id — copy it verbatim from the prompt's spaceId fact, never guess or reconstruct it."
         );
       }
       if (!id && !title) {
-        errors.push('`title` is required when creating a task (no `id` given).');
+        errors.push(
+          '`title` is required when creating a task (no `id` given).'
+        );
       }
       if (!id && !type) {
         errors.push('`type` is required when creating a task (no `id` given).');
       }
       if (type !== undefined && !ALLOWED_TYPES.has(type)) {
-        errors.push(`\`type\` must be one of: ${[...ALLOWED_TYPES].join(', ')}.`);
+        errors.push(
+          `\`type\` must be one of: ${[...ALLOWED_TYPES].join(', ')}.`
+        );
       }
       if (status !== undefined && !ALLOWED_STATUSES.has(status)) {
-        errors.push(`\`status\` must be one of: ${[...ALLOWED_STATUSES].join(', ')}.`);
+        errors.push(
+          `\`status\` must be one of: ${[...ALLOWED_STATUSES].join(', ')}.`
+        );
       }
       if (
         confidence !== undefined &&
@@ -168,10 +178,12 @@ function writeTaskTool() {
         // reaches the same log aggregation everything else does, and is
         // correlatable by timestamp against the surrounding job-log entries.
         console.warn(
-          `[collab-agent:write-task] rejected: invalid parameters ${JSON.stringify({
-            params,
-            errors,
-          })}`
+          `[collab-agent:write-task] rejected: invalid parameters ${JSON.stringify(
+            {
+              params,
+              errors,
+            }
+          )}`
         );
         return { ok: false, errors };
       }
@@ -183,8 +195,9 @@ function writeTaskTool() {
         // read, but they run inside the extract:${spaceId} lock (see
         // flow/run-message-flow.js), so there's no concurrent-write race here.
         const priorStatus = id
-          ? ((await readTasksState({ spaceId })).tasks.find((existing) => existing.id === id)
-              ?.status ?? null)
+          ? ((await readTasksState({ spaceId })).tasks.find(
+              (existing) => existing.id === id
+            )?.status ?? null)
           : 'unapproved';
 
         // Creating a task with no explicit status: default to 'backlog' for
@@ -196,7 +209,11 @@ function writeTaskTool() {
         // either way — omitting status there already preserves the prior
         // value in upsertTask.
         const effectiveStatus =
-          status !== undefined ? status : !id && assigned !== 'agent' ? 'backlog' : undefined;
+          status !== undefined
+            ? status
+            : !id && assigned !== 'agent'
+              ? 'backlog'
+              : undefined;
 
         let task = await upsertTask({
           spaceId,
@@ -228,7 +245,8 @@ function writeTaskTool() {
         // otherwise tasks-store.js's documented default.
         const activeConfig = await readActiveConfig({ spaceId });
         const confidenceThreshold =
-          activeConfig?.config?.proactivityThreshold ?? CONFIDENCE_AUTO_APPROVE_THRESHOLD;
+          activeConfig?.config?.proactivityThreshold ??
+          CONFIDENCE_AUTO_APPROVE_THRESHOLD;
 
         if (
           task.assigned === 'agent' &&
@@ -242,7 +260,8 @@ function writeTaskTool() {
             patch: {
               status: 'in_progress',
               delegation: {
-                target: DEFAULT_DELEGATION_TARGET_BY_TYPE[task.type] ?? 'dev-swarm',
+                target:
+                  DEFAULT_DELEGATION_TARGET_BY_TYPE[task.type] ?? 'dev-swarm',
                 delegatedAt: new Date().toISOString(),
               },
             },
@@ -252,11 +271,13 @@ function writeTaskTool() {
         return { ok: true, task };
       } catch (err) {
         console.warn(
-          `[collab-agent:write-task] rejected: threw during write ${JSON.stringify({
-            params,
-            error: err?.message ?? String(err),
-            stack: err?.stack ?? null,
-          })}`
+          `[collab-agent:write-task] rejected: threw during write ${JSON.stringify(
+            {
+              params,
+              error: err?.message ?? String(err),
+              stack: err?.stack ?? null,
+            }
+          )}`
         );
         return { ok: false, errors: [err?.message ?? String(err)] };
       }

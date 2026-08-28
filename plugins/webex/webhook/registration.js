@@ -142,6 +142,25 @@ async function ensureWebhooks({ cfg, account, log }) {
     },
   });
 
+  // Ensure membership-addition webhook — same target/identity, sibling to
+  // the removal one above. Lets the bot send the config card immediately
+  // on being added to a space (inbound/membership.js), instead of waiting
+  // for someone to explicitly ask for it — which also means the member
+  // cache (config/handle-request.js's refreshCachedMembers) is populated
+  // from the start rather than staying empty until the first config
+  // request.
+  const membershipCreatedWebhook = await ensureWebhook({
+    token: botToken,
+    log,
+    webhook: {
+      name: 'OpenClaw Bot Membership Added Observer',
+      targetUrl: cfg.botWebhookUrl,
+      resource: 'memberships',
+      event: 'created',
+      secret: cfg.webhookSecret,
+    },
+  });
+
   // Log registration
   log?.info?.(
     `[webex:${account.accountId}] webhooks registered ${JSON.stringify({
@@ -150,6 +169,7 @@ async function ensureWebhooks({ cfg, account, log }) {
       oauthWebhookId: oauthWebhook.id,
       oauthWebhookUrl: cfg.oauthWebhookUrl,
       membershipWebhookId: membershipWebhook.id,
+      membershipCreatedWebhookId: membershipCreatedWebhook.id,
     })}`
   );
 
@@ -180,6 +200,7 @@ async function ensureWebhooks({ cfg, account, log }) {
     botWebhook,
     oauthWebhook,
     membershipWebhook,
+    membershipCreatedWebhook,
   };
 }
 

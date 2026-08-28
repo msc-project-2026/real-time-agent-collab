@@ -5,39 +5,26 @@
 // plus a small batch), this step gets the full thread window — it needs
 // enough context to actually decide what, if anything, to say. Phase 6 adds
 // the active-tasks injection (so a reply can reference a task from a prior
-// turn's extraction)
-// and the search_tasks tool for anything outside that set — task *writing*
-// stays extract's job; respond never gets write_task (see phase-6 plan:
-// Concurrency / tool visibility — no per-step tool allowlist exists, so the
-// only lever here is telling the model exactly which tools are its job,
-// the same pattern submit_gate_decision's own description already relies on).
+// turn's extraction) and the search_tasks tool for anything outside that
+// set — task *writing* stays extract's job; respond never gets write_task
+// (see phase-6 plan: Concurrency / tool visibility — no per-step tool
+// allowlist exists, so the only lever here is telling the model exactly
+// which tools are its job, the same pattern submit_gate_decision's own
+// description already relies on).
 // Phase 7 adds search_recall (v3 §9) for on-demand recall of something from
 // earlier history — possibly a different thread — that isn't already in
 // the window above.
 
-const { formatWindowSections } = require('../format-window');
-
-function formatTaskEntry(task) {
-  return {
-    id: task.id,
-    title: task.title,
-    type: task.type,
-    status: task.status,
-    assigned: task.assigned,
-    deadline: task.deadline,
-  };
-}
+const {
+  formatWindowSections,
+  formatMemberEntry,
+  formatTaskEntry,
+} = require('../format-window');
 
 function formatKnownFacts(knownFacts) {
   const lines = [`- This Webex space's id: \`${knownFacts?.spaceId ?? 'unknown'}\``];
   if (knownFacts?.boardUrl) {
     lines.push(`- Task board URL for this space: ${knownFacts.boardUrl}`);
-  }
-  if (Array.isArray(knownFacts?.members) && knownFacts.members.length > 0) {
-    const memberList = knownFacts.members
-      .map((member) => `${member.name} (id: \`${member.id}\`)`)
-      .join(', ');
-    lines.push(`- Members of this space: ${memberList}`);
   }
   return lines.join('\n');
 }
@@ -56,7 +43,11 @@ function buildRespondInstruction({
   if (!threadKey) throw new Error('threadKey is required');
 
   const sections = formatWindowSections({ window, messageIds });
-  const tasks = (Array.isArray(activeTasks) ? activeTasks : []).map(formatTaskEntry);
+  const memberList = Array.isArray(knownFacts?.members) ? knownFacts.members : [];
+  const tasks = (Array.isArray(activeTasks) ? activeTasks : []).map((task) =>
+    formatTaskEntry(task, memberList)
+  );
+  const spaceMembers = memberList.map(formatMemberEntry);
 
   return `
 ## Task
@@ -89,6 +80,14 @@ Tasks currently tracked for this space, most recently updated first. You may ref
 
 \`\`\`json
 ${JSON.stringify(tasks, null, 2)}
+\`\`\`
+
+### Space members
+
+The real people in this space.
+
+\`\`\`json
+${JSON.stringify(spaceMembers, null, 2)}
 \`\`\`
 
 ### Facts

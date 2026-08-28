@@ -370,14 +370,18 @@ describe('webhook registration lifecycle', () => {
 
     assert.equal(result.botWebhook.id, 'bot-keep');
     assert.equal(result.oauthWebhook.id, 'created-1');
-    // Membership-removal webhook shares the bot's own target — created
-    // fresh alongside the kept attachmentActions one.
+    // Membership-removal and membership-addition webhooks share the bot's
+    // own target — created fresh alongside the kept attachmentActions one.
     assert.equal(result.membershipWebhook.id, 'created-2');
     assert.equal(result.membershipWebhook.resource, 'memberships');
     assert.equal(result.membershipWebhook.event, 'deleted');
+    assert.equal(result.membershipCreatedWebhook.id, 'created-3');
+    assert.equal(result.membershipCreatedWebhook.resource, 'memberships');
+    assert.equal(result.membershipCreatedWebhook.event, 'created');
     assert.deepEqual(state['bot-token'].map((entry) => entry.id), [
       'bot-keep',
       'created-2',
+      'created-3',
     ]);
     assert.equal(state['oauth-token'][0].secret, 'webhook-secret');
   });

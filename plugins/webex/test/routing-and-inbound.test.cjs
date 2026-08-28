@@ -16,6 +16,7 @@ describe('inbound webhook identity dispatch', () => {
     const handleInboundWebexMessage = t.mock.fn(async () => 'message-result');
     const handleInboundWebexAttachmentAction = t.mock.fn(async () => 'action-result');
     const handleInboundWebexMembershipDeleted = t.mock.fn(async () => 'membership-result');
+    const handleInboundWebexMembershipCreated = t.mock.fn(async () => 'membership-created-result');
     const loaded = loadWithMocks(require.resolve('../inbound/index'), {
       [require.resolve('../inbound/message')]: { handleInboundWebexMessage },
       [require.resolve('../inbound/attachment-actions')]: {
@@ -23,6 +24,7 @@ describe('inbound webhook identity dispatch', () => {
       },
       [require.resolve('../inbound/membership')]: {
         handleInboundWebexMembershipDeleted,
+        handleInboundWebexMembershipCreated,
       },
     });
     t.after(loaded.restore);
@@ -40,6 +42,10 @@ describe('inbound webhook identity dispatch', () => {
       { resource: 'memberships', event: 'deleted', data: { roomId: 'space-1', personId: 'bot-1' } },
       { ...ctx, identity: 'bot' }
     );
+    const membershipCreatedResult = await loaded.subject.handleInboundWebexWebhook(
+      { resource: 'memberships', event: 'created', data: { roomId: 'space-1', personId: 'bot-1' } },
+      { ...ctx, identity: 'bot' }
+    );
     const ignored = await loaded.subject.handleInboundWebexWebhook(
       { resource: 'messages', event: 'deleted' },
       { ...ctx, identity: 'oauth' }
@@ -48,10 +54,12 @@ describe('inbound webhook identity dispatch', () => {
     assert.equal(messageResult, 'message-result');
     assert.equal(actionResult, 'action-result');
     assert.equal(membershipResult, 'membership-result');
+    assert.equal(membershipCreatedResult, 'membership-created-result');
     assert.equal(ignored, undefined);
     assert.equal(handleInboundWebexMessage.mock.callCount(), 1);
     assert.equal(handleInboundWebexAttachmentAction.mock.callCount(), 1);
     assert.equal(handleInboundWebexMembershipDeleted.mock.callCount(), 1);
+    assert.equal(handleInboundWebexMembershipCreated.mock.callCount(), 1);
   });
 });
 
@@ -137,6 +145,97 @@ describe('membership-deletion cleanup', () => {
     );
 
     assert.equal(fsRm.mock.callCount(), 0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Category: Membership-addition config-card send (new feature).
+// A memberships:created webhook carries the full membership object inline,
+// same as the deletion one — only the bot's own addition should trigger
+// anything, since another member joining isn't this plugin's concern.
+// ---------------------------------------------------------------------------
+
+describe('membership-addition config card', () => {
+  function loadMembershipCreatedHandler(t, overrides = {}) {
+    const handleConfigRequest =
+      overrides.handleConfigRequest ?? t.mock.fn(async () => undefined);
+    const loaded = loadWithMocks(require.resolve('../inbound/membership'), {
+      [require.resolve('../config/handle-request')]: { handleConfigRequest },
+    });
+    t.after(loaded.restore);
+    return { ...loaded.subject, handleConfigRequest };
+  }
+
+  test('sends the config card when the bot itself is added to a space', async (t) => {
+    const { handleInboundWebexMembershipCreated, handleConfigRequest } =
+      loadMembershipCreatedHandler(t);
+
+    await handleInboundWebexMembershipCreated(
+      {
+        resource: 'memberships',
+        event: 'created',
+        data: { roomId: 'space-1', personId: 'bot-1' },
+      },
+      { botId: 'bot-1', account: { accountId: 'default' }, log: makeLog(t) }
+    );
+
+    assert.equal(handleConfigRequest.mock.callCount(), 1);
+    const call = handleConfigRequest.mock.calls[0].arguments[0];
+    assert.equal(call.spaceId, 'space-1');
+    assert.equal(call.threadKey, '__main__');
+    assert.equal(call.message, undefined);
+    assert.equal(call.isBotMentioned, false);
+    assert.equal(call.botId, 'bot-1');
+  });
+
+  test('ignores another member joining the space', async (t) => {
+    const { handleInboundWebexMembershipCreated, handleConfigRequest } =
+      loadMembershipCreatedHandler(t);
+
+    await handleInboundWebexMembershipCreated(
+      {
+        resource: 'memberships',
+        event: 'created',
+        data: { roomId: 'space-1', personId: 'person-1' },
+      },
+      { botId: 'bot-1', account: { accountId: 'default' }, log: makeLog(t) }
+    );
+
+    assert.equal(handleConfigRequest.mock.callCount(), 0);
+  });
+
+  test('ignores non-creation or non-membership payloads', async (t) => {
+    const { handleInboundWebexMembershipCreated, handleConfigRequest } =
+      loadMembershipCreatedHandler(t);
+    const ctx = { botId: 'bot-1', account: { accountId: 'default' }, log: makeLog(t) };
+
+    await handleInboundWebexMembershipCreated(
+      { resource: 'memberships', event: 'deleted', data: { roomId: 'space-1', personId: 'bot-1' } },
+      ctx
+    );
+    await handleInboundWebexMembershipCreated(
+      { resource: 'messages', event: 'created', data: { roomId: 'space-1', personId: 'bot-1' } },
+      ctx
+    );
+
+    assert.equal(handleConfigRequest.mock.callCount(), 0);
+  });
+
+  test('tolerates a payload missing roomId or personId', async (t) => {
+    const { handleInboundWebexMembershipCreated, handleConfigRequest } =
+      loadMembershipCreatedHandler(t);
+    const ctx = { botId: 'bot-1', account: { accountId: 'default' }, log: makeLog(t) };
+
+    await handleInboundWebexMembershipCreated(
+      { resource: 'memberships', event: 'created', data: { personId: 'bot-1' } },
+      ctx
+    );
+    await handleInboundWebexMembershipCreated(
+      { resource: 'memberships', event: 'created', data: { roomId: 'space-1' } },
+      ctx
+    );
+
+    assert.equal(handleConfigRequest.mock.callCount(), 0);
   });
 });
 
