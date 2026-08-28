@@ -1,0 +1,109 @@
+{
+  "id": "eval-s00-smoke",
+  "title": "Smoke test: dashboard demo prep",
+  "type": "smoke",
+  "participants": [
+    { "name": "Maya", "personId": "eval-maya", "email": "maya@eval.test" },
+    { "name": "Ben", "personId": "eval-ben", "email": "ben@eval.test" },
+    { "name": "Aisha", "personId": "eval-aisha", "email": "aisha@eval.test" }
+  ],
+  "metadata": {
+    "purpose": "Shortest scenario that still exercises every pipeline step at least once: gate tagging, task extraction, a threaded reply, a task update, a noise message that must not become a task, and one direct question that forces respond.",
+    "expectedDifficulty": "low"
+  },
+  "messages": [
+    {
+      "number": 1,
+      "sender": "Maya",
+      "where": "top-level",
+      "text": "Morning all, quick sync on the reporting dashboard before Thursday's demo.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 2,
+      "sender": "Ben",
+      "where": "top-level",
+      "text": "The export button still says download everything, but it only exports the filtered rows.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 3,
+      "sender": "Maya",
+      "where": "reply to 2",
+      "replyTo": 2,
+      "text": "Let's rename it to export filtered results before the demo.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 4,
+      "sender": "Aisha",
+      "where": "top-level",
+      "text": "Unrelated, but the coffee machine on floor 3 is broken again.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 5,
+      "sender": "Maya",
+      "where": "top-level",
+      "text": "The other open one is permissions. Managers should only see their own accounts before we demo it.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 6,
+      "sender": "Ben",
+      "where": "reply to 2",
+      "replyTo": 2,
+      "text": "Done, the button now says export filtered results and the snapshot is updated.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 7,
+      "sender": "Aisha",
+      "where": "top-level",
+      "text": "@Collaboration what is still open before the demo?",
+      "expectedTags": { "isAddressed": true, "configRequest": false }
+    }
+  ],
+  "expectedTasks": [
+    {
+      "id": "task-01",
+      "title": "Rename the export button to export filtered results",
+      "type": "development",
+      "evidenceMessages": [2, 3, 6],
+      "expectedStatus": "done",
+      "notes": "Raised in 2, made explicit in 3, completed in 6."
+    },
+    {
+      "id": "task-02",
+      "title": "Restrict dashboard visibility so managers only see their own accounts",
+      "type": "development",
+      "evidenceMessages": [5],
+      "expectedStatus": "backlog",
+      "notes": "Still open at the end of the scenario."
+    }
+  ],
+  "updates": [
+    {
+      "taskId": "task-01",
+      "afterMessage": 6,
+      "expectedStatus": "done",
+      "notes": "Message 6 completes the rename rather than creating a second task."
+    }
+  ],
+  "recallChecks": [
+    {
+      "questionMessageNumber": 7,
+      "question": "@Collaboration what is still open before the demo?",
+      "expectedAnswerPoints": [
+        "Permissions work is still open: managers should only see their own accounts.",
+        "The export button rename is already done."
+      ],
+      "evidenceMessages": [3, 5, 6],
+      "notes": "Must not report the export rename as outstanding, and must not mention the coffee machine."
+    }
+  ],
+  "contextNotes": [
+    "Message 4 is deliberate noise and should not be extracted as a task. A broken coffee machine also falls outside the closed development/design/research taxonomy, so extracting it would be a double failure.",
+    "Messages 3 and 6 are threaded replies to message 2, so the thread window is exercised alongside the main space."
+  ]
+}
