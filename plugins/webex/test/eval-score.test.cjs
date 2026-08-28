@@ -273,6 +273,44 @@ describe('scoreTasksJudge', () => {
     assert.match(seen[0], /Rename it to export filtered results/);
   });
 
+  // Regression guard for a real judge-harness bug: the first live judge run
+  // failed a task for "inventing" wording that was verbatim in a message the
+  // judge had never been shown, because only cited-evidence messages were
+  // included. Extraction sees the whole thread, so the judge must too.
+  test('the judge sees uncited messages too, with cited ones marked', async (t) => {
+    const b = bundle({
+      messages: [
+        { number: 1, sender: 'Maya', text: 'Sync on the reporting dashboard before Thursday.' },
+        { number: 5, sender: 'Maya', text: 'Managers should only see their own accounts.' },
+      ],
+      expectedTasks: [
+        { id: 'task-02', title: 'Restrict visibility', type: 'development', evidenceMessages: [5] },
+      ],
+      tasks: [
+        {
+          id: 't2',
+          title: 'Restrict manager visibility in the reporting dashboard',
+          type: 'development',
+          message_ids: [mid(5)],
+        },
+      ],
+    });
+    const taskScore = scoreTasks(b);
+
+    let prompt = null;
+    const judge = async ({ user }) => {
+      prompt = user;
+      return { ok: true, verdict: { verdict: 'pass', score: 1, rationale: 'ok' } };
+    };
+    await scoreTasksJudge({ bundle: b, taskScore, judge });
+
+    // Message 1 is not cited, but must still be visible as context.
+    assert.match(prompt, /reporting dashboard before Thursday/);
+    // Cited lines are marked, uncited ones are not.
+    assert.match(prompt, /->\s*\[5\]/);
+    assert.doesNotMatch(prompt, /->\s*\[1\]/);
+  });
+
   test('a failed judge call is recorded as unjudged rather than aborting the run', async () => {
     const b = bundle({
       messages: [{ number: 2, sender: 'Ben', text: 'x' }],
