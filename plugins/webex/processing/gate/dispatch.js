@@ -29,6 +29,7 @@ const { safeSegment } = require('../../storage/paths');
 const { buildTaggingInstruction } = require('./instruction');
 const { takePendingTagResult } = require('./tool');
 const { appendTaggingValidationRecord } = require('./validation-log');
+const { usageFromEmbeddedResult } = require('../usage/from-result');
 const { getCollabAgentId } = require('../../runtime');
 
 const DEFAULT_WAIT_TIMEOUT_MS = 15_000;
@@ -70,6 +71,10 @@ async function runTaggingGate({
   const agentId = getCollabAgentId();
   const sessionKey = `agent:${agentId}:webex:${spaceId}:tagging-gate:${safeSegment(threadKey)}`;
   const runId = `tagging-gate-${Date.now()}`;
+  // Unique per spawn (unlike sessionKey, which repeats for every message in a
+  // thread) — this is the join key phase-8 usage capture uses to attribute a
+  // `model.usage` event back to this exact step run. See flow/job-log.js.
+  const sessionId = `${runId}-${randomSessionSuffix()}`;
 
   const cfg = pluginRuntime.config.current();
   const workspaceDir = pluginRuntime.agent.resolveAgentWorkspaceDir(
@@ -87,7 +92,7 @@ async function runTaggingGate({
     const sessionFile = path.join(tempDir, 'session.jsonl');
 
     result = await pluginRuntime.agent.runEmbeddedAgent({
-      sessionId: `${runId}-${randomSessionSuffix()}`,
+      sessionId,
       sessionKey,
       agentId,
       sessionFile,
@@ -116,6 +121,7 @@ async function runTaggingGate({
   }
 
   const toolCallAttempts = readToolCallCount(result);
+  const usage = usageFromEmbeddedResult(result);
 
   const tagResult = takePendingTagResult(spaceId, threadKey);
 
@@ -149,10 +155,11 @@ async function runTaggingGate({
   // validation record above — that record is a pure audit trail of what
   // the model actually produced via submit_gate_decision, and shouldn't be
   // contaminated with plugin-internal call metadata. The caller
-  // (run-message-flow.js) needs these two fields for its own job-log entry
+  // (run-message-flow.js) needs these fields for its own job-log entry
   // and dispatch-decision log line, the same way extract/respond/summarize
-  // already thread runId/sessionKey back to their callers.
-  return { ...tagResult, sessionKey, runId };
+  // already thread runId/sessionKey/sessionId back to their callers. `usage`
+  // is the per-turn token accounting (processing/usage/from-result.js).
+  return { ...tagResult, sessionKey, runId, sessionId, usage };
 }
 
 function randomSessionSuffix() {

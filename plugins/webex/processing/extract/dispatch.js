@@ -23,6 +23,7 @@ const { getActiveTasks } = require('../../storage/tasks-store');
 const { getSpaceMembers } = require('../../config/members');
 const { safeSegment } = require('../../storage/paths');
 const { buildExtractInstruction } = require('./instruction');
+const { usageFromEmbeddedResult } = require('../usage/from-result');
 const { getCollabAgentId } = require('../../runtime');
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -50,6 +51,9 @@ async function runExtractStep({
   const agentId = getCollabAgentId();
   const sessionKey = `agent:${agentId}:webex:${spaceId}:extract:${safeSegment(threadKey)}`;
   const runId = `extract-${Date.now()}`;
+  // Unique per spawn — the join key phase-8 usage capture uses to attribute
+  // a `model.usage` event to this step run (sessionKey repeats per message).
+  const sessionId = `${runId}-${Math.random().toString(36).slice(2, 10)}`;
 
   const cfg = pluginRuntime.config.current();
   const workspaceDir = pluginRuntime.agent.resolveAgentWorkspaceDir(cfg, agentId);
@@ -62,7 +66,7 @@ async function runExtractStep({
     const sessionFile = path.join(tempDir, 'session.jsonl');
 
     result = await pluginRuntime.agent.runEmbeddedAgent({
-      sessionId: `${runId}-${Math.random().toString(36).slice(2, 10)}`,
+      sessionId,
       sessionKey,
       agentId,
       sessionFile,
@@ -84,6 +88,7 @@ async function runExtractStep({
   }
 
   const toolCalls = readToolCallCount(result);
+  const usage = usageFromEmbeddedResult(result);
 
   log?.info?.(
     `[collab-agent:extract] extract step completed ${JSON.stringify({
@@ -102,6 +107,8 @@ async function runExtractStep({
     toolCalls,
     sessionKey,
     runId,
+    sessionId,
+    usage,
   };
 }
 

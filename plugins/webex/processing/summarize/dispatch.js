@@ -21,6 +21,7 @@ const { getThread } = require('../../storage/threads-store');
 const { readRecallEntries } = require('../../storage/recall-store');
 const { safeSegment } = require('../../storage/paths');
 const { buildSummarizeInstruction } = require('./instruction');
+const { usageFromEmbeddedResult } = require('../usage/from-result');
 const { getCollabAgentId } = require('../../runtime');
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -73,6 +74,9 @@ async function runSummarizeStep({
   const agentId = getCollabAgentId();
   const sessionKey = `agent:${agentId}:webex:${spaceId}:summarize:${safeSegment(threadKey)}`;
   const runId = `summarize-${Date.now()}`;
+  // Unique per spawn — the join key phase-8 usage capture uses to attribute
+  // a `model.usage` event to this step run (sessionKey repeats per message).
+  const sessionId = `${runId}-${Math.random().toString(36).slice(2, 10)}`;
 
   const cfg = pluginRuntime.config.current();
   const workspaceDir = pluginRuntime.agent.resolveAgentWorkspaceDir(cfg, agentId);
@@ -85,7 +89,7 @@ async function runSummarizeStep({
     const sessionFile = path.join(tempDir, 'session.jsonl');
 
     result = await pluginRuntime.agent.runEmbeddedAgent({
-      sessionId: `${runId}-${Math.random().toString(36).slice(2, 10)}`,
+      sessionId,
       sessionKey,
       agentId,
       sessionFile,
@@ -107,6 +111,7 @@ async function runSummarizeStep({
   }
 
   const toolCalls = readToolCallCount(result);
+  const usage = usageFromEmbeddedResult(result);
 
   log?.info?.(
     `[collab-agent:summarize] summarize step completed ${JSON.stringify({
@@ -125,6 +130,8 @@ async function runSummarizeStep({
     toolCalls,
     sessionKey,
     runId,
+    sessionId,
+    usage,
   };
 }
 

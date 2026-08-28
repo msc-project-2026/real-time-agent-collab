@@ -19,6 +19,7 @@ const { getActiveTasks } = require('../../storage/tasks-store');
 const { getSpaceMembers } = require('../../config/members');
 const { safeSegment } = require('../../storage/paths');
 const { buildRespondInstruction } = require('./instruction');
+const { usageFromEmbeddedResult } = require('../usage/from-result');
 const { getCollabAgentId } = require('../../runtime');
 const { deriveBoardUrl } = require('../board-url');
 const { resolveReplyThreadId } = require('../../send');
@@ -110,6 +111,9 @@ async function runRespondStep({
   const agentId = getCollabAgentId();
   const sessionKey = `agent:${agentId}:webex:${spaceId}:respond:${safeSegment(threadKey)}`;
   const runId = `respond-${Date.now()}`;
+  // Unique per spawn — the join key phase-8 usage capture uses to attribute
+  // a `model.usage` event to this step run (sessionKey repeats per message).
+  const sessionId = `${runId}-${Math.random().toString(36).slice(2, 10)}`;
 
   const cfg = pluginRuntime.config.current();
   const workspaceDir = pluginRuntime.agent.resolveAgentWorkspaceDir(
@@ -125,7 +129,7 @@ async function runRespondStep({
     const sessionFile = path.join(tempDir, 'session.jsonl');
 
     result = await pluginRuntime.agent.runEmbeddedAgent({
-      sessionId: `${runId}-${Math.random().toString(36).slice(2, 10)}`,
+      sessionId,
       sessionKey,
       agentId,
       sessionFile,
@@ -148,6 +152,7 @@ async function runRespondStep({
   }
 
   const toolCalls = readToolCallCount(result);
+  const usage = usageFromEmbeddedResult(result);
 
   log?.info?.(
     `[collab-agent:respond] respond step completed ${JSON.stringify({
@@ -178,6 +183,8 @@ async function runRespondStep({
     toolCalls,
     sessionKey,
     runId,
+    sessionId,
+    usage,
     didSend: Boolean(result?.didSendViaMessagingTool),
   };
 }

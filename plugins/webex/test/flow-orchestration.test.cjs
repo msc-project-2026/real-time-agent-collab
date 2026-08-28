@@ -55,6 +55,8 @@ function loadFlow(t, overrides = {}) {
       pendingThreadWindowDecision: { sliceReady: false, reason: 'Not yet.' },
       sessionKey: 'agent:main:webex:space-1:tagging-gate:__main__',
       runId: 'tagging-gate-123',
+      sessionId: 'tagging-gate-123-abc',
+      usage: { provider: 'cisco', model: 'haiku', durationMs: 900, usage: { input: 80, output: 12, total: 92 } },
     })),
     handleConfigRequest: t.mock.fn(async () => undefined),
     getPendingSlice: t.mock.fn(async () => [{ id: 'message-1' }]),
@@ -66,6 +68,8 @@ function loadFlow(t, overrides = {}) {
       toolCalls: 0,
       sessionKey: 'agent:main:webex:space-1:respond:__main__',
       runId: 'respond-123',
+      sessionId: 'respond-123-abc',
+      usage: { provider: 'cisco', model: 'haiku', durationMs: 1500, usage: { input: 250, output: 120, total: 370 } },
       didSend: false,
     })),
     runExtractStep: t.mock.fn(async () => ({
@@ -74,6 +78,8 @@ function loadFlow(t, overrides = {}) {
       toolCalls: 0,
       sessionKey: 'agent:main:webex:space-1:extract:__main__',
       runId: 'extract-123',
+      sessionId: 'extract-123-abc',
+      usage: { provider: 'cisco', model: 'haiku', durationMs: 2000, usage: { input: 400, output: 60, total: 460 } },
     })),
     runSummarizeStep: t.mock.fn(async () => ({
       outcome: 'success',
@@ -81,6 +87,8 @@ function loadFlow(t, overrides = {}) {
       toolCalls: 0,
       sessionKey: 'agent:main:webex:space-1:summarize:__main__',
       runId: 'summarize-123',
+      sessionId: 'summarize-123-abc',
+      usage: null,
     })),
     runTaskNotifyStep: t.mock.fn(async () => ({ outcome: 'success', notified: [] })),
     sendThinkingAck: t.mock.fn(async () => ({ outcome: 'success' })),
@@ -177,6 +185,8 @@ describe('runMessageFlow — nothing warranted', () => {
     assert.ok(gateLogCall, 'expected a job-log entry for the gate step');
     assert.equal(gateLogCall.arguments[0].sessionKey, 'agent:main:webex:space-1:tagging-gate:__main__');
     assert.equal(gateLogCall.arguments[0].runId, 'tagging-gate-123');
+    assert.equal(gateLogCall.arguments[0].sessionId, 'tagging-gate-123-abc');
+    assert.equal(gateLogCall.arguments[0].usage.usage.total, 92);
 
     const dispatchDecisionCall = log.info.mock.calls.find((call) =>
       call.arguments[0].includes('dispatch decision')
@@ -187,6 +197,36 @@ describe('runMessageFlow — nothing warranted', () => {
     );
     assert.equal(logged.gateSessionKey, 'agent:main:webex:space-1:tagging-gate:__main__');
     assert.equal(logged.gateRunId, 'tagging-gate-123');
+  });
+
+  // Phase 8: every model-backed step threads its sessionId + per-turn usage
+  // into the job log, so processing/usage/summary.js can aggregate token
+  // cost per step across a space's job logs.
+  test('threads sessionId + usage from extract/summarize/respond into their job-log entries', async (t) => {
+    const { runMessageFlow, collaborators } = loadFlow(t, {
+      dispatchTaggingGate: t.mock.fn(async () => ({
+        messageTags: { isAddressed: true, configRequest: false },
+        pendingThreadWindowDecision: { sliceReady: true, reason: 'Addressed.' },
+        sessionKey: 'agent:main:webex:space-1:tagging-gate:__main__',
+        runId: 'tagging-gate-123',
+        sessionId: 'tagging-gate-123-abc',
+        usage: { provider: 'cisco', model: 'haiku', durationMs: 900, usage: { input: 80, output: 12, total: 92 } },
+      })),
+    });
+
+    await runMessageFlow(baseParams(t, { message: { id: 'message-1', mentionedPeople: ['bot-1'] } }));
+
+    const byStep = (step) =>
+      collaborators.appendJobLogEntry.mock.calls
+        .map((call) => call.arguments[0])
+        .find((entry) => entry.step === step);
+
+    assert.equal(byStep('extract').sessionId, 'extract-123-abc');
+    assert.equal(byStep('extract').usage.usage.total, 460);
+    assert.equal(byStep('summarize').sessionId, 'summarize-123-abc');
+    assert.equal(byStep('summarize').usage, null);
+    assert.equal(byStep('respond').sessionId, 'respond-123-abc');
+    assert.equal(byStep('respond').usage.usage.total, 370);
   });
 });
 
