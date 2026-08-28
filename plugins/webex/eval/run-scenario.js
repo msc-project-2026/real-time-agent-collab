@@ -30,10 +30,7 @@ const { handleHydratedWebexMessage } = require('../inbound/message');
 const { writeActiveConfig, writeCachedMembers } = require('../config/store');
 const { readJobLogEntries } = require('../flow/job-log');
 const { summarizeUsage } = require('../processing/usage/summary');
-const {
-  readTasksState,
-  readTaskParentIndex,
-} = require('../storage/tasks-store');
+const { readTasksState } = require('../storage/tasks-store');
 const { readRecallEntries } = require('../storage/recall-store');
 const { getThreads } = require('../storage/threads-store');
 const {
@@ -301,7 +298,6 @@ async function runScenario({ scenario, variant = 'baseline', overrides = {}, log
 
   // -- collect final state from disk --
   const tasksState = await readTasksState({ spaceId });
-  const taskParentIndex = await readTaskParentIndex({ spaceId });
   const recallEntries = await readRecallEntries({ spaceId });
   const threads = await getThreads({ spaceId, limit: 1000 });
   const jobs = await readJobLogEntries({ spaceId });
@@ -328,7 +324,6 @@ async function runScenario({ scenario, variant = 'baseline', overrides = {}, log
     scenario,
     threads,
     tasks: tasksState.tasks ?? [],
-    taskParentRows: taskParentIndex.rows ?? [],
     recall: recallEntries,
     jobs,
     usageSummary,

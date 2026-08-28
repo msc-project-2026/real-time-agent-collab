@@ -50,7 +50,7 @@ async function resolveScenario(params) {
   return null;
 }
 
-async function handleEvalRun({ params, respond, logger }) {
+async function handleEvalRun({ params, respond }, logger) {
   let scenario;
   try {
     scenario = await resolveScenario(params);
@@ -95,7 +95,16 @@ async function handleEvalRun({ params, respond, logger }) {
 }
 
 function registerEvalGatewayMethod(api) {
-  api.registerGatewayMethod(METHOD_NAME, handleEvalRun, { scope: 'operator.write' });
+  // api.logger is passed explicitly rather than read off the handler's own
+  // opts: the gateway-method handler contract is not documented to provide a
+  // logger, and the first live run produced no gateway-side output at all,
+  // so every progress line was stranded in the bundle's in-memory runLog and
+  // lost when bundle assembly threw.
+  api.registerGatewayMethod(
+    METHOD_NAME,
+    (opts) => handleEvalRun(opts, api.logger),
+    { scope: 'operator.write' }
+  );
 }
 
 module.exports = {

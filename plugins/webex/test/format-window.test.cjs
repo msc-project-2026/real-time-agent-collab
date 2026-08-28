@@ -105,6 +105,10 @@ describe('formatWindowSections', () => {
 
     assert.deepEqual(sections.batch[0], {
       id: 'msg-1',
+      // senderId is rendered so extract can copy a member id verbatim into
+      // `assigned` rather than mapping a display name back to the member
+      // list. threadId/content stay stripped as storage-internal.
+      senderId: 'person-1',
       senderName: 'Ada',
       fromAgent: false,
       text: 'hello',

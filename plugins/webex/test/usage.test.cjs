@@ -106,6 +106,28 @@ describe('summarizeUsage', () => {
     assert.equal(total.total, 1455);
   });
 
+  // The provider's own `total` is overwritten with the last call's total by
+  // the embedded-agent runtime, so on a multi-call turn it can be far lower
+  // than input alone. `total` must therefore be computed from the billed
+  // buckets, never taken from the provider. Confirmed live on the first
+  // smoke run (gate: input 37453, output 221, reported total 18847).
+  test('computes total from billed buckets, ignoring an implausible provider total', () => {
+    const { total } = summarizeUsage([
+      {
+        step: 'gate',
+        usage: {
+          provider: 'cisco',
+          model: 'haiku',
+          durationMs: 5000,
+          usage: { input: 37453, output: 221, cacheRead: 0, cacheWrite: 0, total: 18847 },
+        },
+      },
+    ]);
+
+    assert.equal(total.total, 37674, 'total is input + output + cache buckets');
+    assert.equal(total.providerReportedTotal, 18847, 'raw provider total kept for comparison');
+  });
+
   test('orders known steps in pipeline order', () => {
     const { byStep } = summarizeUsage(records);
     assert.deepEqual(Object.keys(byStep), ['gate', 'extract', 'respond']);

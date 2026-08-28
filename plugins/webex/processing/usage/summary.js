@@ -21,16 +21,39 @@ function emptyBucket() {
     cacheRead: 0,
     cacheWrite: 0,
     reasoningTokens: 0,
+    // Computed here as input + output + cacheRead + cacheWrite. Deliberately
+    // NOT the provider's own `total` — see providerReportedTotal below.
     total: 0,
+    // The provider-reported `total`, summed, kept only for comparison.
+    // Do not use it for cost: the embedded-agent runtime accumulates
+    // input/output across every model call in a turn but then overwrites
+    // `total` with the *last call's* total
+    // (`if (usage && lastTurnTotal > 0) usage.total = lastTurnTotal`), so on
+    // any multi-call turn it is far too low. Confirmed live on the first
+    // smoke run: a two-call gate turn reported input 37453 / total 18847.
+    providerReportedTotal: 0,
     durationMs: 0,
   };
 }
 
+const SUMMED_KEYS = ['input', 'output', 'cacheRead', 'cacheWrite', 'reasoningTokens'];
+// The buckets a provider actually bills for; reasoning tokens are already
+// counted inside output.
+const BILLED_KEYS = ['input', 'output', 'cacheRead', 'cacheWrite'];
+
 function addInto(target, usage, durationMs) {
   target.calls += 1;
-  for (const key of ['input', 'output', 'cacheRead', 'cacheWrite', 'reasoningTokens', 'total']) {
+  for (const key of SUMMED_KEYS) {
     const v = usage?.[key];
     if (typeof v === 'number' && Number.isFinite(v)) target[key] += v;
+  }
+  for (const key of BILLED_KEYS) {
+    const v = usage?.[key];
+    if (typeof v === 'number' && Number.isFinite(v)) target.total += v;
+  }
+  const reported = usage?.total;
+  if (typeof reported === 'number' && Number.isFinite(reported)) {
+    target.providerReportedTotal += reported;
   }
   if (typeof durationMs === 'number' && Number.isFinite(durationMs)) {
     target.durationMs += durationMs;

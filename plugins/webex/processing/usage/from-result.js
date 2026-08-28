@@ -43,6 +43,36 @@ function normalizeUsageBuckets(raw) {
   return anyPresent ? buckets : null;
 }
 
+// Compact breakdown of what the runtime actually put in the system prompt.
+//
+// Exists because the first live smoke run showed ~18.7k input tokens per
+// model call against a gate instruction of only ~1.5k tokens, i.e. the
+// overwhelming majority of spend is fixed per-call overhead rather than
+// conversation content. Attributing that split is a reportable result in its
+// own right, so it is captured per step rather than diagnosed ad hoc.
+//
+// `meta.systemPromptReport` is built by the runtime's own
+// buildSystemPromptReport and measured in characters, not tokens. Only sizes
+// and names are kept here, never prompt text: these records are archived per
+// space and the prompts contain user message content.
+function promptBreakdownFromResult(result) {
+  const report = result?.meta?.systemPromptReport;
+  if (!report || typeof report !== 'object') return null;
+
+  const tools = Array.isArray(report.tools) ? report.tools : [];
+  const skills = Array.isArray(report.skills) ? report.skills : [];
+
+  return {
+    systemPromptChars: asFiniteNumber(report.systemPromptChars),
+    projectContextChars: asFiniteNumber(report.projectContextChars),
+    toolsSchemaChars: asFiniteNumber(report.toolsSchemaChars),
+    toolCount: tools.length,
+    toolNames: tools.map((tool) => tool?.name ?? null).filter(Boolean),
+    skillCount: skills.length,
+    skillNames: skills.map((skill) => skill?.name ?? null).filter(Boolean),
+  };
+}
+
 // Returns a plain usage summary for one embedded-agent turn, or null when the
 // result carries no usable usage data (e.g. the runtime didn't expose
 // agentMeta, or the turn never reached a model call).
@@ -63,10 +93,12 @@ function usageFromEmbeddedResult(result) {
     contextTokens: asFiniteNumber(agentMeta?.contextTokens),
     usage: usage ?? null,
     lastCallUsage: lastCallUsage ?? null,
+    prompt: promptBreakdownFromResult(result),
   };
 }
 
 module.exports = {
   usageFromEmbeddedResult,
   normalizeUsageBuckets,
+  promptBreakdownFromResult,
 };

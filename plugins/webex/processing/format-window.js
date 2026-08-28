@@ -31,6 +31,15 @@ function formatWindowEntry(entry, botId) {
   const fromAgent = Boolean(botId) && entry.senderId === botId;
   return {
     id: entry.id,
+    // senderId is rendered alongside senderName so a step that has to write
+    // an id (extract's `assigned`) can copy one verbatim instead of mapping
+    // a display name back to the member list itself. The first eval run
+    // showed both extracted tasks with no `assigned` at all, defaulting to
+    // tasks-store's 'unknown': the model was shown "Maya" in the messages
+    // and {id, name} in the member list, and did not bridge them. Same
+    // standing principle as the gate's identity fix — give the model stable
+    // ids, and resolve to names only for display.
+    senderId: fromAgent ? null : entry.senderId ?? null,
     senderName: fromAgent ? null : entry.senderName ?? null,
     fromAgent,
     botIsMentioned: Boolean(entry.botIsMentioned),
