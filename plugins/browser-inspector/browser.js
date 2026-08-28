@@ -229,10 +229,10 @@ async function inspectElement(url, selector, { timeout = NAV_TIMEOUT_MS } = {}) 
     const page = await context.newPage();
     await page.goto(url, { waitUntil: 'networkidle', timeout });
 
-    const handle = await page.$(selector);
-    if (!handle) return { found: false, selector };
+    const element = page.locator(selector).first();
+    if (await element.count() === 0) return { found: false, selector };
 
-    const info = await handle.evaluate((el) => {
+    const info = await element.evaluate((el) => {
       const rect = el.getBoundingClientRect();
       const style = window.getComputedStyle(el);
       const attrs = {};
