@@ -84,6 +84,19 @@
       {
         "id": "collab-agent",
         "agentDir": "plugins/webex/agent-identity",
+        "contextInjection": "never",
+        "tools": {
+          "profile": "minimal",
+          "alsoAllow": [
+            "submit_gate_decision",
+            "write_task",
+            "search_tasks",
+            "write_summary",
+            "search_recall",
+            "message"
+          ]
+        },
+        "skills": [],
         "memorySearch": {
           "provider": "openai",
           "model": "azure/text-embedding-3-small",
