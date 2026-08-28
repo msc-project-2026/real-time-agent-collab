@@ -26,7 +26,7 @@ Fail only when the extracted task:
 - is so vague that a reader could not tell what to do.
 
 Respond with JSON only, no prose:
-{"verdict": "pass" | "fail", "score": <0-1>, "rationale": "<one or two sentences>"}`;
+{"verdict": "pass" | "fail", "rationale": "<one or two sentences>"}`;
 
 function buildUserPrompt({ conversation, citedNumbers, observedTitle, observedDescription, referenceTitle }) {
   const cited = new Set(citedNumbers ?? []);
@@ -92,7 +92,6 @@ async function scoreTasksJudge({ bundle, taskScore, judge }) {
       observedTitle: pair.observedTitle,
       judged: ok,
       verdict: ok ? verdict.verdict ?? null : null,
-      score: ok ? verdict.score ?? null : null,
       rationale: ok ? verdict.rationale ?? null : null,
       error: ok ? null : error,
     });
@@ -109,10 +108,6 @@ async function scoreTasksJudge({ bundle, taskScore, judge }) {
       unjudged: results.length - judged.length,
       passed: passed.length,
       passRate: judged.length ? passed.length / judged.length : null,
-      meanScore: judged.length
-        ? judged.reduce((sum, r) => sum + (typeof r.score === 'number' ? r.score : 0), 0) /
-          judged.length
-        : null,
     },
   };
 }

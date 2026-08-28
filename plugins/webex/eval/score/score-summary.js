@@ -133,13 +133,11 @@ function renderMarkdown({ scorecard, gate, tasks, tasksJudge }) {
     lines.push('_No matched task pairs to judge._');
   } else {
     const f = s.taskFidelity;
-    lines.push(
-      `${f.passed}/${f.judged} passed (${pct(f.passRate)}), mean score ${f.meanScore === null ? 'n/a' : f.meanScore.toFixed(2)}.`
-    );
+    lines.push(`${f.passed}/${f.judged} passed (${pct(f.passRate)}).`);
     if (f.unjudged) lines.push(`${f.unjudged} pair(s) could not be judged.`);
     lines.push('');
     for (const r of tasksJudge?.results ?? []) {
-      const head = r.judged ? `**${r.verdict}** (${r.score})` : `**unjudged** — ${r.error}`;
+      const head = r.judged ? `**${r.verdict}**` : `**unjudged** — ${r.error}`;
       lines.push(`- \`${r.expectedId}\` ${head}: ${r.rationale ?? ''}`);
     }
   }

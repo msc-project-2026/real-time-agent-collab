@@ -259,7 +259,7 @@ describe('scoreTasksJudge', () => {
     const seen = [];
     const judge = async ({ user }) => {
       seen.push(user);
-      return { ok: true, verdict: { verdict: 'pass', score: 0.9, rationale: 'faithful' } };
+      return { ok: true, verdict: { verdict: 'pass', rationale: 'faithful' } };
     };
 
     const result = await scoreTasksJudge({ bundle: b, taskScore, judge });
@@ -300,7 +300,7 @@ describe('scoreTasksJudge', () => {
     let prompt = null;
     const judge = async ({ user }) => {
       prompt = user;
-      return { ok: true, verdict: { verdict: 'pass', score: 1, rationale: 'ok' } };
+      return { ok: true, verdict: { verdict: 'pass', rationale: 'ok' } };
     };
     await scoreTasksJudge({ bundle: b, taskScore, judge });
 
