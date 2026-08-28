@@ -1,0 +1,17 @@
+{
+  "name": "@openclaw/browser-inspector",
+  "version": "1.0.0",
+  "description": "Inspect webpages and post browser-analysis results to Webex",
+  "main": "index.js",
+  "private": true,
+  "type": "commonjs",
+  "openclaw": {
+    "extensions": ["./index.js"]
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "dependencies": {
+    "playwright": "^1.52.0"
+  }
+}

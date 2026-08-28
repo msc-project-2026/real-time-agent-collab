@@ -1,6 +1,6 @@
 'use strict';
 
-const { inspectPage, screenshotPage, inspectElement, getPageStructure } = require('../../lib/browser.js');
+const { inspectPage, screenshotPage, inspectElement, getPageStructure } = require('./browser.js');
 
 let saveIssue, readSourceFile, saveSuggestion, commitSuggestion, updateSuggestionStatus;
 try {

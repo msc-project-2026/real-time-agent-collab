@@ -2,8 +2,5 @@
   "name": "@collab/github",
   "version": "1.0.0",
   "main": "github.js",
-  "private": true,
-  "dependencies": {
-    "playwright": "^1.52.0"
-  }
+  "private": true
 }

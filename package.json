@@ -4,6 +4,7 @@
   "type": "module",
   "workspaces": [
     "lib",
+    "plugins/browser-inspector",
     "plugins/source-observer",
     "plugins/webex-meeting-join",
     "services/setup-ui"

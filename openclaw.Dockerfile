@@ -45,6 +45,7 @@ RUN chmod 755 /app/docker-entrypoint.sh
 # package.json + the overrides below instead.
 COPY --chown=node:node package.json /app/
 COPY --chown=node:node lib/package.json /app/lib/package.json
+COPY --chown=node:node plugins/browser-inspector/package.json /app/plugins/browser-inspector/package.json
 COPY --chown=node:node plugins/source-observer/package.json /app/plugins/source-observer/package.json
 COPY --chown=node:node plugins/webex-meeting-join/package.json /app/plugins/webex-meeting-join/package.json
 
@@ -57,7 +58,7 @@ COPY --chown=node:node plugins/webex-meeting-join/package.json /app/plugins/webe
 # without touching what's already there.
 RUN npm install --workspaces --ignore-scripts --no-audit --no-fund
 
-# Now the actual plugin/lib source.
+# Now the actual plugin/lib source, including the self-contained browser inspector.
 COPY --chown=node:node plugins/ /app/plugins/
 COPY --chown=node:node lib/ /app/lib/
 

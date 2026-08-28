@@ -1,5 +1,7 @@
 'use strict';
 
+// Browser runtime for the browser-inspector plugin.
+
 const { chromium } = require('playwright');
 const { URL } = require('node:url');
 const dns = require('node:dns/promises');
