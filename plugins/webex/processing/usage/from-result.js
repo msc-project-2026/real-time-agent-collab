@@ -59,17 +59,24 @@ function promptBreakdownFromResult(result) {
   const report = result?.meta?.systemPromptReport;
   if (!report || typeof report !== 'object') return null;
 
-  const tools = Array.isArray(report.tools) ? report.tools : [];
-  const skills = Array.isArray(report.skills) ? report.skills : [];
+  // Shape confirmed against the deployed bundle's own buildSystemPromptReport
+  // (system-prompt-report-*.js): the size fields are nested under
+  // `systemPrompt`, `tools` and `skills`, not top level. A first attempt read
+  // them as top-level keys and captured nothing but nulls.
+  const toolEntries = Array.isArray(report.tools?.entries) ? report.tools.entries : [];
+  const skillEntries = Array.isArray(report.skills?.entries) ? report.skills.entries : [];
 
   return {
-    systemPromptChars: asFiniteNumber(report.systemPromptChars),
-    projectContextChars: asFiniteNumber(report.projectContextChars),
-    toolsSchemaChars: asFiniteNumber(report.toolsSchemaChars),
-    toolCount: tools.length,
-    toolNames: tools.map((tool) => tool?.name ?? null).filter(Boolean),
-    skillCount: skills.length,
-    skillNames: skills.map((skill) => skill?.name ?? null).filter(Boolean),
+    systemPromptChars: asFiniteNumber(report.systemPrompt?.chars),
+    projectContextChars: asFiniteNumber(report.systemPrompt?.projectContextChars),
+    nonProjectContextChars: asFiniteNumber(report.systemPrompt?.nonProjectContextChars),
+    toolsSchemaChars: asFiniteNumber(report.tools?.schemaChars),
+    toolCount: toolEntries.length,
+    toolNames: toolEntries.map((tool) => tool?.name ?? null).filter(Boolean),
+    skillsPromptChars: asFiniteNumber(report.skills?.promptChars),
+    skillCount: skillEntries.length,
+    skillNames: skillEntries.map((skill) => skill?.name ?? null).filter(Boolean),
+    injectedWorkspaceFiles: report.injectedWorkspaceFiles ?? null,
   };
 }
 

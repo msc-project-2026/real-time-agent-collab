@@ -78,7 +78,8 @@ function writeTaskTool() {
         },
         assigned: {
           type: 'string',
-          description: 'The member or sender id this task is assigned to.',
+          description:
+            'Required when creating a task. The member id this task belongs to, taken from the space members list — the id, never a name. Use "agent" to claim it yourself when no member has been given it or claimed it.',
         },
         deadline: {
           type: 'string',
@@ -93,7 +94,7 @@ function writeTaskTool() {
         confidence: {
           type: 'number',
           description:
-            'Only when `assigned` is "agent": your confidence (0-1) that this self-assigned task should be acted upon, weighing both how explicitly you were directed and how well it fits a safe, clearly in-scope pickup. Omit entirely when assigning to a human or leaving unassigned.',
+            'Required when creating a task. When `assigned` is "agent": your confidence (0-1) that this self-claimed task should be acted upon, weighing both how explicitly you were directed and how well it fits a safe, clearly in-scope pickup. When `assigned` is a member id: 0.',
         },
         message_ids: {
           type: 'array',
@@ -142,6 +143,22 @@ function writeTaskTool() {
       }
       if (!id && !type) {
         errors.push('`type` is required when creating a task (no `id` given).');
+      }
+      // Required on create only — a patch (id given) must not have to restate
+      // ownership just to append message_ids. Enforced here rather than via
+      // the schema's `required` for that reason. Both were previously
+      // optional, and the first eval run showed the model omitting them on
+      // every task, leaving upsertTask's `assigned: 'unknown'` default
+      // standing in for an ownership decision that was never made.
+      if (!id && !assigned) {
+        errors.push(
+          '`assigned` is required when creating a task (no `id` given) — a member id from the space members list, or "agent" to claim it yourself.'
+        );
+      }
+      if (!id && confidence === undefined) {
+        errors.push(
+          '`confidence` is required when creating a task (no `id` given) — 0 for a member-assigned task.'
+        );
       }
       if (type !== undefined && !ALLOWED_TYPES.has(type)) {
         errors.push(

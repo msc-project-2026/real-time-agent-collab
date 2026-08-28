@@ -48,6 +48,7 @@ describe('write_task tool', () => {
       title: 'Fix login test',
       type: 'development',
       assigned: 'alice',
+      confidence: 0,
       message_ids: ['msg-1'],
     });
 
@@ -65,7 +66,7 @@ describe('write_task tool', () => {
         // No status given and not self-assigned to the agent: defaults to
         // 'backlog' on create — a human-assigned task needs no approval step.
         status: 'backlog',
-        confidence: undefined,
+        confidence: 0,
         message_ids: ['msg-1'],
         child_tasks: undefined,
       },
@@ -98,6 +99,7 @@ describe('write_task tool', () => {
       title: 'Already-started work',
       type: 'development',
       assigned: 'alice',
+      confidence: 0,
       status: 'in_progress',
     });
 
@@ -369,6 +371,7 @@ describe('write_task tool', () => {
       title: 'Investigate flaky test',
       type: 'development',
       assigned: 'alice',
+      confidence: 0,
     });
 
     assert.equal(upsertTask.mock.callCount(), 1);

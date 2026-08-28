@@ -71,15 +71,17 @@
       "type": "development",
       "evidenceMessages": [2, 3, 6],
       "expectedStatus": "done",
-      "notes": "Raised in 2, made explicit in 3, completed in 6."
+      "expectedAssigned": "eval-ben",
+      "notes": "Raised in 2, made explicit in 3. Ben claims and completes it in 6 (\"Done, the button now says...\"), so it belongs to him, not the agent."
     },
     {
       "id": "task-02",
       "title": "Restrict dashboard visibility so managers only see their own accounts",
       "type": "development",
       "evidenceMessages": [5],
-      "expectedStatus": "backlog",
-      "notes": "Still open at the end of the scenario."
+      "expectedStatus": "unapproved",
+      "expectedAssigned": "agent",
+      "notes": "Maya raises it but nobody takes it, so the agent claims it. No explicit instruction to the agent, so confidence should be low enough to hold it for review rather than auto-start."
     }
   ],
   "updates": [
