@@ -453,4 +453,36 @@ describe('runRespondStep', () => {
 
     await assert.rejects(fs.access(path.dirname(capturedSessionFile)));
   });
+
+  test('passes botId through, so the model can recognize its own prior messages via fromAgent', async (t) => {
+    const runCalls = [];
+    const runEmbeddedAgent = t.mock.fn(async (params) => {
+      runCalls.push(params);
+      return { payloads: [] };
+    });
+    const pluginRuntime = makeAgentRuntime(t, { runEmbeddedAgent });
+    const { runRespondStep } = loadRespond(t, {
+      getThread: t.mock.fn(async () => ({
+        pending: [],
+        processing: [
+          { id: 'msg-1', senderId: 'bot-1', senderName: 'collab-agent@webex.bot', content: 'Picked this up.', botIsMentioned: false, datetime: null },
+        ],
+        processed: [],
+      })),
+    });
+
+    await runRespondStep({
+      pluginRuntime,
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      message: { id: 'msg-1' },
+      messageIds: ['msg-1'],
+      decision: { shouldRespond: true, ready: false, reason: 'Addressed.', isBotMentioned: true },
+      botId: 'bot-1',
+      log: makeLog(t),
+    });
+
+    assert.match(runCalls[0].prompt, /"fromAgent": true/);
+    assert.ok(!runCalls[0].prompt.includes('collab-agent@webex.bot'));
+  });
 });

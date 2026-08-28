@@ -186,4 +186,35 @@ describe('runSummarizeStep', () => {
 
     await assert.rejects(fs.access(path.dirname(capturedSessionFile)));
   });
+
+  test('passes botId through, so the model can recognize its own prior messages via fromAgent', async (t) => {
+    const runCalls = [];
+    const runEmbeddedAgent = t.mock.fn(async (params) => {
+      runCalls.push(params);
+      return { payloads: [] };
+    });
+    const pluginRuntime = makeAgentRuntime(t, { runEmbeddedAgent });
+    const { runSummarizeStep } = loadSummarize(t, {
+      getThread: t.mock.fn(async () => ({
+        pending: [],
+        processing: [
+          { id: 'msg-1', senderId: 'bot-1', senderName: 'collab-agent@webex.bot', content: 'Picked this up.', botIsMentioned: false, datetime: null },
+        ],
+        processed: [],
+      })),
+    });
+
+    await runSummarizeStep({
+      pluginRuntime,
+      spaceId: 'space-1',
+      threadKey: '__main__',
+      messageIds: ['msg-1'],
+      botId: 'bot-1',
+      log: makeLog(t),
+    });
+
+    assert.match(runCalls[0].prompt, /"fromAgent": true/);
+    // senderName is nulled for the bot's own entries, not shown as a raw email.
+    assert.ok(!runCalls[0].prompt.includes('collab-agent@webex.bot'));
+  });
 });

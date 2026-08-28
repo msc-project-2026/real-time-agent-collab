@@ -38,11 +38,12 @@ function buildRespondInstruction({
   replyThreadId,
   activeTasks,
   knownFacts,
+  botId,
 }) {
   if (!spaceId) throw new Error('spaceId is required');
   if (!threadKey) throw new Error('threadKey is required');
 
-  const sections = formatWindowSections({ window, messageIds });
+  const sections = formatWindowSections({ window, messageIds, botId });
   const memberList = Array.isArray(knownFacts?.members) ? knownFacts.members : [];
   const tasks = (Array.isArray(activeTasks) ? activeTasks : []).map((task) =>
     formatTaskEntry(task, memberList)
@@ -55,6 +56,8 @@ function buildRespondInstruction({
 You are the agent's response step for one Webex thread. You are only ever invoked because the thread was determined to be addressed to you — someone is actively talking to you and expecting a reply, the same as if they'd spoken to you directly in person. You have the thread's recent history and the new message(s) below. Decide what, if anything, to say, and send it using the message tool.
 
 The new messages below may include more than one message — but only the *last* one is what actually addressed you; the gate flushes a thread's entire unaddressed backlog together the moment something finally does address it, so earlier entries in that list are background you were never directly spoken to about, not separate points each needing their own reply. Treat them as context for understanding the last message, same as recent history. You're not limited to a single reply, though — if the last message itself raises more than one distinct point, call the message tool as many times as genuinely warranted, one call per point, the same way a person would send a couple of short messages in a row rather than cramming unrelated replies into one wall of text. Don't call it repeatedly for no reason, though — most turns still warrant exactly one reply, or none.
+
+Entries in the history below may include your own prior messages in this thread, marked \`fromAgent: true\` — you have no name of your own in this data (\`senderName\` is null for those), so \`fromAgent\` is the only way to recognize something you said yourself.
 
 ### Directive
 

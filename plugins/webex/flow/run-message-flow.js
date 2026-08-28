@@ -319,10 +319,10 @@ async function runMessageFlow({
 
   const [extractSettled, summarizeSettled] = await Promise.allSettled([
     withLock(`extract:${spaceId}`, () =>
-      runExtractStep({ pluginRuntime, spaceId, threadKey, messageIds, log })
+      runExtractStep({ pluginRuntime, spaceId, threadKey, messageIds, botId, log })
     ),
     withLock(`summarize:${spaceId}`, () =>
-      runSummarizeStep({ pluginRuntime, spaceId, threadKey, messageIds, log })
+      runSummarizeStep({ pluginRuntime, spaceId, threadKey, messageIds, botId, log })
     ),
   ]);
 
@@ -491,6 +491,7 @@ async function runMessageFlow({
         decision,
         messageIds,
         account,
+        botId,
         log,
       });
     } catch (err) {

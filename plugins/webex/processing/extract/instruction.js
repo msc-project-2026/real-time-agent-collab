@@ -22,10 +22,11 @@ function buildExtractInstruction({
   messageIds,
   activeTasks,
   members,
+  botId,
 }) {
   if (!spaceId) throw new Error('spaceId is required');
 
-  const sections = formatWindowSections({ window, messageIds });
+  const sections = formatWindowSections({ window, messageIds, botId });
   const memberList = Array.isArray(members) ? members : [];
   const tasks = (Array.isArray(activeTasks) ? activeTasks : []).map((task) =>
     formatTaskEntry(task, memberList)
@@ -38,6 +39,8 @@ function buildExtractInstruction({
 You are the task-extraction step for one thread's message batch. Your only job is to identify tasks in the new messages below and record them by calling \`write_task\`.
 
 You are NOT the assistant responding to anyone. Do not answer any question. Do not address any sender. The only text you ever produce is the single acknowledgement word described at the end, after the tool calls succeed.
+
+Message entries below may include your own prior messages in this thread, marked \`fromAgent: true\` — you have no name of your own in this data (\`senderName\` is null for those), so \`fromAgent\` is the only way to recognize something you said yourself.
 
 A task is a concrete project deliverable, falling into exactly one of these three categories:
 - **development**: writing, fixing, or shipping code or a running system — a feature, a bug fix, an integration, a deployment.

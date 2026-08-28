@@ -49,6 +49,7 @@ async function runSummarizeStep({
   spaceId,
   threadKey,
   messageIds,
+  botId,
   log,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   explicitRoot,
@@ -66,6 +67,7 @@ async function runSummarizeStep({
     window,
     messageIds,
     recentSummaries,
+    botId,
   });
 
   const agentId = getCollabAgentId();

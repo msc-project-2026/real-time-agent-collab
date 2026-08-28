@@ -33,6 +33,7 @@ async function runRespondStep({
   decision,
   messageIds,
   account,
+  botId,
   log,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   explicitRoot,
@@ -103,6 +104,7 @@ async function runRespondStep({
     replyThreadId,
     activeTasks,
     knownFacts,
+    botId,
   });
 
   const agentId = getCollabAgentId();

@@ -106,10 +106,73 @@ describe('formatWindowSections', () => {
     assert.deepEqual(sections.batch[0], {
       id: 'msg-1',
       senderName: 'Ada',
+      fromAgent: false,
       text: 'hello',
       botIsMentioned: true,
       datetime: '2026-01-01T00:00:00.000Z',
     });
+  });
+
+  // Regression guard (2026-08-28): fromAgent is the only reliable identity
+  // signal for the bot's own messages across every step, not just gate —
+  // senderName is nulled out for those entries so there's no raw
+  // email/id sitting there asking to be pattern-matched against instead.
+  test('flags the bot\'s own entries as fromAgent and nulls their senderName', () => {
+    const window = {
+      processed: [],
+      processing: [
+        {
+          id: 'msg-1',
+          senderId: 'bot-1',
+          senderName: 'collab-agent@webex.bot',
+          content: 'Picked this up.',
+          botIsMentioned: false,
+          datetime: '2026-01-01T00:00:00.000Z',
+        },
+        {
+          id: 'msg-2',
+          senderId: 'person-1',
+          senderName: 'Ada',
+          content: 'Thanks!',
+          botIsMentioned: false,
+          datetime: '2026-01-01T00:00:01.000Z',
+        },
+      ],
+      pending: [],
+    };
+
+    const sections = formatWindowSections({
+      window,
+      messageIds: ['msg-1', 'msg-2'],
+      botId: 'bot-1',
+    });
+
+    assert.equal(sections.batch[0].fromAgent, true);
+    assert.equal(sections.batch[0].senderName, null);
+    assert.equal(sections.batch[1].fromAgent, false);
+    assert.equal(sections.batch[1].senderName, 'Ada');
+  });
+
+  test('treats every entry as not-from-agent when botId is omitted', () => {
+    const window = {
+      processed: [],
+      processing: [
+        {
+          id: 'msg-1',
+          senderId: 'bot-1',
+          senderName: 'collab-agent@webex.bot',
+          content: 'hi',
+          botIsMentioned: false,
+          datetime: null,
+        },
+      ],
+      pending: [],
+    };
+
+    const sections = formatWindowSections({ window, messageIds: ['msg-1'] });
+
+    assert.equal(sections.batch[0].fromAgent, false);
+    assert.equal(sections.batch[0].senderName, 'collab-agent@webex.bot');
   });
 });
 

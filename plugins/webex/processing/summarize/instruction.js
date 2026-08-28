@@ -26,11 +26,18 @@ function formatRecentSummary(entry) {
   };
 }
 
-function buildSummarizeInstruction({ spaceId, threadKey, window, messageIds, recentSummaries }) {
+function buildSummarizeInstruction({
+  spaceId,
+  threadKey,
+  window,
+  messageIds,
+  recentSummaries,
+  botId,
+}) {
   if (!spaceId) throw new Error('spaceId is required');
   if (!threadKey) throw new Error('threadKey is required');
 
-  const sections = formatWindowSections({ window, messageIds });
+  const sections = formatWindowSections({ window, messageIds, botId });
   const recent = (Array.isArray(recentSummaries) ? recentSummaries : []).map(formatRecentSummary);
 
   return `
@@ -39,6 +46,8 @@ function buildSummarizeInstruction({ spaceId, threadKey, window, messageIds, rec
 You are the agent's summarization step for one Webex thread. Your only job is to distill the new messages below into one recall entry by calling \`write_summary\`. You do not reply to anyone and you do not extract tasks — those are separate steps running independently of this one.
 
 A good summary is a distilled gist, not a transcript — capture what was actually decided, asked, or established, in your own words. Also pick a few \`keywords\`: exact names, numbers, or specifics that a semantic search over the summary text alone might miss.
+
+Message entries below may include your own prior messages in this thread, marked \`fromAgent: true\` — you have no name of your own in this data (\`senderName\` is null for those), so \`fromAgent\` is the only way to recognize something you said yourself.
 
 ### Recent history
 

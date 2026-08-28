@@ -51,6 +51,32 @@ describe('buildExtractInstruction', () => {
     // thing that must never happen is the raw id showing up as an assignee.
     assert.ok(!instruction.includes('"assigned": "person-1"'));
   });
+
+  test('flags the bot\'s own message as fromAgent and nulls its senderName, given botId', () => {
+    const instruction = buildExtractInstruction({
+      spaceId: 'ciscospark://urn:TEAM:eu-central-1_k/ROOM/1a4ea100',
+      window: {
+        processed: [],
+        processing: [
+          {
+            id: 'msg-1',
+            senderId: 'bot-1',
+            senderName: 'collab-agent@webex.bot',
+            content: 'Picked this up.',
+            botIsMentioned: false,
+            datetime: null,
+          },
+        ],
+      },
+      messageIds: ['msg-1'],
+      activeTasks: [],
+      members: [],
+      botId: 'bot-1',
+    });
+
+    assert.match(instruction, /"fromAgent": true/);
+    assert.ok(!instruction.includes('collab-agent@webex.bot'));
+  });
 });
 
 // ---------------------------------------------------------------------------

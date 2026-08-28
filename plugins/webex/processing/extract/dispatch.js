@@ -32,6 +32,7 @@ async function runExtractStep({
   spaceId,
   threadKey,
   messageIds,
+  botId,
   log,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   explicitRoot,
@@ -44,7 +45,7 @@ async function runExtractStep({
   const activeTasks = await getActiveTasks({ spaceId, explicitRoot });
   const members = await getSpaceMembers({ spaceId, explicitRoot });
 
-  const instruction = buildExtractInstruction({ spaceId, window, messageIds, activeTasks, members });
+  const instruction = buildExtractInstruction({ spaceId, window, messageIds, activeTasks, members, botId });
 
   const agentId = getCollabAgentId();
   const sessionKey = `agent:${agentId}:webex:${spaceId}:extract:${safeSegment(threadKey)}`;

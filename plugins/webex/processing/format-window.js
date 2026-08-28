@@ -21,17 +21,25 @@
 // `pending` is deliberately never surfaced here — it's backlog for whichever
 // flow processes it next, not something this run has any business seeing.
 
-function formatWindowEntry(entry) {
+// fromAgent (whether this entry is a message the bot itself sent) is the
+// only reliable signal of the bot's own identity anywhere in this data —
+// every step is told the bot has no name of its own, so senderName is
+// deliberately nulled out for the bot's own entries rather than showing a
+// raw value (an email/id) that would otherwise sit there asking to be
+// pattern-matched against instead of using fromAgent.
+function formatWindowEntry(entry, botId) {
+  const fromAgent = Boolean(botId) && entry.senderId === botId;
   return {
     id: entry.id,
-    senderName: entry.senderName ?? null,
+    senderName: fromAgent ? null : entry.senderName ?? null,
+    fromAgent,
     botIsMentioned: Boolean(entry.botIsMentioned),
     datetime: entry.datetime ?? null,
     text: entry.content ?? '',
   };
 }
 
-function formatWindowSections({ window, messageIds }) {
+function formatWindowSections({ window, messageIds, botId }) {
   if (!Array.isArray(messageIds))
     throw new Error('messageIds array is required');
 
@@ -42,11 +50,11 @@ function formatWindowSections({ window, messageIds }) {
 
   return {
     history: (Array.isArray(window?.processed) ? window.processed : []).map(
-      formatWindowEntry
+      (entry) => formatWindowEntry(entry, botId)
     ),
     batch: processingPool
       .filter((entry) => claimed.has(entry.id))
-      .map(formatWindowEntry),
+      .map((entry) => formatWindowEntry(entry, botId)),
   };
 }
 

@@ -17,21 +17,6 @@
 
 const { formatWindowEntry, formatMemberEntry } = require('../format-window');
 
-// Thin wrapper over the shared entry formatter — gate is the only step that
-// needs fromAgent (whether the model has to recognize its own prior
-// messages), so that one extra field is added here rather than pushed into
-// the shared shape every other step would then carry unused.
-function formatEntryForPrompt({ entry, botId }) {
-  return {
-    ...formatWindowEntry(entry),
-    // Whether this entry is a message YOU (the agent) previously sent in
-    // this thread — the model has no other way to recognize its own prior
-    // messages, and a reply following one of them is normally a clear
-    // address even without an explicit mention (see prompt text below).
-    fromAgent: Boolean(botId) && entry.senderId === botId,
-  };
-}
-
 function buildTaggingInstruction({
   spaceId,
   threadKey,
@@ -44,12 +29,12 @@ function buildTaggingInstruction({
   if (!threadKey) throw new Error('threadKey is required');
 
   const batch = (Array.isArray(pendingSlice) ? pendingSlice : []).map((entry) =>
-    formatEntryForPrompt({ entry, botId })
+    formatWindowEntry(entry, botId)
   );
   const currentMessage = batch.length > 0 ? batch[batch.length - 1] : null;
   const background = (
     Array.isArray(recentProcessed) ? recentProcessed : []
-  ).map((entry) => formatEntryForPrompt({ entry, botId }));
+  ).map((entry) => formatWindowEntry(entry, botId));
   // Real space members only — this is "who could a name in the batch
   // actually refer to," not extract/write_task's assignee list, so the
   // synthetic 'agent' sentinel (config/members.js's AGENT_ASSIGNEE) is
