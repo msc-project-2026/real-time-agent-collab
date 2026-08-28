@@ -1027,6 +1027,7 @@ describe('plugin registration and tool exposure', () => {
     const webhookRouter = t.mock.fn();
     const spaceRouter = t.mock.fn();
     const boardRouter = t.mock.fn();
+    const registerEvalGatewayMethod = t.mock.fn();
     const setPluginRuntime = t.mock.fn();
     const tagTool = { name: 'submit_gate_decision' };
     const writeTaskToolStub = { name: 'write_task' };
@@ -1052,6 +1053,9 @@ describe('plugin registration and tool exposure', () => {
       [require.resolve('../processing/search-recall-tool')]: {
         searchRecallTool: () => searchRecallToolStub,
       },
+      [require.resolve('../eval/gateway-method')]: {
+        registerEvalGatewayMethod,
+      },
     });
     t.after(loaded.restore);
     const api = {
@@ -1059,6 +1063,7 @@ describe('plugin registration and tool exposure', () => {
       registerChannel: t.mock.fn(),
       registerHttpRoute: t.mock.fn(),
       registerTool: t.mock.fn(),
+      registerGatewayMethod: t.mock.fn(),
     };
 
     loaded.subject(api);
@@ -1076,6 +1081,9 @@ describe('plugin registration and tool exposure', () => {
       api.registerTool.mock.calls.map((call) => call.arguments[0]),
       [tagTool, writeTaskToolStub, searchTasksToolStub, writeSummaryToolStub, searchRecallToolStub]
     );
+    // Phase 8: the eval trigger is a gateway method, not an HTTP route.
+    assert.equal(registerEvalGatewayMethod.mock.callCount(), 1);
+    assert.deepEqual(registerEvalGatewayMethod.mock.calls[0].arguments, [api]);
   });
 
   // Regression guard for a real live bug (2026-08-27): the tag_message ->

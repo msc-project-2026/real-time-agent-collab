@@ -12,7 +12,7 @@ const { webhookRouter } = require('./webhook/router');
 const { spaceRouter } = require('./visibility/space-router');
 const { boardRouter } = require('./visibility/board-router');
 const { setPluginRuntime, setPluginConfig } = require('./runtime');
-const { evalRouter } = require('./eval/router');
+const { registerEvalGatewayMethod } = require('./eval/gateway-method');
 
 function register(api) {
   setPluginRuntime(api.runtime);
@@ -36,15 +36,6 @@ function register(api) {
     handler: boardRouter,
   });
 
-  if (process.env.WEBEX_EVAL_ROUTES_ENABLED === 'true') {
-    api.registerHttpRoute({
-      path: '/webex/collab/eval/',
-      auth: 'plugin',
-      match: 'prefix',
-      handler: evalRouter,
-    });
-  }
-
   api.registerHttpRoute({
     path: '/webex/collab/',
     auth: 'plugin',
@@ -58,6 +49,10 @@ function register(api) {
   api.registerTool(searchTasksTool());
   api.registerTool(writeSummaryTool());
   api.registerTool(searchRecallTool());
+
+  // Phase 8 eval — `webex.eval.run` gateway method (operator.write), driven
+  // via `openclaw gateway call` from the deployment. See eval/gateway-method.js.
+  registerEvalGatewayMethod(api);
 }
 
 module.exports = register;

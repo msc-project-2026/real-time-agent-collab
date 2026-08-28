@@ -1,188 +1,125 @@
-// ********* EVAL/RUN-SCENARIO.JS — BROKEN, REFERENCE ONLY *********
+// ********* EVAL/RUN-SCENARIO.JS *********
 'use strict';
 
-// NOT LIVE CODE. Kept deliberately (phase 6 deletion pass, 2026-08-24) as a
-// reference for rewriting the scenario runner against the v3 pipeline —
-// same reasoning phase 5 used to leave old code unwired rather than delete
-// it outright. Nothing requires this file; eval/router.js's POST /run
-// returns 501 without ever reaching it (see that file's header comment).
+// Phase 8 synthetic evaluation runner, rebuilt against the v3 pipeline
+// (flow/run-message-flow.js). Runs a scenario JSON through the real
+// collaboration pipeline **without touching any Webex API** — it enters at
+// inbound/message.js's `handleHydratedWebexMessage`, the exact seam a real
+// webhook reaches after fetching the message body, and injects:
+//   - `fetchMessageById` → resolves parent messages from the synthetic map
+//   - `sendFn` → captures outbound sends instead of calling Webex
 //
-// Why it's broken: every module below that this file drove directly —
-// batch/staging-handler.js, batch/eval-mode.js, dispatch.js, the
-// items/conversations stores, processing/conversations/* and
-// processing/items/* — was deleted in the same pass that retired this
-// runner. Some of its remaining requires (e.g. ../inbound/message,
-// ../storage/paths) still resolve to real modules one directory shallower
-// than this file now sits (it moved from scripts/eval/ to eval/, two
-// levels deep to one) — deliberately NOT path-fixed, because the fixable
-// parts are a small fraction of what's actually gone, and a half-patched
-// file would misleadingly suggest this is close to working. It isn't — a
-// real rewrite needs a new entry point into run-message-flow.js (Task
-// Flow per message, not batch staging), a task-store-based result capture
-// instead of items/conversations snapshots, and a fresh look at whether
-// the round-grouping model below even applies under deterministic dispatch
-// (its own comments, a few lines down, already flagged this as doubtful
-// back in phase 3).
+// Unlike the pre-v3 runner this replaces, dispatch is now fully awaited inside
+// runMessageFlow (gate under a lock, extract ∥ summarize via allSettled,
+// task-notify, then respond) — so there is no fire-and-forget dispatch to
+// poll for and no round-grouping. Messages are fed strictly in order and each
+// runMessageFlow call is awaited to completion before the next.
 //
-// What's still genuinely useful to reuse: the scenario-JSON → hydrated
-// Webex-message mapping (buildSyntheticMessage below), the round-grouping
-// approach (groupByRound), the captureSend pattern for intercepting
-// outbound sends without hitting real Webex, and the output-file
-// conventions (response.json/timings.json/run-log.json etc., written near
-// the end of runScenario). Read for the approach; don't expect it to run
-// as-is.
-
-// Synthetic evaluation runner.
-//
-// Runs a scenario JSON object through the real collaboration pipeline without
-// calling any Webex APIs.  Builds hydrated Webex-like message objects from the
-// scenario and passes them directly into handleHydratedWebexMessage — the point
-// immediately after a real webhook would have fetched a message from /messages/:id.
-//
-// The full pipeline runs unchanged via the existing dispatch machinery:
-//   tagging gate → deterministic dispatch → conversation processing → item extraction
-//
-// Caveat (phase 3): deterministic dispatch stages immediately whenever the
-// tagging gate judges a thread mentioned/ready — unlike the old routing
-// classifier, this is no longer limited to explicit task_request phrasing.
-// A scenario round with such a message will trigger staging mid-round,
-// ahead of this harness's own end-of-round handleStagePendingBatchRequest
-// call (which then becomes a no-op for that space). round-grouping here is
-// already slated for removal per v3 §11 (see migration plan phase 8); until
-// then, scenarios that rely on precise round boundaries should avoid
-// messages the gate is expected to flag as mentioned/ready.
-//
-// This module requires the OpenClaw plugin runtime to already be initialised
-// (i.e. the webex plugin must have been registered) so that getPluginRuntime()
-// returns a live runtime with real agent dispatch.  The intended usage is via the
-// eval HTTP route (eval/router.js) on a running OpenClaw instance.
-//
-// Webex-specific external effects that are bypassed:
-//   - Webex API fetch             — skipped by entering at handleHydratedWebexMessage
-//   - Webex membership check      — skipped for the same reason
-//   - Webex send (recall/config)  — captureSend is injected as sendFn;
-//                                   outbound sends are collected and returned
-//
-// expectedRoute and other scenario labels are NOT used to drive execution.
-// They are carried in routingDecisions for later comparison and scoring.
+// Requires a live plugin runtime (real runEmbeddedAgent + tasks.flow) — it is
+// driven in-gateway via the `webex.eval.run` gateway method
+// (eval/gateway-method.js), invoked with `openclaw gateway call` from the
+// deployment. It cannot run as a standalone script or a plugin CLI subcommand:
+// both load without a plugin runtime in this gateway version.
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { randomUUID } = require('node:crypto');
+const { execFileSync } = require('node:child_process');
 
-const { handleHydratedWebexMessage } = require('../../inbound/message');
-const { handleStagePendingBatchRequest } = require('../../batch/staging-handler');
-const { setEvalMode } = require('../../batch/eval-mode');
+const { handleHydratedWebexMessage } = require('../inbound/message');
+const { writeActiveConfig, writeCachedMembers } = require('../config/store');
+const { readJobLogEntries } = require('../flow/job-log');
+const { summarizeUsage } = require('../processing/usage/summary');
+const {
+  readTasksState,
+  readTaskParentIndex,
+} = require('../storage/tasks-store');
+const { readRecallEntries } = require('../storage/recall-store');
+const { getThreads } = require('../storage/threads-store');
+const {
+  spaceDir,
+  taggingValidationLogPath,
+} = require('../storage/paths');
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+const BOT_ID = 'eval-bot';
+const MENTION_MARKERS = ['@Collaboration', '@collab', '@Collab', '@bot'];
+const EVAL_URN_MARKER = ':eval/ROOM/';
 
-function groupByRound(messages) {
-  const rounds = new Map();
-  for (const msg of messages) {
-    const r = msg.round;
-    if (!rounds.has(r)) rounds.set(r, []);
-    rounds.get(r).push(msg);
+// A real Webex spaceId is base64 of a ciscospark:// URN containing /ROOM/ —
+// storage/paths.js's looksLikeSpaceId() and send.js's buildMsgBody both
+// enforce that shape, and write_task/search_tasks reject anything else. Give
+// the eval space an id in that exact shape, tagged `:eval/ROOM/` so the
+// clear-before-run guard can tell an eval space apart from a real one.
+function encodeEvalSpaceId(scenarioId) {
+  const safe = String(scenarioId).replace(/[^a-zA-Z0-9._-]/g, '_');
+  return Buffer.from(`ciscospark://urn:TEAM:eval/ROOM/${safe}`).toString('base64');
+}
+
+function isEvalSpaceId(spaceId) {
+  try {
+    return Buffer.from(String(spaceId), 'base64')
+      .toString('utf-8')
+      .includes(EVAL_URN_MARKER);
+  } catch {
+    return false;
   }
-  return [...rounds.entries()].sort(([a], [b]) => a - b);
 }
 
 function stableTimestamp(number) {
+  // Monotonic, deterministic, one second apart — matches the pre-v3 runner.
   return new Date(Date.UTC(2026, 0, 1) + number * 1000).toISOString();
 }
 
-function buildSyntheticMessage({ scenario, scenarioMsg, participants, botId, numberToId }) {
+function hasMention(text) {
+  return (
+    typeof text === 'string' &&
+    MENTION_MARKERS.some((marker) => text.includes(marker))
+  );
+}
+
+function buildSyntheticMessage({ scenarioMsg, spaceId, participants, numberToId }) {
   const participant = participants[scenarioMsg.sender];
   const id = numberToId(scenarioMsg.number);
-  const parentId = scenarioMsg.replyTo != null ? numberToId(scenarioMsg.replyTo) : undefined;
-
-  const mentionedPeople = [];
-  if (typeof scenarioMsg.text === 'string' && scenarioMsg.text.includes('@Collaboration')) {
-    mentionedPeople.push(botId);
-  }
+  const parentId =
+    scenarioMsg.replyTo != null ? numberToId(scenarioMsg.replyTo) : undefined;
 
   return {
     id,
-    roomId: scenario.spaceId,
+    roomId: spaceId,
     roomType: 'group',
     text: scenarioMsg.text ?? '',
     markdown: scenarioMsg.text ?? '',
-    personId: participant?.personId ?? scenarioMsg.sender.toLowerCase(),
-    personEmail: participant?.email ?? `${scenarioMsg.sender.toLowerCase()}@example.test`,
+    personId: participant?.personId ?? String(scenarioMsg.sender).toLowerCase(),
+    personEmail:
+      participant?.email ?? `${String(scenarioMsg.sender).toLowerCase()}@eval.test`,
     senderName: participant?.name ?? scenarioMsg.sender,
     created: stableTimestamp(scenarioMsg.number),
     ...(parentId != null ? { parentId } : {}),
-    mentionedPeople,
-    // Scenario metadata carried through for output; not read by pipeline logic.
+    mentionedPeople: hasMention(scenarioMsg.text) ? [BOT_ID] : [],
     _eval: {
-      scenarioId: scenario.id,
-      scenarioMessageNumber: scenarioMsg.number,
-      round: scenarioMsg.round,
-      where: scenarioMsg.where,
-      expectedRoute: scenarioMsg.expectedRoute,
+      number: scenarioMsg.number,
+      round: scenarioMsg.round ?? null,
+      where: scenarioMsg.where ?? null,
+      expectedRoute: scenarioMsg.expectedRoute ?? null,
     },
   };
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// ---------------------------------------------------------------------------
-// Wait for all session queues belonging to a space to go idle.
-//
-// dispatchToAgent() fires onJobCompletion as a fire-and-forget promise.
-// That callback may itself enqueue further dispatches (conv-processing, item
-// extraction).  Each session type has its own queue keyed as `${spaceId}:<type>`.
-// Poll until all keys prefixed with `${spaceId}:` have been continuously absent
-// for debounceMs, which covers the brief gap between consecutive dispatches.
-// ---------------------------------------------------------------------------
-
-async function waitForSpaceIdle(spaceId, { debounceMs = 2000, timeoutMs = 600000 } = {}) {
-  const { dispatchQueues } = require('../../dispatch');
-  const prefix = `${spaceId}:`;
-  const deadline = Date.now() + timeoutMs;
-  let idleSince = null;
-
-  function hasActiveQueues() {
-    for (const key of dispatchQueues.keys()) {
-      if (key.startsWith(prefix)) return true;
-    }
-    return false;
-  }
-
-  while (Date.now() < deadline) {
-    if (hasActiveQueues()) {
-      idleSince = null;
-      await sleep(100);
-    } else {
-      if (!idleSince) idleSince = Date.now();
-      if (Date.now() - idleSince >= debounceMs) return;
-      await sleep(100);
-    }
-  }
-
-  throw new Error(`[eval] dispatch for space ${spaceId} did not become idle within ${timeoutMs}ms`);
-}
-
-// ---------------------------------------------------------------------------
-// Logger
-// ---------------------------------------------------------------------------
-
 function makeCollectingLogger(runLog, externalLog) {
-  function collect(level, msg, meta) {
-    runLog.push({ level, ts: new Date().toISOString(), msg, ...(meta != null ? { meta } : {}) });
-  }
+  const collect = (level, msg, meta) => {
+    runLog.push({
+      level,
+      ts: new Date().toISOString(),
+      msg: typeof msg === 'string' ? msg : JSON.stringify(msg),
+      ...(meta != null ? { meta } : {}),
+    });
+  };
   return {
     info: (msg, meta) => { collect('info', msg, meta); externalLog?.info?.(msg, meta); },
     warn: (msg, meta) => { collect('warn', msg, meta); externalLog?.warn?.(msg, meta); },
     error: (msg, meta) => { collect('error', msg, meta); externalLog?.error?.(msg, meta); },
   };
 }
-
-// ---------------------------------------------------------------------------
-// Storage helpers
-// ---------------------------------------------------------------------------
 
 async function readJsonIfExists(filePath) {
   try {
@@ -193,266 +130,257 @@ async function readJsonIfExists(filePath) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// runScenario — main exported function
-//
-// Parameters:
-//   scenario   Scenario object (id, spaceId, participants[], messages[])
-//   options    { clearPrevious: bool } — delete prior space data before run
-//   log        Optional external logger ({ info, warn, error }) for server-side
-//              output.  All entries are always collected in runLog regardless.
-//
-// Returns a result bundle:
-//   { scenarioId, items, conversations, threads, routingDecisions,
-//     recallResponses, timings, runLog }
-// ---------------------------------------------------------------------------
-
-async function runScenario({ scenario, options = {}, log: externalLog } = {}) {
-  if (!scenario?.id) throw new Error('scenario.id is required');
-  if (!scenario.spaceId) throw new Error('scenario.spaceId is required');
-  if (!Array.isArray(scenario.participants)) throw new Error('scenario.participants must be an array');
-  if (!Array.isArray(scenario.messages)) throw new Error('scenario.messages must be an array');
-
-  const { spaceDir, itemsPath, conversationsPath, threadsPath } = require('../../storage/paths');
-
-  // clearPrevious defaults to true. Refuse to wipe a non-eval space.
-  const clearPrevious = options.clearPrevious !== false;
-  if (clearPrevious) {
-    if (!scenario.spaceId.startsWith('eval-')) {
-      throw new Error(
-        `[eval] refusing to clear non-eval space "${scenario.spaceId}". spaceId must start with "eval-".`
-      );
-    }
-    await fs.rm(spaceDir(scenario.spaceId), { recursive: true, force: true });
+async function readJsonlIfExists(filePath) {
+  try {
+    const raw = await fs.readFile(filePath, 'utf8');
+    return raw
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+  } catch (err) {
+    if (err?.code === 'ENOENT') return [];
+    throw err;
   }
+}
+
+function currentGitSha() {
+  try {
+    return execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+      cwd: __dirname,
+      encoding: 'utf8',
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// runScenario — the exported entry point (called by eval/router.js).
+//
+//   scenario   parsed scenario JSON (id, participants[], messages[], plus
+//              expected* fixture fields the scorers read later)
+//   variant    label for a comparison arm — 'baseline' by default; recorded
+//              in the bundle so variants archive side by side
+//   overrides  { proactivityThreshold?, githubRepo? } seeded into the eval
+//              space's synthetic config
+//   log        optional external logger; every line is also collected
+//
+// Returns the full result bundle. Also writes it to disk under
+//   eval/outputs/<scenario.id>/<variant>/<evalRunId>/
+// ---------------------------------------------------------------------------
+async function runScenario({ scenario, variant = 'baseline', overrides = {}, log: externalLog } = {}) {
+  if (!scenario?.id) throw new Error('scenario.id is required');
+  if (!Array.isArray(scenario.participants)) {
+    throw new Error('scenario.participants must be an array');
+  }
+  if (!Array.isArray(scenario.messages)) {
+    throw new Error('scenario.messages must be an array');
+  }
+
+  const evalRunId = randomUUID();
+  const spaceId = encodeEvalSpaceId(scenario.id);
+
+  // Guard: never wipe a space that isn't an eval space.
+  if (!isEvalSpaceId(spaceId)) {
+    throw new Error(`[eval] refusing to run — derived spaceId is not an eval space`);
+  }
+  await fs.rm(spaceDir(spaceId), { recursive: true, force: true });
 
   const runLog = [];
-  const capturedSends = [];
   const log = makeCollectingLogger(runLog, externalLog);
+  const startedAt = new Date().toISOString();
+  const startMs = Date.now();
 
-  // captureSend is local to this run — concurrent calls don't share state.
-  // Recall and config handlers check account.config.token before calling sendFn,
-  // so the eval account sets a non-empty sentinel to pass that guard.
-  async function captureSend({ to, markdown, text, parentId }) {
-    capturedSends.push({
-      ts: new Date().toISOString(),
-      to,
-      markdown: markdown ?? text ?? '',
-      ...(parentId != null ? { parentId } : {}),
-    });
-    return { id: `eval-captured-${Date.now()}` };
-  }
+  log.info('[eval] starting scenario', { scenarioId: scenario.id, variant, evalRunId });
 
-  log.info(`[eval] starting scenario`, { scenarioId: scenario.id, clearPrevious });
+  // -- seed synthetic config + members so gate/extract/respond can resolve
+  //    space members and a proactivity threshold, exactly as a real space would.
+  await writeActiveConfig({
+    spaceId,
+    source: 'eval',
+    config: {
+      proactivityThreshold: overrides.proactivityThreshold ?? 0.7,
+      githubRepo: overrides.githubRepo ?? null,
+    },
+  });
+  await writeCachedMembers({
+    spaceId,
+    members: scenario.participants.map((p) => ({
+      id: p.personId,
+      name: p.name,
+      source: 'webex',
+    })),
+  });
 
   const participants = {};
   for (const p of scenario.participants) participants[p.name] = p;
 
-  const BOT_ID = 'eval-bot';
   const numberToId = (n) => `${scenario.id}-msg-${n}`;
 
-  const syntheticMsgById = new Map();
+  const syntheticById = new Map();
   for (const scenarioMsg of scenario.messages) {
     const synthetic = buildSyntheticMessage({
-      scenario,
       scenarioMsg,
+      spaceId,
       participants,
-      botId: BOT_ID,
       numberToId,
     });
-    syntheticMsgById.set(synthetic.id, synthetic);
+    syntheticById.set(synthetic.id, synthetic);
   }
 
-  // routingDecisions carries scenario-declared expected routes per message.
-  // Actual routes chosen by the model appear in runLog entries.
-  const routingDecisions = scenario.messages.map((msg) => ({
-    messageNumber: msg.number,
-    messageId: numberToId(msg.number),
-    round: msg.round,
-    sender: msg.sender,
-    expectedRoute: msg.expectedRoute ?? null,
-  }));
+  const capturedSends = [];
+  let currentMessageNumber = null;
+  async function captureSend({ to, markdown, text, parentId, replyTo, threadId } = {}) {
+    capturedSends.push({
+      ts: new Date().toISOString(),
+      forMessageNumber: currentMessageNumber,
+      to: to ?? null,
+      markdown: markdown ?? text ?? '',
+      parentId: parentId ?? replyTo ?? null,
+      threadId: threadId ?? null,
+    });
+    return { id: `eval-captured-${capturedSends.length}` };
+  }
 
-  const account = { accountId: 'eval', config: { token: 'eval-no-send' } };
-
-  const timings = {
-    scenarioId: scenario.id,
-    startedAt: new Date().toISOString(),
-    completedAt: null,
-    totalMs: null,
-    rounds: [],
+  // eval account — a non-empty sentinel token passes the `account.config.token`
+  // guard senders check before calling sendFn; botWebhookUrl origin only feeds
+  // deriveBoardUrl (returns a harmless eval URL).
+  const account = {
+    accountId: 'eval',
+    config: { token: 'eval-no-send', botWebhookUrl: 'https://eval.local/' },
   };
 
-  // Suppress automatic batch staging (deferred timer and task_request immediate path)
-  // for the duration of this run. The eval runner controls staging at round boundaries.
-  setEvalMode(true);
+  const messageTimings = [];
 
-  const startMs = Date.now();
-  const rounds = groupByRound(scenario.messages);
+  for (const scenarioMsg of scenario.messages) {
+    const synthetic = syntheticById.get(numberToId(scenarioMsg.number));
+    currentMessageNumber = scenarioMsg.number;
+    const msgStart = Date.now();
 
-  try {
-    for (const [round, roundMsgs] of rounds) {
-      const roundStart = Date.now();
-      const roundTimings = {
-        round,
-        messages: [],
-        routingIdleMs: null,
-        stagingDurationMs: null,
-        processingIdleMs: null,
-        totalRoundMs: null,
-      };
+    log.info('[eval] processing message', {
+      number: scenarioMsg.number,
+      sender: scenarioMsg.sender,
+      expectedRoute: scenarioMsg.expectedRoute ?? null,
+    });
 
-      log.info(`[eval] round ${round} started`, { messageCount: roundMsgs.length });
-
-      for (const scenarioMsg of roundMsgs) {
-        const synthetic = syntheticMsgById.get(numberToId(scenarioMsg.number));
-
-        log.info(`[eval] processing message`, {
-          number: scenarioMsg.number,
-          sender: scenarioMsg.sender,
-          expectedRoute: scenarioMsg.expectedRoute,
-        });
-
-        const msgStart = Date.now();
-
-        await handleHydratedWebexMessage({
-          message: synthetic,
-          botId: BOT_ID,
-          account,
-          log,
-          // fetchMessageById resolves parent messages from the synthetic message map,
-          // used by appendMessageToThreadWindow to seed thread context windows.
-          fetchMessageById: async (id) => {
-            const msg = syntheticMsgById.get(id);
-            if (!msg) throw new Error(`[eval] synthetic message not found: ${id}`);
-            return msg;
-          },
-          sendFn: captureSend,
-        });
-
-        roundTimings.messages.push({
-          number: scenarioMsg.number,
-          id: synthetic.id,
-          durationMs: Date.now() - msgStart,
-        });
-      }
-
-      log.info(`[eval] round ${round} messages submitted`, { count: roundMsgs.length });
-
-      // Wait for routing dispatch queues (and their fire-and-forget onSessionComplete
-      // chains) to drain before forcing staging.
-      const routingWaitStart = Date.now();
-      await waitForSpaceIdle(scenario.spaceId);
-      roundTimings.routingIdleMs = Date.now() - routingWaitStart;
-      log.info(`[eval] round ${round} routing idle`, { routingIdleMs: roundTimings.routingIdleMs });
-
-      // Force staging for this round. handleStagePendingBatchRequest awaits the
-      // conv-processing dispatch, but item extraction is fire-and-forget from within it.
-      log.info(`[eval] round ${round} staging started`);
-      const stagingStart = Date.now();
-      await handleStagePendingBatchRequest({ spaceId: scenario.spaceId, account, log });
-      roundTimings.stagingDurationMs = Date.now() - stagingStart;
-      log.info(`[eval] round ${round} staging completed`, { stagingDurationMs: roundTimings.stagingDurationMs });
-
-      // Wait for conv-processing → item-extraction dispatch chains to fully settle
-      // before starting the next round.
-      const processingWaitStart = Date.now();
-      await waitForSpaceIdle(scenario.spaceId);
-      roundTimings.processingIdleMs = Date.now() - processingWaitStart;
-      log.info(`[eval] round ${round} processing idle`, { processingIdleMs: roundTimings.processingIdleMs });
-
-      roundTimings.totalRoundMs = Date.now() - roundStart;
-      timings.rounds.push(roundTimings);
-      log.info(`[eval] round ${round} complete`, {
-        totalRoundMs: roundTimings.totalRoundMs,
-        routingIdleMs: roundTimings.routingIdleMs,
-        stagingDurationMs: roundTimings.stagingDurationMs,
-        processingIdleMs: roundTimings.processingIdleMs,
+    try {
+      await handleHydratedWebexMessage({
+        message: synthetic,
+        botId: BOT_ID,
+        account,
+        log,
+        fetchMessageById: async (id) => {
+          const msg = syntheticById.get(id);
+          if (!msg) throw new Error(`[eval] synthetic message not found: ${id}`);
+          return msg;
+        },
+        sendFn: captureSend,
+      });
+    } catch (err) {
+      log.error('[eval] message processing threw', {
+        number: scenarioMsg.number,
+        error: err?.message ?? String(err),
       });
     }
-  } finally {
-    setEvalMode(false);
+
+    messageTimings.push({
+      number: scenarioMsg.number,
+      id: synthetic.id,
+      durationMs: Date.now() - msgStart,
+    });
   }
+  currentMessageNumber = null;
 
-  timings.completedAt = new Date().toISOString();
-  timings.totalMs = Date.now() - startMs;
+  // -- collect final state from disk --
+  const tasksState = await readTasksState({ spaceId });
+  const taskParentIndex = await readTaskParentIndex({ spaceId });
+  const recallEntries = await readRecallEntries({ spaceId });
+  const threads = await getThreads({ spaceId, limit: 1000 });
+  const jobs = await readJobLogEntries({ spaceId });
+  const gateValidation = await readJsonlIfExists(taggingValidationLogPath(spaceId));
+  const usageSummary = summarizeUsage(jobs);
 
-  const items = await readJsonIfExists(itemsPath(scenario.spaceId));
-  const conversations = await readJsonIfExists(conversationsPath(scenario.spaceId));
-  const threads = await readJsonIfExists(threadsPath(scenario.spaceId));
+  const completedAt = new Date().toISOString();
+  const totalMs = Date.now() - startMs;
 
-  log.info(`[eval] scenario complete`, {
+  const meta = {
     scenarioId: scenario.id,
-    totalMs: timings.totalMs,
-    itemCount: items?.length ?? 0,
-    conversationCount: conversations?.length ?? 0,
-  });
+    variant,
+    evalRunId,
+    spaceId,
+    startedAt,
+    completedAt,
+    totalMs,
+    gitSha: currentGitSha(),
+    messageCount: scenario.messages.length,
+  };
 
-  return {
-    scenarioId: scenario.id,
-    items: items ?? [],
-    conversations: conversations ?? [],
-    threads: threads ?? [],
-    routingDecisions,
-    recallResponses: capturedSends,
-    timings,
+  const bundle = {
+    meta,
+    scenario,
+    threads,
+    tasks: tasksState.tasks ?? [],
+    taskParentRows: taskParentIndex.rows ?? [],
+    recall: recallEntries,
+    jobs,
+    usageSummary,
+    sends: capturedSends,
+    gateValidation,
+    messageTimings,
     runLog,
   };
-}
 
-module.exports = { runScenario };
-
-// ---------------------------------------------------------------------------
-// CLI entry point — only runs when invoked directly as a script.
-//
-// Requires the OpenClaw gateway to be running with the webex plugin registered.
-// Writes the result bundle as individual files to evaluation/outputs/<id>/.
-// ---------------------------------------------------------------------------
-
-if (require.main === module) {
-  const PLUGIN_ROOT = path.join(__dirname, '..', '..');
-  const [, , scenarioArg] = process.argv;
-
-  if (!scenarioArg) {
-    console.error(
-      'Usage: node plugins/webex/scripts/eval/run-scenario.js <scenario.json>'
+  const outputDir = path.join(
+    __dirname,
+    'outputs',
+    scenario.id,
+    variant,
+    evalRunId
+  );
+  await fs.mkdir(outputDir, { recursive: true });
+  const writeJson = (name, data) =>
+    fs.writeFile(
+      path.join(outputDir, name),
+      `${JSON.stringify(data, null, 2)}\n`,
+      'utf8'
     );
-    process.exit(1);
-  }
 
-  const cliLog = {
-    info: (msg, meta) => console.log('[eval:info]', msg, meta ?? ''),
-    warn: (msg, meta) => console.warn('[eval:warn]', msg, meta ?? ''),
-    error: (msg, meta) => console.error('[eval:error]', msg, meta ?? ''),
-  };
+  await writeJson('bundle.json', bundle);
+  await writeJson('meta.json', meta);
+  await writeJson('threads.json', threads);
+  await writeJson('tasks.json', bundle.tasks);
+  await writeJson('jobs.json', jobs);
+  await writeJson('usage-summary.json', usageSummary);
+  await writeJson('sends.json', capturedSends);
+  await writeJson('gate-validation.json', gateValidation);
 
-  (async () => {
-    const scenarioRaw = await fs.readFile(path.resolve(scenarioArg), 'utf8');
-    const scenario = JSON.parse(scenarioRaw);
+  log.info('[eval] scenario complete', {
+    scenarioId: scenario.id,
+    variant,
+    evalRunId,
+    totalMs,
+    taskCount: bundle.tasks.length,
+    recallCount: recallEntries.length,
+    sends: capturedSends.length,
+    tokensTotal: usageSummary.total.total,
+    outputDir,
+  });
 
-    const result = await runScenario({ scenario, options: { clearPrevious: true }, log: cliLog });
-
-    const outputDir = path.join(PLUGIN_ROOT, 'evaluation', 'outputs', scenario.id);
-    await fs.rm(outputDir, { recursive: true, force: true });
-    await fs.mkdir(outputDir, { recursive: true });
-
-    const writeJson = (name, data) =>
-      fs.writeFile(path.join(outputDir, name), JSON.stringify(data, null, 2) + '\n', 'utf8');
-
-    await writeJson('response.json', result);
-    if (result.items.length) await writeJson('items.json', result.items);
-    if (result.conversations.length) await writeJson('conversations.json', result.conversations);
-    if (result.threads.length) await writeJson('threads.json', result.threads);
-    if (result.routingDecisions.length) await writeJson('routing-decisions.json', result.routingDecisions);
-    if (result.recallResponses.length) await writeJson('recall-responses.json', result.recallResponses);
-    await writeJson('timings.json', result.timings);
-    await writeJson('run-log.json', result.runLog);
-
-    console.log(`\n[eval] outputs written to: ${outputDir}`);
-  })()
-    .then(() => process.exit(0))
-    .catch((err) => {
-      console.error('[eval] fatal error:', err);
-      process.exit(1);
-    });
+  return { ...bundle, outputDir };
 }
+
+module.exports = {
+  runScenario,
+  encodeEvalSpaceId,
+  isEvalSpaceId,
+  buildSyntheticMessage,
+  BOT_ID,
+};
