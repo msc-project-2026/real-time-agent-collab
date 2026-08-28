@@ -31,6 +31,30 @@ const DEFAULT_DELEGATION_TARGET_BY_TYPE = {
 // permissive a catch-all, letting non-deliverables (decisions, questions)
 // get extracted as tasks.
 const ALLOWED_TYPES = new Set(['development', 'design', 'research']);
+
+// Self-claim strength, replacing a model-authored 0-1 `confidence` float.
+//
+// The model was asked to compress a three-band judgment into a number, which
+// we then re-expanded against proactivityThreshold. That round trip was the
+// single noisiest part of the pipeline: two identical eval runs of the same
+// scenario produced 0.6 and 0.75 for the same task, straddling the 0.7 bar,
+// so the agent held the task for review on one run and auto-started it on the
+// other. LLMs are poorly calibrated at emitting numeric self-confidence, and
+// a hard threshold turns that noise into a coin flip on the highest-stakes
+// decision in the system.
+//
+// The model now names the band directly and this table does the mapping. The
+// values are chosen so the existing per-space thresholds keep their meaning
+// exactly: Conservative (0.85) and Balanced (0.7) auto-approve only
+// `directed`; Proactive (0.5) also auto-approves `reasonable`; `speculative`
+// never auto-approves under any supported setting. Tasks still store a
+// numeric `confidence`, so the board and any downstream reader are unchanged.
+const ALLOWED_CLAIMS = new Set(['directed', 'reasonable', 'speculative']);
+const CLAIM_CONFIDENCE = {
+  directed: 0.9,
+  reasonable: 0.6,
+  speculative: 0.2,
+};
 // v3 §7c status enum, board-workflow revision: `open`/`approved`/`delegated`
 // replaced by `unapproved` (pre-approval, drives the Review Queue) plus a
 // traditional post-approval pipeline (backlog/in_progress/in_review/done).
@@ -89,12 +113,13 @@ function writeTaskTool() {
           type: 'string',
           enum: [...ALLOWED_STATUSES],
           description:
-            'For a task assigned to a human (or unassigned): set this only if the thread clearly shows real progress already exists (e.g. already started or already done) — otherwise omit it and the default applies. For a task assigned to the agent itself ("agent"): never set this — pass `confidence` instead, and the system decides the outcome deterministically.',
+            'For a task assigned to a member: set this only if the thread clearly shows real progress already exists (e.g. already started or already done) — otherwise omit it and the default applies. For a task assigned to the agent itself ("agent"): never set this — pass `claim` instead, and the system decides the outcome deterministically.',
         },
-        confidence: {
-          type: 'number',
+        claim: {
+          type: 'string',
+          enum: [...ALLOWED_CLAIMS],
           description:
-            'Required when creating a task. When `assigned` is "agent": your confidence (0-1) that this self-claimed task should be acted upon, weighing both how explicitly you were directed and how well it fits a safe, clearly in-scope pickup. When `assigned` is a member id: 0.',
+            'Required when creating a task with `assigned` set to "agent". How strongly this work was handed to you: "directed" if you were explicitly asked to do it, "reasonable" if picking it up is a sensible, low-risk fit for the conversation, "speculative" if it is ambiguous or higher-stakes. Omit for a task assigned to a member.',
         },
         message_ids: {
           type: 'array',
@@ -122,10 +147,14 @@ function writeTaskTool() {
         assigned,
         deadline,
         status,
-        confidence,
+        claim,
         message_ids: messageIds,
         child_tasks: childTasks,
       } = params ?? {};
+
+      // Fixed value per band — never a model-authored float. See
+      // CLAIM_CONFIDENCE above for why.
+      const confidence = claim !== undefined ? CLAIM_CONFIDENCE[claim] : undefined;
 
       const errors = [];
 
@@ -155,9 +184,12 @@ function writeTaskTool() {
           '`assigned` is required when creating a task (no `id` given) — a member id from the space members list, or "agent" to claim it yourself.'
         );
       }
-      if (!id && confidence === undefined) {
+      // Only meaningful for a self-claim: a member-assigned task needs no
+      // band, and requiring a throwaway one just invites the model to invent
+      // a value it has no basis for.
+      if (!id && assigned === 'agent' && claim === undefined) {
         errors.push(
-          '`confidence` is required when creating a task (no `id` given) — 0 for a member-assigned task.'
+          `\`claim\` is required when creating a task assigned to "agent" — one of: ${[...ALLOWED_CLAIMS].join(', ')}.`
         );
       }
       if (type !== undefined && !ALLOWED_TYPES.has(type)) {
@@ -170,11 +202,10 @@ function writeTaskTool() {
           `\`status\` must be one of: ${[...ALLOWED_STATUSES].join(', ')}.`
         );
       }
-      if (
-        confidence !== undefined &&
-        (typeof confidence !== 'number' || confidence < 0 || confidence > 1)
-      ) {
-        errors.push('`confidence` must be a number between 0 and 1.');
+      if (claim !== undefined && !ALLOWED_CLAIMS.has(claim)) {
+        errors.push(
+          `\`claim\` must be one of: ${[...ALLOWED_CLAIMS].join(', ')}.`
+        );
       }
       if (messageIds !== undefined && !Array.isArray(messageIds)) {
         errors.push('`message_ids` must be an array of strings.');

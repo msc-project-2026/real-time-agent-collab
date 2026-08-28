@@ -48,7 +48,6 @@ describe('write_task tool', () => {
       title: 'Fix login test',
       type: 'development',
       assigned: 'alice',
-      confidence: 0,
       message_ids: ['msg-1'],
     });
 
@@ -66,7 +65,7 @@ describe('write_task tool', () => {
         // No status given and not self-assigned to the agent: defaults to
         // 'backlog' on create — a human-assigned task needs no approval step.
         status: 'backlog',
-        confidence: 0,
+        confidence: undefined,
         message_ids: ['msg-1'],
         child_tasks: undefined,
       },
@@ -82,7 +81,7 @@ describe('write_task tool', () => {
       title: 'Pick up small fix',
       type: 'development',
       assigned: 'agent',
-      confidence: 0.5,
+      claim: 'reasonable',
     });
 
     // Left undefined so upsertTask's own default ('unapproved') applies —
@@ -99,7 +98,6 @@ describe('write_task tool', () => {
       title: 'Already-started work',
       type: 'development',
       assigned: 'alice',
-      confidence: 0,
       status: 'in_progress',
     });
 
@@ -264,28 +262,33 @@ describe('write_task tool', () => {
     assert.ok(result.errors.some((e) => e.includes('type')));
   });
 
-  test('confidence outside 0-1 or non-numeric is rejected, and never calls the store', async (t) => {
+  // The model names a band and the tool maps it to a fixed confidence value,
+  // so an out-of-range float is no longer expressible. What must be rejected
+  // instead is a band outside the closed set, and a self-claim with no band
+  // at all (which previously fell through to tasks-store's 'unknown').
+  test('an unrecognised claim, or a self-claim with none, is rejected and never calls the store', async (t) => {
     const { writeTaskTool, upsertTask } = loadTool(t);
     const tool = writeTaskTool();
     const warnSpy = t.mock.method(console, 'warn', () => {});
 
-    const tooHigh = await tool.execute('id-1', {
+    const badBand = await tool.execute('id-1', {
       spaceId: SPACE_ID,
       title: 'Fix login test',
       type: 'development',
-      confidence: 1.5,
+      assigned: 'agent',
+      claim: 'very-confident',
     });
-    const notNumber = await tool.execute('id-1', {
+    const missingBand = await tool.execute('id-1', {
       spaceId: SPACE_ID,
       title: 'Fix login test',
       type: 'development',
-      confidence: 'high',
+      assigned: 'agent',
     });
 
-    assert.equal(tooHigh.ok, false);
-    assert.ok(tooHigh.errors.some((e) => e.includes('confidence')));
-    assert.equal(notNumber.ok, false);
-    assert.ok(notNumber.errors.some((e) => e.includes('confidence')));
+    assert.equal(badBand.ok, false);
+    assert.ok(badBand.errors.some((e) => e.includes('claim')));
+    assert.equal(missingBand.ok, false);
+    assert.ok(missingBand.errors.some((e) => e.includes('claim')));
     assert.equal(upsertTask.mock.callCount(), 0);
     // One rejected call logged, one per attempt — a validation rejection
     // previously left no trace anywhere for us to diagnose after the fact.
@@ -293,7 +296,7 @@ describe('write_task tool', () => {
     assert.match(warnSpy.mock.calls[0].arguments[0], /rejected: invalid parameters/);
   });
 
-  test('auto-approves and delegates a self-assigned task that clears the confidence threshold on create', async (t) => {
+  test('auto-approves and delegates a self-assigned task that clears the proactivity threshold on create', async (t) => {
     const upsertTask = t.mock.fn(async (params) => {
       if (params.patch?.status === 'in_progress') {
         return {
@@ -321,7 +324,7 @@ describe('write_task tool', () => {
       title: 'Investigate flaky test',
       type: 'development',
       assigned: 'agent',
-      confidence: 0.9,
+      claim: 'directed',
     });
 
     assert.equal(result.ok, true);
@@ -333,7 +336,7 @@ describe('write_task tool', () => {
     assert.equal(result.task.status, 'in_progress');
   });
 
-  test('does not auto-approve when confidence is below the threshold', async (t) => {
+  test('does not auto-approve when the claim band is below the threshold', async (t) => {
     const upsertTask = t.mock.fn(async () => ({
       id: 'task_abc',
       type: 'development',
@@ -349,13 +352,13 @@ describe('write_task tool', () => {
       title: 'Investigate flaky test',
       type: 'development',
       assigned: 'agent',
-      confidence: 0.4,
+      claim: 'speculative',
     });
 
     assert.equal(upsertTask.mock.callCount(), 1);
   });
 
-  test('does not auto-approve a task not assigned to the agent, even with high confidence', async (t) => {
+  test('does not auto-approve a task not assigned to the agent, even on a directed claim', async (t) => {
     const upsertTask = t.mock.fn(async () => ({
       id: 'task_abc',
       type: 'development',
@@ -371,7 +374,6 @@ describe('write_task tool', () => {
       title: 'Investigate flaky test',
       type: 'development',
       assigned: 'alice',
-      confidence: 0,
     });
 
     assert.equal(upsertTask.mock.callCount(), 1);
@@ -396,7 +398,7 @@ describe('write_task tool', () => {
       title: 'Investigate flaky test',
       type: 'development',
       assigned: 'agent',
-      confidence: 0.6,
+      claim: 'reasonable',
     });
 
     assert.equal(readActiveConfig.mock.callCount(), 1);
@@ -423,7 +425,7 @@ describe('write_task tool', () => {
       title: 'Investigate flaky test',
       type: 'development',
       assigned: 'agent',
-      confidence: 0.6,
+      claim: 'reasonable',
     });
 
     assert.equal(upsertTask.mock.callCount(), 1);
