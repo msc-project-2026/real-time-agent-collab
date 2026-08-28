@@ -133,11 +133,24 @@ function renderMarkdown({ scorecard, gate, tasks, tasksJudge }) {
     lines.push('_No matched task pairs to judge._');
   } else {
     const f = s.taskFidelity;
-    lines.push(`${f.passed}/${f.judged} passed (${pct(f.passRate)}).`);
-    if (f.unjudged) lines.push(`${f.unjudged} pair(s) could not be judged.`);
+    lines.push(
+      `${f.judged} task(s) rated, mean ${f.mean === null ? 'n/a' : f.mean.toFixed(2)} of 4.`
+    );
+    if (f.unjudged) lines.push(`${f.unjudged} pair(s) could not be rated.`);
+    lines.push('');
+    lines.push('| Rating | Count | |');
+    lines.push('|---|---|---|');
+    for (const [rating, label] of [
+      [4, 'accurate and well scoped'],
+      [3, 'accurate, vague or minor scope issue'],
+      [2, 'notable inaccuracy'],
+      [1, 'fabricated'],
+    ]) {
+      lines.push(`| ${rating} | ${f.distribution?.[rating] ?? 0} | ${label} |`);
+    }
     lines.push('');
     for (const r of tasksJudge?.results ?? []) {
-      const head = r.judged ? `**${r.verdict}**` : `**unjudged** — ${r.error}`;
+      const head = r.judged ? `**${r.rating}/4**` : `**unrated** — ${r.error}`;
       lines.push(`- \`${r.expectedId}\` ${head}: ${r.rationale ?? ''}`);
     }
   }

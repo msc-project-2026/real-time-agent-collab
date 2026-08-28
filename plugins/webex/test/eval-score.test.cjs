@@ -259,14 +259,15 @@ describe('scoreTasksJudge', () => {
     const seen = [];
     const judge = async ({ user }) => {
       seen.push(user);
-      return { ok: true, verdict: { verdict: 'pass', rationale: 'faithful' } };
+      return { ok: true, verdict: { rating: 4, rationale: 'faithful' } };
     };
 
     const result = await scoreTasksJudge({ bundle: b, taskScore, judge });
 
     assert.equal(result.overall.pairs, 1);
-    assert.equal(result.overall.passed, 1);
-    assert.equal(result.overall.passRate, 1);
+    assert.equal(result.overall.judged, 1);
+    assert.equal(result.overall.mean, 4);
+    assert.deepEqual(result.overall.distribution, { 1: 0, 2: 0, 3: 0, 4: 1 });
     assert.equal(result.results[0].rationale, 'faithful');
     // The judge must see the actual conversation, not just message ids.
     assert.match(seen[0], /The export button is misleading/);
@@ -300,7 +301,7 @@ describe('scoreTasksJudge', () => {
     let prompt = null;
     const judge = async ({ user }) => {
       prompt = user;
-      return { ok: true, verdict: { verdict: 'pass', rationale: 'ok' } };
+      return { ok: true, verdict: { rating: 4, rationale: 'ok' } };
     };
     await scoreTasksJudge({ bundle: b, taskScore, judge });
 
@@ -309,6 +310,26 @@ describe('scoreTasksJudge', () => {
     // Cited lines are marked, uncited ones are not.
     assert.match(prompt, /->\s*\[5\]/);
     assert.doesNotMatch(prompt, /->\s*\[1\]/);
+  });
+
+  // A rating outside 1-4 is a judge failure, not something to clamp into a
+  // neighbouring band — rounding it would hide the failure inside the
+  // distribution and quietly shift the mean.
+  test('an out-of-range rating counts as unjudged rather than being clamped', async (t) => {
+    const b = bundle({
+      messages: [{ number: 2, sender: 'Ben', text: 'x' }],
+      expectedTasks: [{ id: 'task-01', title: 'T', type: 'development', evidenceMessages: [2] }],
+      tasks: [{ id: 't1', title: 'T', type: 'development', message_ids: [mid(2)] }],
+    });
+    const taskScore = scoreTasks(b);
+    const judge = async () => ({ ok: true, verdict: { rating: 7, rationale: 'off-scale' } });
+
+    const result = await scoreTasksJudge({ bundle: b, taskScore, judge });
+
+    assert.equal(result.overall.judged, 0);
+    assert.equal(result.overall.unjudged, 1);
+    assert.equal(result.overall.mean, null);
+    assert.equal(result.results[0].rating, null);
   });
 
   test('a failed judge call is recorded as unjudged rather than aborting the run', async () => {
@@ -325,6 +346,6 @@ describe('scoreTasksJudge', () => {
     assert.equal(result.overall.judged, 0);
     assert.equal(result.overall.unjudged, 1);
     assert.equal(result.results[0].error, 'boom');
-    assert.equal(result.overall.passRate, null);
+    assert.equal(result.overall.mean, null);
   });
 });

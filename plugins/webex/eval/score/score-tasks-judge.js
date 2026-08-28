@@ -20,13 +20,17 @@ You are given the whole conversation, with the messages the extracted task cites
 
 The extraction step could see the whole conversation, so detail drawn from surrounding messages is legitimate, not invention — judge against the conversation as a whole, not only the cited lines. Different wording from the reference title is fine; it is one valid phrasing, not the only one.
 
-Fail only when the extracted task:
-- states something no message in the conversation supports, or
-- describes work materially narrower or broader than what was discussed, or
-- is so vague that a reader could not tell what to do.
+Rate the extracted task from 1 to 4:
+
+4 - Accurately describes the work and is appropriately scoped.
+3 - Accurate, but vague or with a minor scope issue.
+2 - A notable inaccuracy: states something the conversation does not support, or omits a key element of what was actually asked for.
+1 - Fabricated: describes work the conversation never discusses.
+
+Rate only the extracted text against the conversation. Who the task is assigned to is checked separately and is not yours to judge.
 
 Respond with JSON only, no prose:
-{"verdict": "pass" | "fail", "rationale": "<one or two sentences>"}`;
+{"rating": 1 | 2 | 3 | 4, "rationale": "<one or two sentences>"}`;
 
 function buildUserPrompt({ conversation, citedNumbers, observedTitle, observedDescription, referenceTitle }) {
   const cited = new Set(citedNumbers ?? []);
@@ -63,6 +67,15 @@ function citedNumbersFor(bundle, messageIds) {
     .map((m) => m.number);
 }
 
+// Ratings are reported as a distribution, never collapsed to pass/fail: any
+// threshold would be an arbitrary line, and nothing in the pipeline acts on
+// the judge's output. Keeping the scale also lets calibration surface
+// systematic bias (a judge running consistently harsher than a human) rather
+// than only bare disagreement.
+function normaliseRating(value) {
+  return Number.isInteger(value) && value >= 1 && value <= 4 ? value : null;
+}
+
 // taskScore: the output of score-tasks.js. judge: from createJudge().
 async function scoreTasksJudge({ bundle, taskScore, judge }) {
   const results = [];
@@ -91,14 +104,18 @@ async function scoreTasksJudge({ bundle, taskScore, judge }) {
       observedId: pair.observedId,
       observedTitle: pair.observedTitle,
       judged: ok,
-      verdict: ok ? verdict.verdict ?? null : null,
+      rating: ok ? normaliseRating(verdict.rating) : null,
       rationale: ok ? verdict.rationale ?? null : null,
       error: ok ? null : error,
     });
   }
 
-  const judged = results.filter((r) => r.judged);
-  const passed = judged.filter((r) => r.verdict === 'pass');
+  // A rating that came back outside 1-4 counts as unjudged rather than
+  // being clamped into a neighbouring band: a malformed rating is a judge
+  // failure, and quietly rounding it would hide that in the distribution.
+  const judged = results.filter((r) => r.judged && r.rating !== null);
+  const distribution = { 1: 0, 2: 0, 3: 0, 4: 0 };
+  for (const r of judged) distribution[r.rating] += 1;
 
   return {
     results,
@@ -106,10 +123,12 @@ async function scoreTasksJudge({ bundle, taskScore, judge }) {
       pairs: results.length,
       judged: judged.length,
       unjudged: results.length - judged.length,
-      passed: passed.length,
-      passRate: judged.length ? passed.length / judged.length : null,
+      distribution,
+      mean: judged.length
+        ? judged.reduce((sum, r) => sum + r.rating, 0) / judged.length
+        : null,
     },
   };
 }
 
-module.exports = { scoreTasksJudge, buildUserPrompt, conversationFor, citedNumbersFor, SYSTEM };
+module.exports = { scoreTasksJudge, buildUserPrompt, conversationFor, citedNumbersFor, normaliseRating, SYSTEM };
