@@ -73,88 +73,92 @@ function writeTaskTool() {
   return {
     name: 'write_task',
     description:
-      'Create a new task or update an existing one. Omit `id` to create; pass an existing `id` to patch it — only the fields you pass change, message_ids and child_tasks accumulate rather than replace. Call this once per task-worthy point you find. If it returns { ok: false }, correct the parameters and retry.',
+      'Create a new task or update an existing one. Omit `id` to create; pass an `id` to update, where only the fields you pass change. Call once per task. If it returns { ok: false }, correct the parameters and retry.',
     parameters: {
       type: 'object',
       properties: {
         spaceId: {
           type: 'string',
-          description: 'The spaceId from the prompt. Copy it verbatim.',
+          description: "This space's id, copied verbatim from the prompt.",
         },
         id: {
           type: 'string',
-          description: 'Existing task id to patch. Omit to create a new task.',
+          description:
+            'The id of an existing task to update. Omit to create a new task.',
         },
         title: {
           type: 'string',
           description:
-            'Short human-readable summary. Required when creating a task.',
+            'A few words naming the work, e.g. "Fix login test flakiness". Required when creating.',
         },
         description: {
           type: 'string',
-          description: 'Optional longer elaboration.',
+          description:
+            'A sentence of detail, only when the title alone would leave out something that matters.',
         },
         type: {
           type: 'string',
           enum: [...ALLOWED_TYPES],
           description:
-            'Required when creating a task. The kind of work this task represents.',
+            'Required when creating. "development": code or a running system. "design": a design artifact. "research": an open question investigated to a finding.',
         },
-        assigned: {
+        assigneeId: {
           type: 'string',
           description:
-            'Required when creating a task. The member id this task belongs to, taken from the space members list — the id, never a name. Use "agent" to claim it yourself when no member has been given it or claimed it.',
+            'Required when creating. The id of the member who owns this work — doing it, going to do it, or already done — from the space members list. Use "agent" to take it yourself when the thread shows nobody else owning it, or when the work is clearly intended for you.',
         },
         deadline: {
           type: 'string',
-          description: 'ISO datetime, if a deadline was actually stated.',
+          description:
+            'ISO datetime, only when the thread actually states a deadline.',
         },
         status: {
           type: 'string',
           enum: [...ALLOWED_STATUSES],
           description:
-            'For a task assigned to a member: set this only if the thread clearly shows real progress already exists (e.g. already started or already done) — otherwise omit it and the default applies. For a task assigned to the agent itself ("agent"): never set this — pass `claim` instead, and the system decides the outcome deterministically.',
+            'Only when the thread shows progress that already happened, e.g. someone has started or finished it. Never set this on a task assigned to "agent" — pass `claim` instead and the outcome is decided from that.',
         },
         claim: {
           type: 'string',
           enum: [...ALLOWED_CLAIMS],
           description:
-            'Required when creating a task with `assigned` set to "agent". How strongly this work was handed to you: "directed" if you were explicitly asked to do it, "reasonable" if picking it up is a sensible, low-risk fit for the conversation, "speculative" if it is ambiguous or higher-stakes. Omit for a task assigned to a member.',
+            'Required when `assigneeId` is "agent". How strongly the work was handed to you: "directed" — you were asked outright; "reasonable" — picking it up is a sensible, low-risk fit; "speculative" — ambiguous or higher-stakes.',
         },
-        message_ids: {
+        evidenceMessageIds: {
           type: 'array',
           items: { type: 'string' },
-          description:
-            'Message ids that are direct evidence for this task. Accumulates — do not repeat ids already recorded.',
-        },
-        child_tasks: {
-          type: 'array',
-          items: { type: 'string' },
-          description:
-            'Existing task ids that are sub-tasks of this one. Accumulates. Rejected if it would create a cycle.',
+          description: 'The messages that evidence this call. At least one.',
         },
       },
       required: ['spaceId'],
       additionalProperties: false,
     },
     async execute(_toolUseId, params) {
+      // Tool-facing names are camelCase and say what they hold
+      // (`assigneeId`, not `assigned`; `evidenceMessageIds`, not
+      // `message_ids`). They are mapped to the stored field names below —
+      // the model only ever sees this schema, so the clearer names cost
+      // nothing downstream and remove the need for instructions like "the
+      // id, never the name". `child_tasks` is deliberately not exposed:
+      // storage still supports it, but no extraction run has ever set it,
+      // and it earned a rule in the prompt it did not deserve.
       const {
         spaceId,
         id,
         title,
         description,
         type,
-        assigned,
+        assigneeId: assigned,
         deadline,
         status,
         claim,
-        message_ids: messageIds,
-        child_tasks: childTasks,
+        evidenceMessageIds: messageIds,
       } = params ?? {};
 
       // Fixed value per band — never a model-authored float. See
       // CLAIM_CONFIDENCE above for why.
-      const confidence = claim !== undefined ? CLAIM_CONFIDENCE[claim] : undefined;
+      const confidence =
+        claim !== undefined ? CLAIM_CONFIDENCE[claim] : undefined;
 
       const errors = [];
 
@@ -174,14 +178,14 @@ function writeTaskTool() {
         errors.push('`type` is required when creating a task (no `id` given).');
       }
       // Required on create only — a patch (id given) must not have to restate
-      // ownership just to append message_ids. Enforced here rather than via
+      // ownership just to append evidence ids. Enforced here rather than via
       // the schema's `required` for that reason. Both were previously
       // optional, and the first eval run showed the model omitting them on
       // every task, leaving upsertTask's `assigned: 'unknown'` default
       // standing in for an ownership decision that was never made.
       if (!id && !assigned) {
         errors.push(
-          '`assigned` is required when creating a task (no `id` given) — a member id from the space members list, or "agent" to claim it yourself.'
+          '`assigneeId` is required when creating a task (no `id` given) — a member id from the space members list, or "agent" to take it yourself.'
         );
       }
       // Only meaningful for a self-claim: a member-assigned task needs no
@@ -189,7 +193,7 @@ function writeTaskTool() {
       // a value it has no basis for.
       if (!id && assigned === 'agent' && claim === undefined) {
         errors.push(
-          `\`claim\` is required when creating a task assigned to "agent" — one of: ${[...ALLOWED_CLAIMS].join(', ')}.`
+          `\`claim\` is required when \`assigneeId\` is "agent" — one of: ${[...ALLOWED_CLAIMS].join(', ')}.`
         );
       }
       if (type !== undefined && !ALLOWED_TYPES.has(type)) {
@@ -208,10 +212,7 @@ function writeTaskTool() {
         );
       }
       if (messageIds !== undefined && !Array.isArray(messageIds)) {
-        errors.push('`message_ids` must be an array of strings.');
-      }
-      if (childTasks !== undefined && !Array.isArray(childTasks)) {
-        errors.push('`child_tasks` must be an array of strings.');
+        errors.push('`evidenceMessageIds` must be an array of strings.');
       }
 
       if (errors.length > 0) {
@@ -275,7 +276,6 @@ function writeTaskTool() {
             status: effectiveStatus,
             confidence,
             message_ids: messageIds,
-            child_tasks: childTasks,
           },
         });
 

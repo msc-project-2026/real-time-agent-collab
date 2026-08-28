@@ -47,8 +47,8 @@ describe('write_task tool', () => {
       spaceId: SPACE_ID,
       title: 'Fix login test',
       type: 'development',
-      assigned: 'alice',
-      message_ids: ['msg-1'],
+      assigneeId: 'alice',
+      evidenceMessageIds: ['msg-1'],
     });
 
     assert.equal(result.ok, true);
@@ -67,7 +67,6 @@ describe('write_task tool', () => {
         status: 'backlog',
         confidence: undefined,
         message_ids: ['msg-1'],
-        child_tasks: undefined,
       },
     });
   });
@@ -80,7 +79,7 @@ describe('write_task tool', () => {
       spaceId: SPACE_ID,
       title: 'Pick up small fix',
       type: 'development',
-      assigned: 'agent',
+      assigneeId: 'agent',
       claim: 'reasonable',
     });
 
@@ -97,7 +96,7 @@ describe('write_task tool', () => {
       spaceId: SPACE_ID,
       title: 'Already-started work',
       type: 'development',
-      assigned: 'alice',
+      assigneeId: 'alice',
       status: 'in_progress',
     });
 
@@ -108,7 +107,7 @@ describe('write_task tool', () => {
     const { writeTaskTool, upsertTask } = loadTool(t);
     const tool = writeTaskTool();
 
-    await tool.execute('id-1', { spaceId: SPACE_ID, id: 'task_abc', assigned: 'alice' });
+    await tool.execute('id-1', { spaceId: SPACE_ID, id: 'task_abc', assigneeId: 'alice' });
 
     assert.equal(upsertTask.mock.calls[0].arguments[0].patch.status, undefined);
   });
@@ -145,7 +144,7 @@ describe('write_task tool', () => {
     const result = await tool.execute('id-1', {
       spaceId: 'eu-central-1_k',
       id: 'task_abc',
-      message_ids: ['msg-1'],
+      evidenceMessageIds: ['msg-1'],
     });
 
     assert.equal(result.ok, false);
@@ -205,7 +204,7 @@ describe('write_task tool', () => {
     assert.ok(result.errors.some((e) => e.includes('status')));
   });
 
-  test('non-array message_ids/child_tasks are rejected', async (t) => {
+  test('non-array evidenceMessageIds is rejected', async (t) => {
     const { writeTaskTool } = loadTool(t);
     const tool = writeTaskTool();
 
@@ -213,15 +212,15 @@ describe('write_task tool', () => {
       spaceId: SPACE_ID,
       title: 'Fix login test',
       type: 'development',
-      message_ids: 'msg-1',
-      child_tasks: 'task_2',
+      evidenceMessageIds: 'msg-1',
     });
 
     assert.equal(result.ok, false);
-    assert.ok(result.errors.some((e) => e.includes('message_ids')));
-    assert.ok(result.errors.some((e) => e.includes('child_tasks')));
+    assert.ok(result.errors.some((e) => e.includes('evidenceMessageIds')));
   });
 
+  // The tool no longer exposes child_tasks, but storage still enforces its
+  // cycle guard, so a store-level rejection must still surface cleanly.
   test('a store rejection (e.g. cycle) surfaces as ok:false, not a throw', async (t) => {
     const { writeTaskTool } = loadTool(t, {
       upsertTask: t.mock.fn(async () => {
@@ -238,7 +237,7 @@ describe('write_task tool', () => {
     const result = await tool.execute('id-1', {
       spaceId: SPACE_ID,
       id: 'task_a',
-      child_tasks: ['task_b'],
+      status: 'done',
     });
 
     assert.equal(result.ok, false);
@@ -275,14 +274,14 @@ describe('write_task tool', () => {
       spaceId: SPACE_ID,
       title: 'Fix login test',
       type: 'development',
-      assigned: 'agent',
+      assigneeId: 'agent',
       claim: 'very-confident',
     });
     const missingBand = await tool.execute('id-1', {
       spaceId: SPACE_ID,
       title: 'Fix login test',
       type: 'development',
-      assigned: 'agent',
+      assigneeId: 'agent',
     });
 
     assert.equal(badBand.ok, false);
@@ -323,7 +322,7 @@ describe('write_task tool', () => {
       spaceId: SPACE_ID,
       title: 'Investigate flaky test',
       type: 'development',
-      assigned: 'agent',
+      assigneeId: 'agent',
       claim: 'directed',
     });
 
@@ -351,7 +350,7 @@ describe('write_task tool', () => {
       spaceId: SPACE_ID,
       title: 'Investigate flaky test',
       type: 'development',
-      assigned: 'agent',
+      assigneeId: 'agent',
       claim: 'speculative',
     });
 
@@ -373,7 +372,7 @@ describe('write_task tool', () => {
       spaceId: SPACE_ID,
       title: 'Investigate flaky test',
       type: 'development',
-      assigned: 'alice',
+      assigneeId: 'alice',
     });
 
     assert.equal(upsertTask.mock.callCount(), 1);
@@ -397,7 +396,7 @@ describe('write_task tool', () => {
       spaceId: SPACE_ID,
       title: 'Investigate flaky test',
       type: 'development',
-      assigned: 'agent',
+      assigneeId: 'agent',
       claim: 'reasonable',
     });
 
@@ -424,7 +423,7 @@ describe('write_task tool', () => {
       spaceId: SPACE_ID,
       title: 'Investigate flaky test',
       type: 'development',
-      assigned: 'agent',
+      assigneeId: 'agent',
       claim: 'reasonable',
     });
 

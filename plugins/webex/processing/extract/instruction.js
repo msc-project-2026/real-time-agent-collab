@@ -5,7 +5,7 @@
 // (not chained — see plan: Wiring). Communication-only was respond's
 // deliberate phase-5 scope; this step is the extraction-only counterpart:
 // no message tool (disableMessageTool: true, see extract.js), only
-// write_task and search_tasks. Same window shape as respond
+// write_task. Same window shape as respond
 // (see format-window.js) plus the active-tasks set, since extract needs it
 // to decide new-task vs. update-existing vs. child-of-existing — the same
 // context respond gets, used for a different purpose.
@@ -36,32 +36,36 @@ function buildExtractInstruction({
   return `
 ## Task
 
-You are the task-extraction step for one thread's message batch. Your only job is to identify tasks in the new messages below and record them by calling \`write_task\`.
+You are maintaining and updating an accurate collection of task items from a batch of new messages in a software engineering team's chat space, supported with additional context.
 
-You are NOT the assistant responding to anyone. Do not answer any question. Do not address any sender. The only text you ever produce is the single acknowledgement word described at the end, after the tool calls succeed.
+Read the batch of new messages, and supporting context: recent message history and the collection of active tasks below. Determine:
 
-Message entries below may include your own prior messages in this thread, marked \`fromAgent: true\` — you have no name of your own in this data (\`senderName\` is null for those), so \`fromAgent\` is the only way to recognize something you said yourself.
+1. Existing task(s), if any, that should be updated.
+2. New task(s), if any, that should be created.
 
-A task is a concrete project deliverable, falling into exactly one of these three categories:
-- **development**: writing, fixing, or shipping code or a running system — a feature, a bug fix, an integration, a deployment.
-- **design**: producing a concrete design artifact — a UI mockup, an architecture diagram, an API shape, a written spec.
-- **research**: investigating a concrete open question and producing a finding — evaluating an option, prototyping to answer a question, gathering information the team needs.
+Call \`write_task\` to record your decision per task, however many that is, including none. When your calls are done, reply with exactly the word \`done\` and nothing else.
 
-Anything else is out of scope for \`write_task\`, however notable it is in the thread — a decision being made, a question directed at you seeking information or input, general discussion, status updates, acknowledgements.
-- A request for concrete work is still task-worthy even when it's phrased as a question or addressed to someone other than you — judge by what's actually being asked for, not by the sentence's grammatical mood or who it's aimed at.
-- Not every message contains a task — many turns will warrant zero \`write_task\` calls, and that's the expected common case.
+**Note:** a task is a concrete project-related unit of work of exactly one of the following types:
+- **development** — code or a running system: a feature, a bug fix, an integration, a deployment.
+- **design** — a design artifact: a UI mockup, an architecture diagram, an API shape, a written spec.
+- **research** — a concrete open question investigated to a finding.
 
-### Recent history
+## Facts
 
-These are already processed, don't re-judge them. They serve as context of previous conversation in this thread to make sense of the new messages.
+- spaceId: \`${spaceId}\` — pass this exact value on every call.
+- \`fromAgent: true\` signals a message is your own; you have no name in this data.
+- All data besides the new messages is already processed, included as context.
+- Messages are shown in arrival order.
+
+## Context
+
+### Recent message history
 
 \`\`\`json
 ${JSON.stringify(sections.history, null, 2)}
 \`\`\`
 
-### New messages
-
-The set of new messages in this thread, in arrival order. This is what you're extracting from.
+### Batch of new messages
 
 \`\`\`json
 ${JSON.stringify(sections.batch, null, 2)}
@@ -69,46 +73,26 @@ ${JSON.stringify(sections.batch, null, 2)}
 
 ### Active tasks
 
-Tasks already tracked for this space. Before creating a new task, check whether the point you found is actually an update to one of these (new evidence, a status change, a natural sub-task) rather than a duplicate.
-
 \`\`\`json
 ${JSON.stringify(tasks, null, 2)}
 \`\`\`
 
-### Space members
-
-The real people in this space.
+### Chat space members
 
 \`\`\`json
 ${JSON.stringify(spaceMembers, null, 2)}
 \`\`\`
 
-### Facts
+### Rules
 
-- spaceId: \`${spaceId}\`
-
-Always pass this exact spaceId to every \`write_task\`/\`search_tasks\` call — copy it verbatim, never guess or reconstruct it.
-
-### Tools available to you
-
-You have exactly two tools for this task: \`write_task\`, to create or update a task, and \`search_tasks\`, to check for an existing task that isn't in the active-tasks list above — it searches both active and archived tasks, so use it when you suspect a match that's archived or otherwise not shown to you. Use only these.
-
-### How to extract
-
-Check every new message on its own — a batch can contain more than one task, and a later message continuing the thread doesn't retire an earlier one.
-
-For each task:
-- Decide whether it's new or an update to one of the active tasks above (or found via \`search_tasks\`). Pass the existing task's \`id\` to update it; omit \`id\` to create a new one.
-- Always include a short \`title\` when creating a task — a few words summarizing what it actually is (e.g. "Fix login test flakiness"), not a restatement of the type. Add \`description\` only if the title alone would leave out something that matters.
-- Always include \`message_ids\` — the specific message id(s) that are direct evidence for this task. Never omit this.
-- Use \`child_tasks\` when the point is naturally a sub-part of an existing task.
-- Set \`deadline\` only when the thread actually states one — leave it unset otherwise rather than guessing.
-- Always set \`assigned\`. If the thread shows a space member has been given this task, or has claimed it themselves, set \`assigned\` to that member's \`id\` from the space members list above — their \`id\`, never their name, and never a guessed id for someone not in the list. Otherwise claim it yourself: \`assigned: "agent"\`.
-- When you assign a task to yourself, also set \`claim\` to how strongly the work was handed to you: \`directed\` if you were explicitly asked to do it; \`reasonable\` if picking it up is a sensible, low-risk fit for what the thread is doing; \`speculative\` if it's ambiguous, higher-stakes, or you'd be stretching to justify it. Omit \`claim\` for a task assigned to a member.
-- **Status, member-assigned tasks**: set \`status\` only if the thread clearly shows real progress already exists (e.g. someone says they already started it, or it's already done); otherwise leave it unset and the default applies.
-- **Status, agent-assigned tasks** (\`assigned: "agent"\`): never set \`status\` yourself.
-
-Call \`write_task\` once per task — as many or as few times as the batch actually warrants, including zero. Once you've made all the calls you need, respond with exactly the word \`done\` and nothing else — no explanation, no punctuation.
+- The \`write_task\` schema defines what each field means and when to set it.
+- Evidence comes from the new messages; history and active tasks are context only.
+- Prefer updating an existing task to creating one that overlaps it.
+- An update should leave the task accurate in every field the thread has since clarified, not only the one that changed.
+- One batch can carry several unrelated points, and a later message does not retire an earlier one.
+- Do not invent an assignee — the sender of a message is not automatically doing the work.
+- Do not record casual chatter, vague interest, or weak speculation.
+- Leave unset anything the thread does not actually establish.
 `.trim();
 }
 
