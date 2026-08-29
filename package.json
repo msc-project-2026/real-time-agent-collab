@@ -10,7 +10,8 @@
     "services/setup-ui"
   ],
   "scripts": {
-    "test": "node --test lib/*.test.cjs plugins/source-observer/*.test.js plugins/webex/*.test.cjs plugins/webex-meeting-join/*.test.cjs services/setup-ui/*.test.js"
+    "test": "node --test lib/*.test.cjs plugins/browser-inspector/*.test.cjs plugins/source-observer/*.test.js plugins/webex/*.test.cjs plugins/webex-meeting-join/*.test.cjs services/setup-ui/*.test.js",
+    "test:plugins:coverage": "mkdir -p sonarqube/coverage && node --test --experimental-test-coverage --test-reporter=lcov --test-reporter-destination=sonarqube/coverage/lcov.info --test-coverage-include='plugins/browser-inspector/*.js' --test-coverage-include='plugins/webex-meeting-join/*.js' plugins/browser-inspector/*.test.cjs plugins/webex-meeting-join/*.test.cjs"
   },
   "overrides": {
     "chalk": "^5.3.0"

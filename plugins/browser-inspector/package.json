@@ -11,6 +11,9 @@
   "engines": {
     "node": ">=24.0.0"
   },
+  "scripts": {
+    "test": "node --test *.test.cjs"
+  },
   "dependencies": {
     "playwright": "^1.52.0"
   }
