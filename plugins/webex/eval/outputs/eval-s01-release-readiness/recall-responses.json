@@ -1,8 +1,0 @@
-[
-  {
-    "ts": "2026-08-17T22:18:18.964Z",
-    "to": "eval-s01-release-readiness",
-    "markdown": "Noted Ben — logging that:\n\n- ✅ Date range filter: working\n- ✅ Account owner filter: working\n- ⚠️ Empty state UI: needs polish before the demo\n\nIs the empty state just a visual thing (copy/styling), or is there logic missing too? And do you have a sense of how long a fix would take?",
-    "parentId": "eval-s01-release-readiness-msg-2"
-  }
-]

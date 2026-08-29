@@ -39,6 +39,7 @@ const { getPluginRuntime } = require('../runtime');
 const {
   spaceDir,
   taggingValidationLogPath,
+  getWorkspaceRoot,
 } = require('../storage/paths');
 
 const FALLBACK_BOT_ID = 'eval-bot';
@@ -386,9 +387,14 @@ async function runScenario({ scenario, variant = 'baseline', overrides = {}, log
     runLog,
   };
 
+  // Bundles go on the persistent volume, not next to this file. __dirname is
+  // under /app, the container's image layer, which is replaced wholesale on
+  // every deploy — a full session's runs were lost that way before this was
+  // noticed. getWorkspaceRoot() resolves the mounted volume, the same place
+  // every other piece of durable state already lives.
   const outputDir = path.join(
-    __dirname,
-    'outputs',
+    getWorkspaceRoot(),
+    'eval-outputs',
     scenario.id,
     variant,
     evalRunId

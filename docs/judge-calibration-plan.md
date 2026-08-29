@@ -179,6 +179,11 @@ EVAL_JUDGE_BASE_URL=... EVAL_JUDGE_API_KEY=... \
   node plugins/webex/eval/score/run.js <bundle-dir>
 ```
 
+Bundles land on the persistent volume at `<workspaceRoot>/eval-outputs/<scenario>/<variant>/
+<evalRunId>/`, not under `/app` — the container's image layer is replaced on every deploy, and a
+session's runs were lost that way before this was caught. Pull them off the volume before doing
+anything else with them.
+
 Take the extracted tasks and captured replies from each `bundle.json`; take the judge's own
 ratings from `scorecard.json` and **withhold them from the grader**.
 
@@ -204,6 +209,25 @@ Self-contained, no repo access needed:
 - **Identical inputs.** If the grader sees more or less than the judge, two different tasks are
   being measured.
 
+## Two markers, and why
+
+Have **two people grade the same examples**, independently and blind to each other as well as to
+the judge. The second marker is not redundancy — it establishes the **ceiling**.
+
+If two humans agree with each other only 80% of the time on this task, a judge agreeing 78% is
+essentially at human level. Without that ceiling, a judge-vs-human number cannot be interpreted:
+there is no way to tell a mediocre judge from a genuinely hard labelling task.
+
+So compute, in this order:
+1. **Human vs human** — the ceiling, and the headline context for everything else.
+2. **Judge vs each human** — read against that ceiling, not against 100%.
+3. Optionally, have the two markers reconcile their disagreements into a consensus label and
+   measure the judge against that.
+
+Collection is the part that cannot be redone later; the analysis is all derivable from the same
+labels afterwards. Decide up front to report raw agreement, the matrix and weighted kappa
+**together**, so that choosing an emphasis later is narrative, not selective reporting.
+
 ## Analysis
 
 - Exact agreement and adjacent agreement (within one point), plus the 4x4 of judge rating x
@@ -211,8 +235,12 @@ Self-contained, no repo access needed:
   agreement is the more honest headline.
 - Mean difference (judge minus human) to expose systematic leniency or harshness — this is the
   thing a scalar buys that a binary cannot.
-- With 24-30 examples a weighted kappa is unstable on a skewed distribution — report the matrix
-  and enumerate every disagreement rather than lean on a single coefficient.
+- **Quadratic weighted kappa**, not plain Cohen's kappa: the scale is ordinal, and unweighted
+  kappa would treat a 4-vs-1 disagreement exactly like 4-vs-3.
+- **Beware the kappa paradox.** On a small sample clustered at 4, kappa can come out low despite
+  high raw agreement, purely because one category dominates. Report it alongside raw agreement
+  and the matrix and say plainly which is doing the work. The constructed third of each set
+  exists partly to spread the distribution and blunt this.
 - **The disagreements are the actual output.** They show whether the judge is systematically
   lenient, systematically harsh, or just noisy, and each one is worth reading in full. A judge
   that is consistently one band off is correctable by rewording an anchor; one that is noisy is
@@ -238,9 +266,12 @@ Done:
 4. ~~`eval-s01-release-readiness` brought onto the current fixture schema.~~ (2026-08-29)
 
 Remaining:
-3. **Self-consistency for the *response* judge**, 3x identical input. It has never run against
-   real data. Not covered by the task judge's result: different prompt, different instrument.
-   Do this in-house.
+3. ~~**Self-consistency for the response judge**, 3x identical input: 12/12 stable across four
+   hand-built cases spanning the scale — a reply conveying both expected facts rated 4,4,4; one
+   omitting a fact 2,2,2; a fluent non-answer 1,1,1; and a false-positive control sharing almost
+   no vocabulary with the expected points but conveying both facts rated 4,4,4. It scores
+   substance rather than string overlap, and separates an omission (2) from a non-answer (1).~~
+   (2026-08-29)
 5. **Freeze and version-stamp both prompts.** Nothing below is valid if either changes after.
 6. **Generate the material**: three runs each of `eval-s00-smoke` and
    `eval-s01-release-readiness`, scored, keeping every `bundle.json` and `scorecard.json`.
@@ -253,4 +284,6 @@ Remaining:
 
 ## Status
 
-Planned, not started. Blocked on nothing except step 3 and the deploy currently in flight.
+Not started. Both self-consistency checks are done (task judge 9/9, response judge 12/12) and
+both scenarios are on the current fixture schema. The remaining blockers are entirely ours:
+freeze both prompts, then generate the material from three runs of each scenario.

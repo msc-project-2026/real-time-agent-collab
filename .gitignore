@@ -23,3 +23,6 @@ docs/report-outline.md
 docs/report-outline.docx
 docs/~$*.docx
 docs/phase-8-eval-plan.md
+# Judge calibration working directory: grader packages and returned sheets.
+# Contains generated examples and human labels, not source.
+plugins/webex/calibration/
