@@ -55,10 +55,15 @@ describe('sendOutboundMessage', () => {
 
     assert.deepEqual(result, { id: 'sent-1', roomId: 'space-1', personId: 'bot-1' });
     assert.equal(sendFn.mock.callCount(), 1);
+    // spaceId and botId ride along for the eval override's benefit (send.js's
+    // resolveOutboundSender) — it needs botId to stamp its synthetic reply as
+    // bot-authored. sendWebexMessage destructures only what it needs.
     assert.deepEqual(sendFn.mock.calls[0].arguments[0], {
       token: 'tok-1',
       to: 'space-1',
       markdown: 'hello',
+      spaceId: 'space-1',
+      botId: 'bot-1',
     });
     assert.equal(appendMessageToThreadWindow.mock.callCount(), 1);
     const recordArgs = appendMessageToThreadWindow.mock.calls[0].arguments[0];
@@ -263,5 +268,58 @@ describe('resolveReplyThreadId', () => {
       isBotMentioned: true,
     });
     assert.equal(result, null);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-space outbound override (send.js) — the eval harness's capture seam.
+// Its safety property is the scoping: the gateway serves live Webex rooms
+// while a scenario runs, so an override that fired on every space would
+// swallow production replies.
+// ---------------------------------------------------------------------------
+
+describe('resolveOutboundSender', () => {
+  const {
+    resolveOutboundSender,
+    setOutboundOverride,
+    sendWebexMessage,
+  } = require('../send');
+
+  test('returns the override only for the space it was registered against', (t) => {
+    const fn = t.mock.fn();
+    setOutboundOverride({ spaceId: 'eval-space', fn });
+    t.after(() => setOutboundOverride(null));
+
+    assert.equal(resolveOutboundSender({ spaceId: 'eval-space' }), fn);
+    assert.equal(resolveOutboundSender({ spaceId: 'real-space' }), sendWebexMessage);
+  });
+
+  test('a caller-supplied sendFn still wins for every other space', (t) => {
+    const override = t.mock.fn();
+    const injected = t.mock.fn();
+    setOutboundOverride({ spaceId: 'eval-space', fn: override });
+    t.after(() => setOutboundOverride(null));
+
+    assert.equal(resolveOutboundSender({ spaceId: 'real-space', sendFn: injected }), injected);
+    // Within the eval space the override takes precedence: it is the only
+    // path that reaches the respond step's own message-tool send.
+    assert.equal(resolveOutboundSender({ spaceId: 'eval-space', sendFn: injected }), override);
+  });
+
+  test('falls back to the real sender with no override, and after clearing', () => {
+    setOutboundOverride(null);
+    assert.equal(resolveOutboundSender({ spaceId: 'eval-space' }), sendWebexMessage);
+
+    setOutboundOverride({ spaceId: 'eval-space', fn: () => {} });
+    setOutboundOverride(null);
+    assert.equal(resolveOutboundSender({ spaceId: 'eval-space' }), sendWebexMessage);
+  });
+
+  test('a missing spaceId never matches an override', (t) => {
+    const fn = t.mock.fn();
+    setOutboundOverride({ spaceId: 'eval-space', fn });
+    t.after(() => setOutboundOverride(null));
+
+    assert.equal(resolveOutboundSender({ spaceId: undefined }), sendWebexMessage);
   });
 });

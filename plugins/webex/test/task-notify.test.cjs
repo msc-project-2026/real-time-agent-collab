@@ -44,6 +44,8 @@ describe('runTaskNotifyStep', () => {
         sendWebexMessage: collaborators.sendWebexMessage,
         sendOutboundMessage,
         resolveReplyThreadId,
+        // The card path (card/shared.js) consults this to pick a sender.
+        resolveOutboundSender: ({ sendFn }) => sendFn ?? collaborators.sendWebexMessage,
       },
       [require.resolve('../processing/board-url')]: { deriveBoardUrl: collaborators.deriveBoardUrl },
     });

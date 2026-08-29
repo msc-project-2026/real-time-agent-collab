@@ -8,7 +8,7 @@
 // shares, and the "here's a card, send it as a Webex message attachment"
 // plumbing both domains would otherwise duplicate.
 
-const { sendWebexMessage } = require('../send');
+const { sendWebexMessage, resolveOutboundSender } = require('../send');
 const { appendMessageToThreadWindow } = require('../storage/threads-store');
 
 function valueOrEmpty(value) {
@@ -52,7 +52,11 @@ async function sendAdaptiveCard({
   const token = account.config?.token;
   if (!token) throw new Error('Webex token is required');
 
-  const msg = await sendFn({
+  // Same per-space override seam sendOutboundMessage uses (send.js) — cards
+  // are a parallel send path, so without this an eval run would capture
+  // replies but still fire real Webex calls for the config and task cards.
+  const send = resolveOutboundSender({ spaceId, sendFn });
+  const msg = await send({
     token,
     to: spaceId,
     markdown,
@@ -63,6 +67,8 @@ async function sendAdaptiveCard({
       },
     ],
     parentId,
+    spaceId,
+    botId,
   });
 
   if (recordToThread && botId) {

@@ -95,14 +95,47 @@ async function sendWebexMessage({
   });
 }
 
+// Per-space outbound override — the eval harness's capture seam.
+//
+// `sendFn` injection cannot reach every sender: when the respond step's model
+// calls the shared `message` tool, channel.js supplies its own `sendFn` and
+// there is no parameter the harness can thread in. Its send then hits real
+// Webex, 404s against a synthetic room, and throws before the recording step
+// below is reached — so the agent's own replies never entered the thread
+// window, and any scenario where it speaks more than once was being evaluated
+// against a transcript in which it stayed silent.
+//
+// A module-level seam consulted *inside* the senders catches all of them
+// uniformly, the model's tool call included. It is scoped to a single spaceId
+// so it can never intercept a real space: the gateway serves live Webex rooms
+// while a scenario runs, and eval space ids decode to `:eval/ROOM/` URNs that
+// no real room can match. Overrides are registered and cleared around a run;
+// two concurrent runs would clobber each other, so runs stay sequential.
+let outboundOverride = null; // { spaceId, fn }
+
+function setOutboundOverride(entry) {
+  outboundOverride = entry ?? null;
+}
+
+function getOutboundOverride() {
+  return outboundOverride;
+}
+
+// The one place that owns override semantics. Both senders below call it, so
+// neither can drift out of sync with the other.
+function resolveOutboundSender({ spaceId, sendFn = sendWebexMessage }) {
+  if (outboundOverride && spaceId && outboundOverride.spaceId === spaceId) {
+    return outboundOverride.fn;
+  }
+  return sendFn;
+}
+
 // Send-time recording (response-policy revision, phase 2): every sender in
 // this plugin — the model's own replies via channel.js, and this plugin's
 // own deterministic sends (config/task cards, task-notify's ack, the
 // thinking placeholder) — goes through this instead of calling `sendFn`
 // directly, so recording is never something a caller has to remember or
-// reimplement. `sendFn` is the thing that actually hits Webex (real by
-// default); this function itself is never wrapped or swapped out — only
-// `sendFn` is. Recording reuses the exact same appendMessageToThreadWindow
+// reimplement. Recording reuses the exact same appendMessageToThreadWindow
 // path inbound messages go through (same threading/root-seeding rules,
 // not a parallel implementation) — a bot-authored message routes straight
 // to `processed`, never `pending`, via that function's own existing logic.
@@ -115,7 +148,12 @@ async function sendOutboundMessage({
   log,
   ...sendParams
 }) {
-  const msg = await sendFn(sendParams);
+  const send = resolveOutboundSender({ spaceId, sendFn });
+  // spaceId/botId are passed through for the override's benefit — it needs
+  // botId to stamp the synthetic message as bot-authored, so the recording
+  // below routes it to `processed` rather than treating it as a user turn.
+  // sendWebexMessage destructures only what it needs and ignores both.
+  const msg = await send({ ...sendParams, spaceId, botId });
 
   if (recordToThread && botId) {
     await appendMessageToThreadWindow({ spaceId, message: msg, botId, log, fetchMessageById }).catch(
@@ -126,4 +164,12 @@ async function sendOutboundMessage({
   return msg;
 }
 
-module.exports = { buildMsgBody, sendWebexMessage, sendOutboundMessage, resolveReplyThreadId };
+module.exports = {
+  buildMsgBody,
+  sendWebexMessage,
+  sendOutboundMessage,
+  resolveReplyThreadId,
+  resolveOutboundSender,
+  setOutboundOverride,
+  getOutboundOverride,
+};

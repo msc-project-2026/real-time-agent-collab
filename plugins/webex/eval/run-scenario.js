@@ -33,12 +33,30 @@ const { summarizeUsage } = require('../processing/usage/summary');
 const { readTasksState } = require('../storage/tasks-store');
 const { readRecallEntries } = require('../storage/recall-store');
 const { getThreads } = require('../storage/threads-store');
+const { setOutboundOverride } = require('../send');
+const { webexPlugin } = require('../channel');
+const { getPluginRuntime } = require('../runtime');
 const {
   spaceDir,
   taggingValidationLogPath,
 } = require('../storage/paths');
 
-const BOT_ID = 'eval-bot';
+const FALLBACK_BOT_ID = 'eval-bot';
+
+// The real bot's personId, resolved from the live account. Using it rather
+// than a synthetic id keeps a single bot identity across the whole run:
+// inbound self-filtering, thread-window routing (`message.personId === botId`
+// decides processed vs pending) and `fromAgent` in every prompt all compare
+// against the same value. channel.js caches it at startup, so it is populated
+// inside the gateway and null anywhere else — hence the fallback.
+function resolveBotId() {
+  try {
+    const cfg = getPluginRuntime().config.current();
+    return webexPlugin.config.resolveAccount(cfg)?.botId ?? FALLBACK_BOT_ID;
+  } catch {
+    return FALLBACK_BOT_ID;
+  }
+}
 const MENTION_MARKERS = ['@Collaboration', '@collab', '@Collab', '@bot'];
 const EVAL_URN_MARKER = ':eval/ROOM/';
 
@@ -74,7 +92,7 @@ function hasMention(text) {
   );
 }
 
-function buildSyntheticMessage({ scenarioMsg, spaceId, participants, numberToId }) {
+function buildSyntheticMessage({ scenarioMsg, spaceId, participants, numberToId, botId }) {
   const participant = participants[scenarioMsg.sender];
   const id = numberToId(scenarioMsg.number);
   const parentId =
@@ -92,7 +110,7 @@ function buildSyntheticMessage({ scenarioMsg, spaceId, participants, numberToId 
     senderName: participant?.name ?? scenarioMsg.sender,
     created: stableTimestamp(scenarioMsg.number),
     ...(parentId != null ? { parentId } : {}),
-    mentionedPeople: hasMention(scenarioMsg.text) ? [BOT_ID] : [],
+    mentionedPeople: hasMention(scenarioMsg.text) ? [botId] : [],
     _eval: {
       number: scenarioMsg.number,
       round: scenarioMsg.round ?? null,
@@ -229,22 +247,50 @@ async function runScenario({ scenario, variant = 'baseline', overrides = {}, log
       spaceId,
       participants,
       numberToId,
+      botId,
     });
     syntheticById.set(synthetic.id, synthetic);
   }
 
+  const botId = resolveBotId();
+  log.info('[eval] resolved bot identity', {
+    botId,
+    synthetic: botId === FALLBACK_BOT_ID,
+  });
+
   const capturedSends = [];
   let currentMessageNumber = null;
-  async function captureSend({ to, markdown, text, parentId, replyTo, threadId } = {}) {
+
+  // Registered against this run's spaceId only (send.js), so it intercepts
+  // every sender in the plugin — including the respond step's own `message`
+  // tool call, which no injected `sendFn` can reach — while real spaces keep
+  // hitting Webex untouched.
+  //
+  // The synthetic reply is stamped with the same `botId` the caller is about
+  // to record against, so appendMessageToThreadWindow routes it to
+  // `processed` as bot-authored rather than into `pending` as a user turn.
+  async function captureSend({ to, markdown, text, parentId, spaceId: sendSpaceId, botId, attachments } = {}) {
+    const n = capturedSends.length + 1;
     capturedSends.push({
       ts: new Date().toISOString(),
       forMessageNumber: currentMessageNumber,
-      to: to ?? null,
+      to: to ?? sendSpaceId ?? null,
       markdown: markdown ?? text ?? '',
-      parentId: parentId ?? replyTo ?? null,
-      threadId: threadId ?? null,
+      parentId: parentId ?? null,
+      isCard: Array.isArray(attachments) && attachments.length > 0,
     });
-    return { id: `eval-captured-${capturedSends.length}` };
+    return {
+      id: `eval-sent-${n}`,
+      roomId: sendSpaceId ?? to,
+      roomType: 'group',
+      personId: botId,
+      personEmail: 'collab-agent@eval.test',
+      text: markdown ?? text ?? '',
+      markdown: markdown ?? text ?? '',
+      created: new Date().toISOString(),
+      ...(parentId != null ? { parentId } : {}),
+      mentionedPeople: [],
+    };
   }
 
   // eval account — a non-empty sentinel token passes the `account.config.token`
@@ -257,6 +303,9 @@ async function runScenario({ scenario, variant = 'baseline', overrides = {}, log
 
   const messageTimings = [];
 
+  setOutboundOverride({ spaceId, fn: captureSend });
+
+  try {
   for (const scenarioMsg of scenario.messages) {
     const synthetic = syntheticById.get(numberToId(scenarioMsg.number));
     currentMessageNumber = scenarioMsg.number;
@@ -271,7 +320,7 @@ async function runScenario({ scenario, variant = 'baseline', overrides = {}, log
     try {
       await handleHydratedWebexMessage({
         message: synthetic,
-        botId: BOT_ID,
+        botId,
         account,
         log,
         fetchMessageById: async (id) => {
@@ -279,7 +328,6 @@ async function runScenario({ scenario, variant = 'baseline', overrides = {}, log
           if (!msg) throw new Error(`[eval] synthetic message not found: ${id}`);
           return msg;
         },
-        sendFn: captureSend,
       });
     } catch (err) {
       log.error('[eval] message processing threw', {
@@ -293,6 +341,11 @@ async function runScenario({ scenario, variant = 'baseline', overrides = {}, log
       id: synthetic.id,
       durationMs: Date.now() - msgStart,
     });
+  }
+  } finally {
+    // Cleared even if a message throws — a stale override would silently
+    // swallow this space's real traffic for the rest of the process's life.
+    setOutboundOverride(null);
   }
   currentMessageNumber = null;
 
@@ -377,5 +430,6 @@ module.exports = {
   encodeEvalSpaceId,
   isEvalSpaceId,
   buildSyntheticMessage,
-  BOT_ID,
+  resolveBotId,
+  FALLBACK_BOT_ID,
 };

@@ -427,7 +427,7 @@ describe('configuration submission and card flow', () => {
     const sendWebexMessage = t.mock.fn(async () => ({ id: 'card-1' }));
     const loaded = loadWithMocks(require.resolve('../config/card'), {
       [require.resolve('../api')]: { webexFetch: t.mock.fn() },
-      [require.resolve('../send')]: { sendWebexMessage, resolveReplyThreadId },
+      [require.resolve('../send')]: { sendWebexMessage, resolveReplyThreadId, resolveOutboundSender: ({ sendFn }) => sendFn ?? sendWebexMessage },
     });
     t.after(loaded.restore);
 
@@ -474,7 +474,7 @@ describe('configuration submission and card flow', () => {
     const sendWebexMessage = t.mock.fn(async () => ({ id: 'card-1' }));
     const loaded = loadWithMocks(require.resolve('../config/card'), {
       [require.resolve('../api')]: { webexFetch: t.mock.fn() },
-      [require.resolve('../send')]: { sendWebexMessage, resolveReplyThreadId },
+      [require.resolve('../send')]: { sendWebexMessage, resolveReplyThreadId, resolveOutboundSender: ({ sendFn }) => sendFn ?? sendWebexMessage },
     });
     t.after(loaded.restore);
 
@@ -498,7 +498,7 @@ describe('configuration submission and card flow', () => {
     const sendWebexMessage = t.mock.fn(async () => ({ id: 'card-1' }));
     const loaded = loadWithMocks(require.resolve('../config/card'), {
       [require.resolve('../api')]: { webexFetch: t.mock.fn() },
-      [require.resolve('../send')]: { sendWebexMessage, resolveReplyThreadId },
+      [require.resolve('../send')]: { sendWebexMessage, resolveReplyThreadId, resolveOutboundSender: ({ sendFn }) => sendFn ?? sendWebexMessage },
     });
     t.after(loaded.restore);
 
@@ -522,7 +522,7 @@ describe('configuration submission and card flow', () => {
     const sendWebexMessage = t.mock.fn();
     const loaded = loadWithMocks(require.resolve('../config/card'), {
       [require.resolve('../api')]: { webexFetch: t.mock.fn() },
-      [require.resolve('../send')]: { sendWebexMessage, resolveReplyThreadId },
+      [require.resolve('../send')]: { sendWebexMessage, resolveReplyThreadId, resolveOutboundSender: ({ sendFn }) => sendFn ?? sendWebexMessage },
     });
     t.after(loaded.restore);
     await assert.rejects(

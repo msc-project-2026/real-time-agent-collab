@@ -41,7 +41,7 @@ function buildScorecard({ bundle, gate, tasks, tasksJudge, response }) {
   };
 }
 
-function renderMarkdown({ scorecard, gate, tasks, tasksJudge }) {
+function renderMarkdown({ scorecard, gate, tasks, tasksJudge, response }) {
   const lines = [];
   const s = scorecard;
 

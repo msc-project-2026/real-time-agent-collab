@@ -349,3 +349,91 @@ describe('scoreTasksJudge', () => {
     assert.equal(result.overall.mean, null);
   });
 });
+
+describe('scoreResponse', () => {
+  const { scoreResponse, replyForQuestion } = require('../eval/score/score-response');
+
+  function responseBundle(sends) {
+    return {
+      ...bundle({
+        messages: [
+          { number: 1, sender: 'Maya', text: 'Sync on the dashboard.' },
+          { number: 2, sender: 'Ben', text: 'Permissions are still open.' },
+          { number: 3, sender: 'Aisha', text: '@Collaboration what is left?' },
+        ],
+      }),
+      scenario: {
+        id: SCENARIO_ID,
+        messages: [
+          { number: 1, sender: 'Maya', text: 'Sync on the dashboard.' },
+          { number: 2, sender: 'Ben', text: 'Permissions are still open.' },
+          { number: 3, sender: 'Aisha', text: '@Collaboration what is left?' },
+        ],
+        expectedTasks: [],
+        updates: [],
+        recallChecks: [
+          { questionMessageNumber: 3, expectedAnswerPoints: ['Permissions are still open.'] },
+        ],
+      },
+      sends,
+    };
+  }
+
+  test('rates the reply to each question turn', async () => {
+    const b = responseBundle([
+      { forMessageNumber: 3, markdown: 'Permissions are still open.', isCard: false },
+    ]);
+    let prompt = null;
+    const judge = async ({ user }) => {
+      prompt = user;
+      return { ok: true, verdict: { rating: 4, rationale: 'covers it' } };
+    };
+
+    const result = await scoreResponse({ bundle: b, judge });
+
+    assert.equal(result.overall.judged, 1);
+    assert.equal(result.overall.mean, 4);
+    assert.equal(result.results[0].rating, 4);
+    // The judge sees the conversation and the expected facts, with the
+    // question marked.
+    assert.match(prompt, /Permissions are still open/);
+    assert.match(prompt, /->\s*\[3\]/);
+  });
+
+  test('a question that got no reply scores 1 rather than being skipped', async () => {
+    const b = responseBundle([]);
+    const judge = async () => {
+      throw new Error('judge should not be called when there is no reply');
+    };
+
+    const result = await scoreResponse({ bundle: b, judge });
+
+    assert.equal(result.overall.unanswered, 1);
+    assert.equal(result.results[0].rating, 1);
+    assert.equal(result.results[0].replied, false);
+  });
+
+  test('the agent cannot be judged on messages sent after the question', async () => {
+    const b = responseBundle([
+      { forMessageNumber: 3, markdown: 'Permissions.', isCard: false },
+    ]);
+    b.scenario.messages.push({ number: 4, sender: 'Ben', text: 'Also the export button.' });
+    let prompt = null;
+    const judge = async ({ user }) => {
+      prompt = user;
+      return { ok: true, verdict: { rating: 4, rationale: 'ok' } };
+    };
+
+    await scoreResponse({ bundle: b, judge });
+
+    assert.doesNotMatch(prompt, /Also the export button/);
+  });
+
+  test('cards are not mistaken for the reply', () => {
+    const sends = [
+      { forMessageNumber: 3, markdown: 'New task pending approval', isCard: true },
+      { forMessageNumber: 3, markdown: 'The real answer.', isCard: false },
+    ];
+    assert.equal(replyForQuestion(sends, 3).markdown, 'The real answer.');
+  });
+});

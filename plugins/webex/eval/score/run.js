@@ -23,6 +23,7 @@ const path = require('node:path');
 const { scoreGate } = require('./score-gate');
 const { scoreTasks } = require('./score-tasks');
 const { scoreTasksJudge } = require('./score-tasks-judge');
+const { scoreResponse } = require('./score-response');
 const { createJudge } = require('./judge-client');
 const { buildScorecard, renderMarkdown } = require('./score-summary');
 
@@ -49,6 +50,7 @@ async function main() {
   const tasks = scoreTasks(bundle);
 
   let tasksJudge = null;
+  let response = null;
   if (!noJudge) {
     const { judge, config } = createJudge({ logPath: path.join(outDir, 'judge-log.jsonl') });
     if (config.missing.length > 0) {
@@ -57,14 +59,15 @@ async function main() {
       );
     }
     tasksJudge = await scoreTasksJudge({ bundle, taskScore: tasks, judge });
+    response = await scoreResponse({ bundle, judge });
   }
 
-  const scorecard = buildScorecard({ bundle, gate, tasks, tasksJudge, response: null });
-  const markdown = renderMarkdown({ scorecard, gate, tasks, tasksJudge });
+  const scorecard = buildScorecard({ bundle, gate, tasks, tasksJudge, response });
+  const markdown = renderMarkdown({ scorecard, gate, tasks, tasksJudge, response });
 
   await fs.writeFile(
     path.join(outDir, 'scorecard.json'),
-    `${JSON.stringify({ scorecard, gate, tasks, tasksJudge }, null, 2)}\n`,
+    `${JSON.stringify({ scorecard, gate, tasks, tasksJudge, response }, null, 2)}\n`,
     'utf8'
   );
   await fs.writeFile(path.join(outDir, 'scorecard.md'), `${markdown}\n`, 'utf8');
