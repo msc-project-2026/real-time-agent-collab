@@ -18,16 +18,31 @@ can be confidently wrong, and that we cannot tell without checking.
 
 ## What is being calibrated
 
-One narrow question, and only this one:
+**Two judges, each answering one narrow question.**
 
-> Given a conversation and a task extracted from it, is the task's title and description a
-> faithful account of that conversation?
+1. **Task fidelity** (`score-tasks-judge.js`) — given a conversation and a task extracted from
+   it, is the task's title and description a faithful account of that conversation?
+2. **Response quality** (`score-response.js`) — given a conversation, a question put to the
+   agent, and the agent's reply, does the reply answer it and convey the facts a correct answer
+   needs?
 
-Deliberately **not** in scope:
-- *Which* observed task corresponds to which expected task — that is deterministic, done by
+Deliberately **not** in scope for either:
+- *Which* observed task corresponds to which expected task — deterministic, done by
   `message_ids` overlap in `score-tasks.js`, upstream of the judge.
-- Gate tagging, field accuracy, update hits — all deterministic.
-- Response quality — a separate judge, not yet wired (see the capture gap in §Known gaps).
+- Gate tagging, field accuracy, update hits, ownership — all deterministic.
+
+### One delegation, two measurements
+
+They share a rubric *shape* (1-4, anchored) but are **separate instruments with separate
+prompts**. Agreement on one says nothing about the other, so they need their own agreement
+numbers and their own disagreement reviews.
+
+That is a reason to report separately, not to delegate twice: one grader, one onboarding, one
+protocol. Two deliveries would double the setup cost for no gain.
+
+**Grade them in separate blocks, not interleaved** — all task examples, then all response
+examples. Switching rubrics example-to-example is a reliable way to introduce grader error that
+looks like judge disagreement.
 
 This narrowness is what makes calibration tractable and what makes the result durable: changing
 the extraction prompt changes the *distribution* of what gets judged, not the judge's task. So
@@ -94,7 +109,12 @@ Already settled, and worth recording as decisions rather than reopening:
 4, agreement would land near 95%, and we would have learned nothing: high agreement on easy
 cases is not evidence of a good judge. Calibration is only informative where the bands meet.
 
-Target ~24-30 examples, roughly in thirds:
+**Task fidelity: ~24 examples. Response quality: ~16.** Response gets fewer because there are
+only three real question turns in the whole scenario set (s00 msg 7; s01 msgs 22 and 25), so it
+leans harder on constructed cases — which is acceptable, since constructed ground truth is
+stronger than a human label anyway.
+
+Each set, roughly in thirds:
 
 | Portion | Source | What it tests |
 |---|---|---|
@@ -118,16 +138,49 @@ The expected rating in brackets is what the judge should return if it is working
 - **Correct use of uncited context** (should rate 4) — detail drawn from a message the task did
   not cite but which is in the conversation. This is the exact case the harness bug got wrong.
 
+### Response-quality perturbations
+
+Same idea, applied to the reply rather than the task:
+
+- **Omits a key fact** (should rate 2) — drop one of the `expectedAnswerPoints` from an
+  otherwise good reply.
+- **Unsupported claim** (should rate 2) — add a status, owner or deadline the conversation never
+  established.
+- **Non-answer** (should rate 1) — a fluent reply that never addresses the question.
+- **Too vague to land** (should rate 2) — names the topics without conveying either point, e.g.
+  "there are a few things left, mainly permissions and the export". Vagueness is graded by
+  whether the point actually reaches the asker: still usable is 3, not usable is 2.
+- **Different phrasing, same facts** (should rate 4) — the false-positive control.
+
 For constructed cases the ground truth is known by construction, which is stronger than a human
-label. Only the real extractions need blind human grading.
+label. Only the real extractions and real replies need blind human grading.
 
 ### Where the real examples come from
 
-`eval-s00-smoke` yields only 2 matched pairs per run. `eval/scenarios/eval-s01-release-readiness.json`
-has ~10 expected tasks, so it is the better source; several runs of it give both volume and
-natural title variation. Note s01's fixture predates the current schema (it still uses
-`expectedItems`, `mustExtract`, prose `updates`) and needs the s00 treatment before it can be
-run and scored.
+Both scenarios are on the current fixture schema as of 2026-08-29.
+
+| Scenario | Task pairs / run | Question turns / run |
+|---|---|---|
+| `eval-s00-smoke` | 2 | 1 |
+| `eval-s01-release-readiness` | 5 | 2 |
+
+Three runs of each gives ~21 task pairs and ~9 replies, with natural wording variation between
+runs — enough real material for both sets, with the rest constructed.
+
+Generate them with:
+
+```
+# per run, on the deployment
+node openclaw.mjs gateway call webex.eval.run \
+  --params '{"scenarioId":"eval-s01-release-readiness"}' --timeout 900000 --json
+
+# then, offline, over each bundle
+EVAL_JUDGE_BASE_URL=... EVAL_JUDGE_API_KEY=... \
+  node plugins/webex/eval/score/run.js <bundle-dir>
+```
+
+Take the extracted tasks and captured replies from each `bundle.json`; take the judge's own
+ratings from `scorecard.json` and **withhold them from the grader**.
 
 ## Delegation package
 
@@ -177,11 +230,27 @@ Self-contained, no repo access needed:
 
 ## Sequence
 
-1. Deploy lands; re-run `eval-s00-smoke`; confirm the fixed judge gives sane ratings.
-2. Self-consistency check, 3x identical input.
-3. Freeze and version-stamp the judge prompt.
-4. Bring `eval-s01-release-readiness` onto the current fixture schema; run it a few times.
-5. Build the set: real pairs from those runs, plus constructed perturbations.
-6. Package and hand over.
-7. On return: agreement table, disagreement review, decide whether the rubric needs revising —
-   and if it does, the calibration must be redone against the revised prompt.
+Done:
+1. ~~Live run with the fixed task judge; sane ratings confirmed.~~ (2026-08-28)
+2. ~~Self-consistency, 3x identical input: 9/9 stable — 4,4,4 unmodified and 2,2,2 perturbed. It
+   also discriminated correctly, rating an injected-detail case 2 rather than 1, i.e. reading the
+   anchors rather than collapsing everything bad into the bottom band.~~
+4. ~~`eval-s01-release-readiness` brought onto the current fixture schema.~~ (2026-08-29)
+
+Remaining:
+3. **Self-consistency for the *response* judge**, 3x identical input. It has never run against
+   real data. Not covered by the task judge's result: different prompt, different instrument.
+   Do this in-house.
+5. **Freeze and version-stamp both prompts.** Nothing below is valid if either changes after.
+6. **Generate the material**: three runs each of `eval-s00-smoke` and
+   `eval-s01-release-readiness`, scored, keeping every `bundle.json` and `scorecard.json`.
+7. **Build the two sets** — ~24 task examples, ~16 response examples, each roughly a third real,
+   a third perturbed-wrong, a third perturbed-but-correct.
+8. **Package and hand over** (see Delegation package above). Judge ratings withheld.
+9. **On return**: exact and adjacent agreement, the 4x4 matrix, mean difference, and a read of
+   every disagreement — separately for each judge. If a rubric needs revising, the calibration
+   for that judge must be redone against the revised prompt.
+
+## Status
+
+Planned, not started. Blocked on nothing except step 3 and the deploy currently in flight.
