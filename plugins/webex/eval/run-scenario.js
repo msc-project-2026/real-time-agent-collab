@@ -241,6 +241,14 @@ async function runScenario({ scenario, variant = 'baseline', overrides = {}, log
 
   const numberToId = (n) => `${scenario.id}-msg-${n}`;
 
+  // Resolved before any synthetic message is built: buildSyntheticMessage
+  // stamps it into `mentionedPeople`, so it has to exist first.
+  const botId = resolveBotId();
+  log.info('[eval] resolved bot identity', {
+    botId,
+    synthetic: botId === FALLBACK_BOT_ID,
+  });
+
   const syntheticById = new Map();
   for (const scenarioMsg of scenario.messages) {
     const synthetic = buildSyntheticMessage({
@@ -252,12 +260,6 @@ async function runScenario({ scenario, variant = 'baseline', overrides = {}, log
     });
     syntheticById.set(synthetic.id, synthetic);
   }
-
-  const botId = resolveBotId();
-  log.info('[eval] resolved bot identity', {
-    botId,
-    synthetic: botId === FALLBACK_BOT_ID,
-  });
 
   const capturedSends = [];
   let currentMessageNumber = null;
