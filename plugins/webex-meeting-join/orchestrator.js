@@ -17,6 +17,9 @@ const {
 } = require('./meetings');
 const { createSpacePrefs } = require('./space-prefs');
 
+const MESSAGE_COMMAND_DEDUP_TTL_MS = 5 * 60 * 1000;
+const MAX_DEDUPED_MESSAGE_IDS = 1000;
+
 function createOrchestrator({
   cfg,
   tokenStore,
@@ -34,6 +37,24 @@ function createOrchestrator({
   let meetingPersonId = null;
   let pollTimer = null;
   let identityPromise = null;
+  const handledMessageIds = new Map();
+
+  function reserveMessageId(messageId) {
+    const now = Date.now();
+
+    for (const [id, expiresAt] of handledMessageIds) {
+      if (expiresAt <= now) handledMessageIds.delete(id);
+    }
+
+    if (handledMessageIds.has(messageId)) return false;
+
+    handledMessageIds.set(messageId, now + MESSAGE_COMMAND_DEDUP_TTL_MS);
+    if (handledMessageIds.size > MAX_DEDUPED_MESSAGE_IDS) {
+      handledMessageIds.delete(handledMessageIds.keys().next().value);
+    }
+
+    return true;
+  }
 
   function findSdkMeetingFor(meeting, destination, sdkMeetings, { allowSole = false } = {}) {
     if (!Array.isArray(sdkMeetings) || !sdkMeetings.length) return null;
@@ -334,7 +355,7 @@ function createOrchestrator({
   }
 
   // resource: messages, event: created — leave / status / per-space join policy.
-  async function handleMessageCreated(payload) {
+  async function handleMessageCreatedOnce(payload) {
     const messageId = payload?.data?.id;
     if (!messageId) return;
     await ensureIdentities();
@@ -450,6 +471,23 @@ function createOrchestrator({
         return;
       }
       await tryLeave(joined.meetingId, { roomId, suppress: true });
+    }
+  }
+
+  async function handleMessageCreated(payload) {
+    const messageId = payload?.data?.id;
+    if (!messageId) return;
+    if (!reserveMessageId(messageId)) {
+      log?.info?.(`[webex-meeting-join] ignoring duplicate message webhook id=${messageId}`);
+      return;
+    }
+
+    try {
+      await handleMessageCreatedOnce(payload);
+    } catch (err) {
+      // Preserve redelivery as a retry path when the first attempt fails.
+      handledMessageIds.delete(messageId);
+      throw err;
     }
   }
 

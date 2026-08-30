@@ -635,6 +635,47 @@ test('handleMessageCreated persists never-join from natural language without @me
   }
 });
 
+test('handleMessageCreated posts once for duplicate Webex command deliveries', async () => {
+  const originalFetch = global.fetch;
+  const posted = [];
+  global.fetch = async (url, opts = {}) => {
+    if (String(url).endsWith('/people/me')) return response({ id: 'bot-id' });
+    if (String(url).endsWith('/messages')) {
+      posted.push(JSON.parse(opts.body));
+      return response({ id: 'ack' });
+    }
+    throw new Error(`unexpected bot-token fetch: ${url}`);
+  };
+  try {
+    const orchestrator = createOrchestrator({
+      cfg: baseCfg(),
+      tokenStore: fakeTokenStore([
+        ['/people/me', { id: 'meeting-person-id' }],
+        ['/messages/msg-1', {
+          id: 'msg-1',
+          personId: 'human-1',
+          roomId: 'room-1',
+          roomType: 'group',
+          mentionedPeople: [],
+          text: '/meeting enable',
+        }],
+      ]),
+      browserRuntime: fakeBrowserRuntime(),
+    });
+
+    await orchestrator.start();
+    await Promise.all([
+      orchestrator.handleMessageCreated({ data: { id: 'msg-1' } }),
+      orchestrator.handleMessageCreated({ data: { id: 'msg-1' } }),
+    ]);
+
+    assert.equal(posted.length, 1);
+    assert.match(posted[0].markdown, /auto-join is already on/i);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('never-join leaves a live meeting and blocks reconcile rejoin', async () => {
   const originalFetch = global.fetch;
   const posted = [];
