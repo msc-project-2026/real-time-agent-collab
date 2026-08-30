@@ -1,545 +1,381 @@
 # Real-Time Agent Collaboration
 
-An AI agent collaboration system that connects a bot to an [OpenClaw](https://github.com/openclaw/openclaw) gateway, backed by a Cisco LLM proxy. A companion Setup UI lets teams onboard new projects by writing configuration directly to their GitHub repos via a GitHub App.
+Real-Time Agent Collaboration runs an [OpenClaw](https://github.com/openclaw/openclaw) agent as a Webex teammate. It receives Webex messages, can inspect public websites through a browser tool, and can join Webex space meetings in a real browser. The meeting integration can listen without publishing media, optionally transcribe and intervene during a meeting, and write post-meeting minutes to the mapped GitHub repository.
 
----
+This repository is designed for a public HTTPS deployment on a VPS. Docker Compose runs all application services; Caddy is the only public entry point and obtains/renews TLS certificates automatically.
 
-## Table of contents
+## What is included
 
-- [Architecture](#architecture)
-- [Repository structure](#repository-structure)
-- [Services](#services)
-  - [OpenClaw gateway](#openclaw-gateway)
-  - [Webex channel plugin](#webex-channel-plugin)
-  - [Setup UI](#setup-ui)
-  - [Caddy reverse proxy](#caddy-reverse-proxy)
-- [Shared library — `@collab/github`](#shared-library--collabgithub)
-- [Gateway configuration](#gateway-configuration)
-- [Environment variables](#environment-variables)
-- [Deployment](#deployment)
-  - [Prerequisites](#prerequisites)
-  - [Server setup](#server-setup)
-  - [First launch](#first-launch)
-  - [Auto-deploy on push](#auto-deploy-on-push)
-- [Operations cheatsheet](#operations-cheatsheet)
-- [Troubleshooting](#troubleshooting)
-
----
-
-## Architecture
-
-```
+```text
 Internet
-  │
-  ▼
-Caddy :443 / :80   (automatic HTTPS via Let's Encrypt)
-  │
-  ├── /setup*, /api/*  ──►  setup-ui :3000   (Express + React)
-  │                                │
-  │                                └── GitHub API (writes .collab/ files)
-  │
-  └── everything else ──►  openclaw :18789   (OpenClaw gateway)
-                                    │
-                                    └── plugins/webex  ──►  Webex API
-                                                        ◄──  Webex webhook POSTs
-                                                        │
-                                                        └──►  Cisco LLM proxy
+   |
+   v
+Caddy (:80, :443, automatic HTTPS)
+   |-- /setup*, /api/* -----------------> setup-ui (:3000)
+   `-- /healthz, /hooks, /webhooks/* --> OpenClaw (:18789)
+                                            |-- Webex channel plugin
+                                            |-- Webex meeting auto-join plugin
+                                            |-- Browser Inspector plugin
+                                            `-- Cisco LLM proxy
 ```
 
-Three containers run on a `collab` Docker bridge network. Caddy holds a static IP (`172.28.0.10`) and is the only container with public ports. All inter-service traffic stays on the internal network.
+The main components are:
 
----
+- `plugins/webex/` — Webex messaging channel. The bot sends replies; an OAuth-authorized human account observes messages and maintains the Webex subscriptions.
+- `plugins/webex-meeting-join/` — a self-contained meeting participant. It owns its meeting and message webhooks and uses the real Webex Browser SDK in headless Brave/Chromium.
+- `plugins/browser-inspector/` — agent tools to inspect public pages, check resources and links, capture a screenshot to a Webex space, and save browser-discovered issues or suggested fixes to the mapped repository.
+- `services/setup-ui/` — React/Express onboarding UI at `/setup?spaceId=<webex-room-id>`. It writes a project's `.collab/` files using a GitHub App.
+- `lib/` — GitHub App authentication and repository helper functions.
 
-## Repository structure
+## Meeting plugin
 
-```
-real-time-agent-collab/
-├── config/
-│   └── openclaw.json          # Versioned gateway config (source of truth)
-├── lib/
-│   ├── package.json           # Declares the @collab/github workspace package
-│   └── github.js              # GitHub App helper: JWT auth, file read/write, commits, PRs
-├── plugins/
-│   └── webex/
-│       ├── package.json       # Plugin manifest (@openclaw/webex)
-│       ├── openclaw.plugin.json  # Plugin metadata and config schema
-│       ├── index.js           # Plugin entry point — registers channel + HTTP route
-│       ├── channel.js         # OpenClaw channel contract implementation
-│       ├── inbound/           # Inbound message + card-action handlers, meeting-command early-return
-│       ├── webhook/           # HTTP router (HMAC-SHA1, target registry) + per-identity registration
-│       ├── batch/             # Pending-message batch lifecycle (append/stage/load/complete/recovery)
-│       ├── token.js           # OAuth token state and refresh interval
-│       ├── send.js            # Outbound message body builder
-│       └── api.js             # Webex REST API base URL and authenticated fetch helper
-├── services/
-│   └── setup-ui/
-│       ├── Dockerfile         # Build context is repo root (needs lib/ workspace)
-│       ├── package.json       # setup-ui package; depends on @collab/github and express
-│       ├── vite.config.js     # Vite config: root=client, output=dist/
-│       ├── server.js          # Express server — health, setup form, GitHub write API
-│       └── client/
-│           ├── index.html     # Vite entry HTML
-│           ├── main.jsx       # React root mount
-│           ├── App.jsx        # Setup form (project, repos, members, GitHub auth)
-│           └── App.css        # Styles
-├── scripts/
-│   └── deploy.sh              # Rebuild and restart the stack (used by CI and manually)
-├── .env.example               # Copy to .env and fill in — never commit .env
-├── .dockerignore
-├── docker-compose.yml         # VPS stack: caddy + openclaw + setup-ui
-├── Caddyfile                  # Reverse proxy rules + automatic HTTPS
-├── openclaw.Dockerfile        # Extends official OpenClaw image; installs plugins
-├── docker-entrypoint.sh       # Syncs config/openclaw.json into the state volume, then starts gateway
-└── package.json               # Root npm workspace (lib + services/setup-ui)
-```
+The meeting plugin is intentionally separate from the Webex chat plugin, because a Webex bot cannot join meetings. It needs two identities:
 
----
-
-## Services
-
-### OpenClaw gateway
-
-Built from `openclaw.Dockerfile`. Extends a digest-pinned official `ghcr.io/openclaw/openclaw:latest-browser` image (Node 24, tini as PID 1).
-
-**Why a custom Dockerfile?**
-
-Docker volumes mask image-layer files at the mounted path, so the versioned `config/openclaw.json` cannot simply be `COPY`'d and expected to be visible inside the volume at runtime. The `docker-entrypoint.sh` script solves this by copying the config file into the mounted volume on every container start before handing off to the gateway process.
-
-**Startup sequence (`docker-entrypoint.sh`):**
-
-1. `mkdir -p /home/node/.openclaw`
-2. `cp /app/config/openclaw.json /home/node/.openclaw/openclaw.json`
-3. Migrate persisted state ownership to the `node` user, excluding the read-only skills mount
-4. `exec gosu node node openclaw.mjs gateway`
-
-The container starts with `user: "0:0"` so the entrypoint can repair state created by older root-running releases. It drops permanently to the image's non-root `node` user before OpenClaw starts.
-
-### Gateway-managed Brave browser
-
-Agent and browser sandboxing are disabled. The gateway image installs Brave and
-OpenClaw launches it headlessly using its dedicated `openclaw` browser profile.
-The entrypoint removes only that profile's user-data directory before every
-gateway start, so agent browser tasks always start with a fresh browser and
-no stale `Singleton*` lock.
-
-**Installed plugins:**
-
-Custom plugin assets are built in an isolated build stage and copied into `/app/plugins/`. The build never replaces OpenClaw's `/app/package.json` or runs npm against its dependency tree. The small local `@collab/github` package is installed under the source-observer plugin for runtime resolution.
-
-**Healthcheck:**
-
-```
-GET https://claw.asabizanjo.dev/healthz
-```
-
----
-
-### Webex channel plugin
-
-Located at `plugins/webex/`. Registered with OpenClaw via `openclaw.plugin.json` and loaded through the `plugins.load.paths` entry in `config/openclaw.json`.
-
-#### Module overview
-
-| Path | Responsibility |
-|---|---|
-| `index.js` | Plugin entry — registers the channel, the `/webhooks/webex/` HTTP route, and the batch lifecycle tools |
-| `channel.js` | Full OpenClaw channel contract: account resolution, DM policy, outbound send, status/probe, `startAccount` lifecycle |
-| `webhook/` | `router.js` (HMAC-SHA1 verification, fast 200 ACK, target dispatch) and `registration.js` (webhooks registered per token identity: bot + oauth) |
-| `inbound/` | `message.js` (filters, meeting-command early-return, routing dispatch) and `attachment-actions.js` (config card submissions) |
-| `batch/` | Pending-message batch lifecycle: append → stage (debounced) → load → complete, with a startup recovery scanner |
-| `dispatch.js` | Per-space serialized dispatch queue + session-conflict retry |
-| `instructions/`, `routing/`, `processing/` | Routing/processing instruction builders and agent-result handlers |
-| `config/`, `context/` | Config request/submission card flow; conversation and operational item stores |
-| `meeting-command.js` | Detects meeting join/leave/status and join-policy phrases so the chat pipeline early-returns them (executed by `plugins/webex-meeting-join`) |
-| `token.js` | In-memory OAuth access token; 12-day refresh interval |
-| `send.js` | Shared `sendWebexMessage` / message body construction (threaded replies) |
-| `api.js` | `WEBEX_API` constant; `webexFetch` authenticated fetch helper |
-
-#### Inbound message flow (`inbound/message.js`)
-
-1. Ignore anything that isn't `resource: messages, event: created` (messages arrive on the **oauth** webhook identity; attachment actions on the **bot** identity).
-2. Ignore messages from the bot's own `personId`; apply the DM policy (`deny` / `allow` / `allowlisted` against `cfg.allowFrom`).
-3. Fetch the full message via `/messages/:id` (webhooks only carry IDs) and confirm bot membership in the space.
-4. **Meeting-command early-return:** join/leave/status commands (addressed or slash form) and durable join-policy phrases ("never join meetings") are delegated to the `webex-meeting-join` plugin, which sees the same message through its own webhook — the chat agent has no meeting state and must not also reply.
-5. Build a routing instruction + context payload and dispatch to the agent through the per-space queue; the agent's route decision (reply, append to batch, etc.) is applied by `routing/result-handler.js`, with batched messages processed later through the `batch/` lifecycle tools.
-
-#### DM allowlist
-
-Currently restricted to:
-- `ucabtg2@ucl.ac.uk`
-- `ucab295@ucl.ac.uk`
-- `davit.gevorgyan.25@ucl.ac.uk`
-- `leonardo.martin.25@ucl.ac.uk`
-
-Configured in `config/openclaw.json` under `channels.webex.allowFrom`. Edit that file and redeploy to change.
-
----
-
-### Setup UI
-
-Located at `services/setup-ui/`. A single-page React form served by an Express backend. Reached at `https://<DOMAIN>/setup?spaceId=<webex-room-id>`.
-
-The `spaceId` query parameter is the Webex room ID — the bot is expected to send the setup link to new spaces. If `spaceId` is missing the form shows an error and blocks submission.
-
-#### What it does
-
-1. User fills in: project name, one or more repos (first is always primary), and team members (name, email, role).
-2. User clicks the **Authorise on GitHub** link to install the GitHub App on the listed repos.
-3. User submits the form.
-4. The server validates the payload, then uses `@collab/github` to write into the **primary repo**:
-   - `.collab/config.json` — project metadata (name, spaceId, repos, members, `createdAt`)
-   - `.collab/context.md` — created only if it doesn't already exist
-   - `.collab/open-questions.md` — created only if it doesn't already exist
-   - `.collab/issues.md` — created only if it doesn't already exist
-5. On success the form shows a "Setup complete" banner.
-
-#### Server routes
-
-| Method | Path | Description |
+| Identity | Used for | Credential |
 |---|---|---|
-| `GET` | `/health` | Container healthcheck — returns `{ ok: true }` |
-| `GET` | `/setup` | Serves the compiled React app (`dist/index.html`) |
-| `GET` | `/api/config` | Returns `{ appName }` (the `GITHUB_APP_NAME` env var) used by the client to build the GitHub install URL |
-| `POST` | `/api/setup` | Validates form payload, writes `.collab/` files to the primary repo via GitHub API |
+| Webex bot | Send agent and meeting replies; receive attachment-action webhooks | `WEBEX_BOT_TOKEN` |
+| Dedicated normal Webex user | Join meetings, read room messages without an @mention, own meeting/transcript webhooks | OAuth access, refresh, client ID, and client secret |
 
-#### POST `/api/setup` payload
+At gateway start the plugin registers these subscriptions under the normal user account:
 
-```json
-{
-  "spaceId": "<webex-room-id>",
-  "project": "My Project",
-  "repos": [
-    { "url": "owner/repo", "name": "Frontend", "primary": true },
-    { "url": "owner/other-repo", "name": "Backend", "primary": false }
-  ],
-  "members": [
-    { "name": "Alice", "email": "alice@example.com", "role": "Lead" }
-  ]
-}
-```
+- `meetings/started` and `meetings/ended`
+- `messages/created`
+- `meetingTranscripts/created` when minutes are enabled and the OAuth grant permits it
 
-Validation rules:
-- `spaceId` — required non-empty string
-- `project` — required non-empty string
-- `repos` — at least one entry; exactly one must have `primary: true`; primary repo URL must be `owner/repo` format
-- `members` — at least one entry
+When a meeting starts, the plugin resolves the meeting, verifies that the meeting user is in the room, and launches the Webex Browser SDK in a headless browser. Brave is installed by the gateway image because the SDK needs H.264 support, even for its audio-only media negotiation. It joins with receive-only audio: it does not publish a microphone, camera, or screen share.
 
-#### Client build
+Meeting controls in the Webex room include:
 
-Vite builds from `client/` into `services/setup-ui/dist/`. The Dockerfile runs the build at image build time; the Express server serves `dist/` as static files.
+- `/meeting join` or an addressed “join the meeting” request — join the current meeting once.
+- `/meeting leave` or “leave meeting” — leave and suppress rejoining that meeting instance.
+- `/meeting enable` or “you can join meetings” — enable durable auto-join for the room.
+- “never join meetings” — disable durable auto-join for the room and leave an active meeting.
 
-**Dockerfile note:** the build context is the **repo root** (not `services/setup-ui/`), because the Vite build and server both need `lib/` to be available for the `@collab/github` workspace symlink.
+Preferences are stored in the persistent OpenClaw workspace. Startup reconciliation and a five-minute poll catch meetings whose start webhook was missed.
 
-#### Environment variables
+After a meeting, Webex's completed VTT/TXT transcript is summarized into **Summary**, **Decisions**, **Action Items**, and **Open Questions**, then appended idempotently to `.collab/meeting minutes.md` in the project's primary GitHub repository. A bounded retry job survives gateway restarts if the transcript webhook is delayed or missed.
 
-| Variable | Description | Default |
-|---|---|---|
-| `GITHUB_APP_NAME` | GitHub App slug — used by the client to build the install URL | — |
-| `GITHUB_APP_ID` | GitHub App ID — used by `@collab/github` to mint JWTs | — |
-| `GITHUB_APP_PRIVATE_KEY_FILE` | Path to the mounted PEM file | `/run/secrets/github-app-private-key.pem` |
-| `PORT` | Port the Express server listens on | `3000` |
+Set `DEEPGRAM_API_KEY` only if live transcription and proactive interventions are wanted. Without it, the plugin still joins, listens, responds to commands, and produces Webex-transcript-based minutes; no meeting audio is sent to Deepgram.
 
----
+## Browser Inspector plugin
 
-### Caddy reverse proxy
+The Browser Inspector gives the Webex agent four practical browser capabilities:
 
-Image: `caddy:2`. The only service with public ports (`80:80`, `443:443`).
+- inspect a public page for console errors, failed resources, broken internal links, headings, forms, and accessibility basics;
+- inspect a selected element's content, attributes, visibility, and bounding box;
+- take a viewport or full-page screenshot and upload it directly to a Webex space;
+- record an issue or a proposed source change in the space's mapped GitHub project.
 
-**Routing (from `Caddyfile`):**
+The inspector accepts only `http` and `https` URLs and rejects localhost, private IP ranges, and hostnames that resolve to private addresses. Browser contexts close after each action and the shared browser is closed after five minutes idle.
 
-| Path pattern | Upstream |
-|---|---|
-| `/setup*`, `/api/*` | `setup-ui:3000` |
-| everything else | `openclaw:18789` |
+## Prerequisites
 
-Caddy holds the static IP `172.28.0.10` on the `collab` network. This IP is declared in `config/openclaw.json` under `gateway.trustedProxies` so the gateway trusts the `X-Forwarded-For` header and sees real client IPs. **If you change the `collab` network subnet in `docker-compose.yml`, update `trustedProxies` to match.**
+- A Linux VPS with at least 2 GB RAM and a public IPv4 address. Ubuntu 22.04 or 24.04 is a good baseline.
+- A hostname such as `agent.example.com`, with a public DNS **A** record pointing to the VPS. Webex webhooks and Let's Encrypt require a real HTTPS hostname; a bare IP address is not sufficient.
+- Inbound TCP ports 80 and 443 open at both the cloud-provider firewall and the server firewall.
+- An SSH key and a Git repository URL for this project.
+- A Webex developer account, a Webex bot, and a dedicated normal user account that may join the target spaces and meetings.
+- A Cisco LLM proxy key (or a deliberate change to `config/openclaw.json` to use another model provider).
+- A GitHub App for onboarding and/or a fine-grained GitHub token for meeting minutes.
 
-TLS certificates are obtained automatically from Let's Encrypt on first request and renewed by Caddy. The `caddy_data` volume persists the ACME account and issued certificates across restarts.
+## Configure a new VPS
 
-WebSocket connections (OpenClaw Control UI live updates) are proxied transparently.
-
----
-
-## Shared library — `@collab/github`
-
-Located at `lib/github.js`. A Node.js CommonJS module that wraps the GitHub REST API using GitHub App authentication.
-
-**Authentication flow:**
-
-1. `createJWT()` — mints a short-lived JWT (10 min) signed with the App's RSA-256 private key. The key is read from the path in `GITHUB_APP_PRIVATE_KEY_FILE` (preferred) or from the `GITHUB_APP_PRIVATE_KEY` env var (inline PEM with `\n` escapes).
-2. `getInstallationId(owner, repo)` — calls `GET /repos/:owner/:repo/installation` with the JWT to find the installation ID for that repo.
-3. `getInstallationToken(owner, repo)` — exchanges the JWT + installation ID for an installation access token. Tokens are cached per `owner/repo` and reused until they have less than 5 minutes left.
-
-**Exported functions:**
-
-| Function | Description |
-|---|---|
-| `getInstallationToken(owner, repo)` | Returns a scoped installation access token |
-| `readFile(owner, repo, path)` | Reads a file from the repo; returns `null` if 404 |
-| `writeFile(owner, repo, path, content, commitMessage)` | Creates or updates a file (fetches existing SHA for updates) |
-| `listFiles(owner, repo, path)` | Lists file names at a directory path; returns `[]` if 404 |
-| `getCommitsSince(owner, repo, since)` | Returns commits after an ISO timestamp |
-| `getCommitDiff(owner, repo, sha)` | Returns the raw diff for a commit (accepts `application/vnd.github.diff`) |
-| `createPullRequest(owner, repo, { title, body, head, base })` | Creates a PR; returns the HTML URL |
-
-This library is used by `services/setup-ui/server.js` (`readFile`, `writeFile`) and is available to any other service or plugin that needs GitHub API access.
-
----
-
-## Gateway configuration
-
-`config/openclaw.json` is the versioned source of truth for the OpenClaw gateway. It is committed to the repo and copied into the state volume on every container start by `docker-entrypoint.sh`. Environment variables are interpolated using `${VAR_NAME}` syntax by OpenClaw at startup.
-
-**Key sections:**
-
-```jsonc
-{
-  "gateway": {
-    "mode": "local",
-    "controlUi": {
-      "allowedOrigins": ["${CONTROL_UI_ORIGIN}"],
-      "dangerouslyDisableDeviceAuth": true   // token-only auth; no device pairing
-    },
-    "auth": { "mode": "token", "token": "${OPENCLAW_GATEWAY_TOKEN}" },
-    "trustedProxies": ["172.28.0.10"]        // Caddy's fixed IP on the collab network
-  },
-  "models": {
-    "mode": "merge",
-    "providers": {
-      "cisco": {
-        "baseUrl": "https://llm-proxy.dev.outshift.ai/",
-        "apiKey": "${CISCO_LLM_API_KEY}",
-        "api": "openai-completions",
-        "models": [
-          { "id": "bedrock/global.anthropic.claude-sonnet-4-6",              "name": "Claude Sonnet 4.6" },
-          { "id": "bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0", "name": "Claude Haiku 4.5" },
-          { "id": "azure/gpt-5.4",                                           "name": "GPT-5.4" },
-          { "id": "vertex_ai/gemini-3-pro-preview",                          "name": "Gemini 3 Pro Preview" }
-        ]
-      }
-    }
-  },
-  "agents": {
-    "defaults": { "model": { "primary": "cisco/bedrock/global.anthropic.claude-sonnet-4-6" } },
-    "list": [{ "id": "main", "default": true }]
-  },
-  "bindings": [
-    { "agentId": "main", "match": { "channel": "webex" } }   // all Webex messages → main agent
-  ],
-  "channels": {
-    "webex": {
-      "enabled": true,
-      "token": "${WEBEX_BOT_TOKEN}",
-      "accessToken": "${WEBEX_ACCESS_TOKEN}",
-      "refreshToken": "${WEBEX_REFRESH_TOKEN}",
-      "clientId": "${WEBEX_CLIENT_ID}",
-      "clientSecret": "${WEBEX_CLIENT_SECRET}",
-      "botWebhookUrl": "${WEBEX_BOT_WEBHOOK_URL}",
-      "oauthWebhookUrl": "${WEBEX_OAUTH_WEBHOOK_URL}",
-      "webhookSecret": "${WEBEX_WEBHOOK_SECRET}",
-      "dmPolicy": "allowlisted",
-      "allowFrom": ["ucabtg2@ucl.ac.uk", "ucab295@ucl.ac.uk", ...]
-    }
-  },
-  "hooks": {
-    "enabled": true,
-    "token": "${OPENCLAW_WEBHOOK_SECRET}",
-    "path": "/hooks",
-    "allowRequestSessionKey": true,
-    "allowedSessionKeyPrefixes": ["agent:main:webex:", "hook:"],
-    "defaultSessionKey": "hook:collab-sync"
-  },
-  "plugins": {
-    "load": { "paths": ["plugins/webex"] },
-    "entries": { "webex": { "enabled": true } }
-  }
-}
-```
-
-To change gateway configuration, edit `config/openclaw.json` and redeploy. The entrypoint will sync the new config into the volume on next start.
-
----
-
-## Environment variables
-
-All variables live in `.env` (gitignored). Copy `.env.example` to `.env` and fill in every value before the first launch.
-
-| Variable | Used by | Notes |
-|---|---|---|
-| `DOMAIN` | Caddy | Public hostname with DNS A record pointing at the VPS |
-| `ACME_EMAIL` | Caddy | Let's Encrypt expiry/renewal contact email |
-| `CONTROL_UI_ORIGIN` | openclaw | Must be exactly `https://claw.asabizanjo.dev` (no trailing slash) |
-| `OPENCLAW_GATEWAY_TOKEN` | openclaw | Admin token for the Control UI — `openssl rand -hex 32` |
-| `OPENCLAW_GATEWAY_PORT` | openclaw | Internal listen port (default `18789`) |
-| `OPENCLAW_GATEWAY_BIND` | openclaw | Network bind mode (`lan`) |
-| `OPENCLAW_STATE_DIR` | openclaw | Where the gateway persists state (`/home/node/.openclaw`) |
-| `OPENCLAW_WORKSPACE_DIR` | openclaw | Workspace subdirectory (`/home/node/.openclaw/workspace`) |
-| `PORT` | openclaw / setup-ui | HTTP port — `18789` for openclaw, `3000` for setup-ui |
-| `OPENCLAW_WEBHOOK_SECRET` | openclaw | Protects `/hooks` endpoint — `openssl rand -hex 32` |
-| `CISCO_LLM_API_KEY` | openclaw | Cisco LLM proxy API key |
-| `WEBEX_BOT_TOKEN` | openclaw | Webex bot access token (used for sending messages) |
-| `WEBEX_ACCESS_TOKEN` | openclaw | OAuth access token (used for reading messages) |
-| `WEBEX_REFRESH_TOKEN` | openclaw | OAuth refresh token — refreshed automatically every 12 days |
-| `WEBEX_CLIENT_ID` | openclaw | Webex Integration client ID (for token refresh) |
-| `WEBEX_CLIENT_SECRET` | openclaw | Webex Integration client secret (for token refresh) |
-| `WEBEX_WEBHOOK_SECRET` | openclaw | HMAC-SHA1 secret Webex signs webhook POSTs with — `openssl rand -hex 32` |
-| `WEBEX_BOT_WEBHOOK_URL` | openclaw | Must be `https://claw.asabizanjo.dev/webhooks/webex/bot/default` |
-| `WEBEX_OAUTH_WEBHOOK_URL` | openclaw | Must be `https://claw.asabizanjo.dev/webhooks/webex/oauth/default` |
-| `GITHUB_APP_ID` | setup-ui | Numeric GitHub App ID |
-| `GITHUB_APP_NAME` | setup-ui | GitHub App slug (shown in the install URL) |
-| `GITHUB_APP_PRIVATE_KEY_FILE` | setup-ui | Path to the mounted PEM — `/run/secrets/github-app-private-key.pem` |
-
-Generate the three random secrets in one go:
+The following commands use Ubuntu and `/opt/real-time-agent-collab`. Replace the repository URL and hostname with your own values.
 
 ```bash
-openssl rand -hex 32   # OPENCLAW_GATEWAY_TOKEN
-openssl rand -hex 32   # OPENCLAW_WEBHOOK_SECRET
-openssl rand -hex 32   # WEBEX_WEBHOOK_SECRET
-```
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl git ufw
 
----
-
-## Deployment
-
-### Prerequisites
-
-- An Ubuntu VPS (22.04 or 24.04; 2 GB RAM is comfortable).
-- Docker Engine + Compose plugin installed.
-- A domain (or subdomain) with a DNS **A record** pointing at the VPS public IP. A bare IP does not work — Webex webhooks and Let's Encrypt both require a real HTTPS hostname.
-- Ports **80** and **443** open in the firewall.
-
-### Server setup
-
-```bash
-# Install Docker
+# Install Docker Engine and its Compose plugin.
 curl -fsSL https://get.docker.com | sudo sh
-sudo usermod -aG docker $USER   # log out and back in
-docker compose version          # confirm the compose plugin is present
+sudo usermod -aG docker "$USER"
 
-# Open firewall
+# Log out/in once so the docker group is effective, then verify it.
+docker compose version
+
+# Leave SSH enabled, then expose only HTTP(S).
 sudo ufw allow OpenSSH
-sudo ufw allow 80,443/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
 sudo ufw enable
 
-# Clone the repo
-sudo mkdir -p /opt/real-time-agent-collab
-sudo chown $USER:$USER /opt/real-time-agent-collab
-git clone <repo-url> /opt/real-time-agent-collab
+sudo install -d -o "$USER" -g "$USER" /opt/real-time-agent-collab
+git clone <REPOSITORY-URL> /opt/real-time-agent-collab
 cd /opt/real-time-agent-collab
-
-# Configure secrets
-cp .env.example .env
-nano .env   # fill in every variable
-
-# Mount the GitHub App private key
-mkdir -p secrets
-nano secrets/github-app-private-key.pem   # paste the full -----BEGIN...END----- block
 ```
 
-`secrets/` is gitignored and never committed.
+Before the first launch, verify DNS from a machine outside the VPS:
 
-### First launch
+```bash
+dig +short agent.example.com
+```
+
+It must return the VPS public IP. Do this before Caddy starts so HTTP-01 certificate validation can succeed.
+
+## Create the deployment secrets
+
+Never commit `.env` or `secrets/github-app-private-key.pem`.
+
+```bash
+cd /opt/real-time-agent-collab
+cp .env.example .env
+mkdir -p secrets
+chmod 700 secrets
+```
+
+Create long random values for the gateway, internal hooks, and Webex webhook HMAC:
+
+```bash
+openssl rand -hex 32  # OPENCLAW_GATEWAY_TOKEN
+openssl rand -hex 32  # OPENCLAW_WEBHOOK_SECRET
+openssl rand -hex 32  # WEBEX_WEBHOOK_SECRET
+openssl rand -hex 32  # GITHUB_WEBHOOK_SECRET, if GitHub push sync is enabled
+```
+
+Edit `.env` and set the hostname-related values first:
+
+```dotenv
+DOMAIN=agent.example.com
+ACME_EMAIL=ops@example.com
+CONTROL_UI_ORIGIN=https://agent.example.com
+
+OPENCLAW_GATEWAY_TOKEN=<generated value>
+OPENCLAW_WEBHOOK_SECRET=<generated value>
+CISCO_LLM_API_KEY=<Cisco proxy key>
+
+# Required by setup-ui for GitHub push synchronisation. These are consumed by
+# services/setup-ui/server.js even though older copies of .env.example omit them.
+GITHUB_WEBHOOK_SECRET=<generated value>
+OPENCLAW_INTERNAL_URL=http://openclaw:18789
+DATA_DIR=/data
+```
+
+`OPENCLAW_INTERNAL_URL` must be the Compose service address, not the public URL: setup-ui uses it to send trusted `/hooks/agent` requests across the private Docker network.
+
+Paste the complete private key downloaded from the GitHub App settings into `secrets/github-app-private-key.pem`, including the `BEGIN`/`END` lines, then restrict it:
+
+```bash
+nano secrets/github-app-private-key.pem
+chmod 600 secrets/github-app-private-key.pem
+```
+
+## Webex setup and tokens
+
+### 1. Create the Webex bot
+
+In the Webex developer portal, create a bot, give it an appropriate display name, and copy its bot access token into:
+
+```dotenv
+WEBEX_BOT_TOKEN=<bot access token>
+```
+
+Add the bot to every space where it should communicate. The bot is the visible identity for chat replies, screenshots, and meeting interventions. It is **not** the account that joins a meeting.
+
+### 2. Create and authorize a Webex Integration for the meeting user
+
+Create a Webex **Integration** for a dedicated, normal Webex user. Register a redirect URI you control when creating the integration. The repository does not host an OAuth callback; its access and refresh tokens are obtained during this one-time authorization and placed in `.env`.
+
+Request at least these scopes:
+
+- `spark:all` — required by the Webex Browser SDK/Locus flow for meeting join and leave. Granular meeting REST scopes alone are insufficient for this plugin's SDK session.
+- `meeting:schedules_read` — allows scheduled-meeting lookup and transcript recovery.
+- `meeting:transcripts_read` — required for the transcript webhook and post-meeting minutes.
+
+Use the Integration's client ID, redirect URI, and scopes to open an authorization URL similar to this (URL-encode the redirect URI in real use):
+
+```text
+https://webexapis.com/v1/authorize?client_id=<CLIENT_ID>&response_type=code&redirect_uri=<REDIRECT_URI>&scope=spark%3Aall%20meeting%3Aschedules_read%20meeting%3Atranscripts_read
+```
+
+Sign in as the dedicated meeting user, approve the request, and exchange the returned authorization code. For example:
+
+```bash
+curl --user '<CLIENT_ID>:<CLIENT_SECRET>' \
+  --request POST 'https://webexapis.com/v1/access_token' \
+  --header 'Content-Type: application/x-www-form-urlencoded' \
+  --data-urlencode 'grant_type=authorization_code' \
+  --data-urlencode 'code=<AUTHORIZATION_CODE>' \
+  --data-urlencode 'redirect_uri=<REDIRECT_URI>'
+```
+
+Store the response values as follows:
+
+```dotenv
+# Main Webex chat channel OAuth identity. It may be the same dedicated user.
+WEBEX_ACCESS_TOKEN=<access_token>
+WEBEX_REFRESH_TOKEN=<refresh_token>
+WEBEX_CLIENT_ID=<Integration client ID>
+WEBEX_CLIENT_SECRET=<Integration client secret>
+
+# The plugin falls back to the four values above. Set these only when the
+# meeting participant must be a different normal user.
+# WEBEX_MEETING_ACCESS_TOKEN=<meeting account access token>
+# WEBEX_MEETING_REFRESH_TOKEN=<meeting account refresh token>
+# WEBEX_MEETING_CLIENT_ID=<meeting Integration client ID>
+# WEBEX_MEETING_CLIENT_SECRET=<meeting Integration client secret>
+```
+
+The access token alone starts the plugin, but the refresh token, client ID, and client secret are strongly recommended. The process refreshes its OAuth identity at startup, every 12 days, and once after a Webex 401. If scopes change, repeat the authorization-code flow: refreshing an old grant does not add scopes.
+
+The dedicated meeting user must be a member of every Webex space it should monitor and must have permission to join that room's meetings. Transcript visibility is controlled by Webex; organization-wide transcript coverage may need Webex administrator or compliance authorization.
+
+### 3. Configure Webex webhooks
+
+Set the public target URLs in `.env` using the same hostname as `DOMAIN`:
+
+```dotenv
+WEBEX_WEBHOOK_SECRET=<generated value>
+WEBEX_BOT_WEBHOOK_URL=https://agent.example.com/webhooks/webex/bot/default
+WEBEX_OAUTH_WEBHOOK_URL=https://agent.example.com/webhooks/webex/oauth/default
+WEBEX_MEETING_WEBHOOK_URL=https://agent.example.com/webhooks/webex-meeting-join
+```
+
+Do **not** manually create duplicate subscriptions. On every OpenClaw startup the chat plugin registers the bot attachment-action and OAuth message webhooks; the meeting plugin removes stale subscriptions at its target URLs and registers its four own resources. Both verify the Webex `X-Spark-Signature` against `WEBEX_WEBHOOK_SECRET` when it is set.
+
+### 4. Optional live transcription and minutes storage
+
+For live Deepgram transcription and proactive replies, set:
+
+```dotenv
+DEEPGRAM_API_KEY=<Deepgram API key>
+```
+
+For post-meeting minutes, use either the GitHub App configured below or a fine-grained token with **Contents: read and write** access to each mapped repository:
+
+```dotenv
+WEBEX_MEETING_MINUTES_GITHUB_TOKEN=<optional fine-grained GitHub token>
+```
+
+Without an onboarding mapping, a single fallback repository can be configured with `COLLAB_GITHUB_OWNER` and `COLLAB_GITHUB_REPO`. In normal operation, use `/setup?spaceId=<room-id>` to create the room-to-repository mapping instead.
+
+## GitHub App and project onboarding
+
+Create a GitHub App with the repository permissions needed to read and write Contents, generate a private key, and install the App on every project repository. Set:
+
+```dotenv
+GITHUB_APP_ID=<numeric App ID>
+GITHUB_APP_NAME=<App slug>
+GITHUB_APP_PRIVATE_KEY_FILE=/run/secrets/github-app-private-key.pem
+```
+
+After deployment, visit:
+
+```text
+https://agent.example.com/setup?spaceId=<WEBEX_ROOM_ID>
+```
+
+Complete the project, repositories, and team-member form, then install/authorize the GitHub App on the primary repository. The UI creates `.collab/config.json`, context, issue, and question files. That configuration lets browser issue tools and meeting minutes resolve the correct GitHub repository.
+
+To enable GitHub push-based `.collab/` synchronisation as well, create a GitHub repository webhook with:
+
+- Payload URL: `https://agent.example.com/webhooks/github`
+- Content type: `application/json`
+- Secret: the same value as `GITHUB_WEBHOOK_SECRET`
+- Event: **Just the push event**
+
+## Production Compose notes
+
+The checked-in Compose/Caddy configuration has three deployment details to address before relying on setup UI persistence or GitHub push sync:
+
+1. `.env.example` sets `PORT=18789`, and Compose passes `.env` to both services. `setup-ui` therefore listens on 18789 while Caddy connects to 3000. Override its port in `docker-compose.yml`.
+2. setup-ui writes its cache to `/data`, but that directory is not mounted to a persistent volume. Persist it so room/repository mappings survive a container recreation.
+3. Caddy currently routes only `/setup*` and `/api/*` to setup-ui. Add `/webhooks/github` or GitHub will reach OpenClaw instead of setup-ui.
+
+Apply the following once to a deployment branch (or incorporate its equivalent into your infrastructure definition):
+
+```diff
+diff --git a/docker-compose.yml b/docker-compose.yml
+@@
+ volumes:
+   openclaw_state:
++  setup_ui_data:
+@@
+   setup-ui:
+     env_file: .env
++    environment:
++      PORT: "3000"
++      OPENCLAW_INTERNAL_URL: ${OPENCLAW_INTERNAL_URL:-http://openclaw:18789}
++      DATA_DIR: /data
+     volumes:
+       - ./secrets/github-app-private-key.pem:/run/secrets/github-app-private-key.pem:ro
++      - setup_ui_data:/data
+diff --git a/Caddyfile b/Caddyfile
+@@
+-  @setupui path /setup* /api/*
++  @setupui path /setup* /api/* /webhooks/github
+```
+
+Also remove or replace the unrelated `code.asabizanjo.dev` site block in `Caddyfile` before using this repository under another domain. It is not part of the collaboration service.
+
+## Launch and verify
+
+Build and start the stack from the repository root:
 
 ```bash
 docker compose up -d --build
 docker compose ps
-docker compose logs -f caddy      # watch Let's Encrypt obtain the certificate (~30s)
+docker compose logs -f caddy
 ```
 
-Once Caddy has a certificate:
+After Caddy has issued the certificate, verify the service externally:
 
 ```bash
-curl -fsS https://claw.asabizanjo.dev/healthz   # expect {"ok":true} from the gateway
+curl --fail --silent --show-error https://agent.example.com/healthz
 ```
 
-Open the **Control UI** at `https://claw.asabizanjo.dev/openclaw` and log in with `OPENCLAW_GATEWAY_TOKEN`.
-
-### Auto-deploy on push
-
-`.github/workflows/deploy.yml` SSHes into the VPS on every push to `main`, fast-forwards the checkout, and runs `scripts/deploy.sh` (`docker compose up -d --build` + image prune).
-
-Set these **repository secrets** in GitHub → Settings → Secrets and variables → Actions:
-
-| Secret | Value |
-|---|---|
-| `VPS_HOST` | VPS IP or hostname |
-| `VPS_USER` | SSH user (e.g. `deploy`) |
-| `VPS_SSH_KEY` | Contents of the SSH private key authorised on the VPS |
-| `DEPLOY_PATH` | Absolute path on the VPS (e.g. `/opt/real-time-agent-collab`) |
-| `VPS_PORT` | SSH port if not `22` (optional) |
-
-**Generate an SSH key pair for CI:**
+Then inspect startup logs. They should show the Webex channel, `webex-meeting-join` webhook registration, and the meeting plugin's reconciliation/polling startup:
 
 ```bash
-ssh-keygen -t ed25519 -f deploy_key -N ""
-ssh-copy-id -i deploy_key.pub ixn@vps.asabizanjo.dev
-# Upload the private key (deploy_key) as VPS_SSH_KEY in GitHub
+docker compose logs --tail=200 openclaw
+docker compose logs --tail=100 setup-ui
 ```
 
-To deploy manually at any time:
+Open `https://agent.example.com/openclaw` and authenticate with `OPENCLAW_GATEWAY_TOKEN`. Do not expose or paste that token into a Webex room.
+
+For an end-to-end test:
+
+1. Add both the bot and the normal meeting user to a test Webex space.
+2. Send the bot an ordinary message and confirm it replies.
+3. Start an instant Webex meeting in that space; confirm the OpenClaw logs show an SDK join and receive-only audio subscription.
+4. Send `/meeting leave`, then `/meeting join`, and verify the control actions in logs.
+5. End the meeting, wait for Webex to publish a transcript, and confirm `.collab/meeting minutes.md` is committed to the primary repository.
+
+## Operations
 
 ```bash
-ssh ixn@vps.asabizanjo.dev
-cd /opt/real-time-agent-collab && git pull && bash scripts/deploy.sh
+# Service health and logs
+docker compose ps
+docker compose logs -f openclaw
+docker compose logs -f setup-ui
+docker compose logs -f caddy
+
+# Rebuild after a code or configuration change
+bash scripts/deploy.sh
+
+# Stop containers without deleting named volumes
+docker compose down
+
+# Run the repository test suite
+npm test
 ```
 
----
-
-## Operations cheatsheet
-
-```bash
-docker compose ps                          # container status
-docker compose logs -f openclaw            # gateway logs
-docker compose logs -f setup-ui            # setup UI logs
-docker compose logs -f caddy               # proxy / TLS logs
-docker compose restart openclaw            # restart one service
-docker compose up -d --build               # rebuild after a code change
-docker compose down                        # stop everything (state volume is preserved)
-
-# Backup the persistent state volume
-docker run --rm \
-  -v real-time-agent-collab_openclaw_state:/data \
-  -v "$PWD":/backup \
-  busybox tar czf /backup/openclaw_state.tar.gz -C /data .
-```
-
----
+Back up the named state volumes before host migration or destructive Docker maintenance. `openclaw_state` contains the workspace, space preferences, and pending meeting-minute recovery jobs; `caddy_data` contains TLS/ACME state; `setup_ui_data` contains setup UI mappings after the production Compose adjustment above.
 
 ## Troubleshooting
 
-**Caddy can't get a TLS certificate**
-DNS not pointing at the VPS yet, or ports 80/443 blocked. Check:
-```bash
-docker compose logs caddy
-sudo ss -tlnp | grep -E ':(80|443)'
-dig +short claw.asabizanjo.dev   # must print the VPS IP
-```
+| Symptom | Check |
+|---|---|
+| Caddy cannot obtain a certificate | DNS must already resolve to the VPS and port 80 must be publicly reachable. Inspect `docker compose logs caddy`. |
+| Webex messages do not arrive | Confirm the public HTTPS URL, both identities' tokens, Webex space membership, and `WEBEX_WEBHOOK_SECRET`. Inspect `openclaw` logs for webhook registration and inbound routes. |
+| Meeting plugin is disabled | It requires `WEBEX_BOT_TOKEN`, a meeting access token (or `WEBEX_ACCESS_TOKEN`), and `WEBEX_MEETING_WEBHOOK_URL`. |
+| Meeting join fails after REST calls work | Reauthorize the normal meeting user with `spark:all`; the Browser SDK needs it for Locus join/leave. Confirm Brave is present in the built gateway image. |
+| No minutes appear | Ensure the meeting user's OAuth grant includes `meeting:transcripts_read` and `meeting:schedules_read`, transcripts are available to that user, the room has a project mapping, and GitHub write credentials are configured. |
+| setup-ui is unreachable or mappings vanish | Apply the Production Compose notes: port 3000 override and a persistent `/data` volume. |
+| GitHub push sync returns 404/never fires | Route `/webhooks/github` to setup-ui, configure `GITHUB_WEBHOOK_SECRET`, and use the same secret in GitHub. |
+| Browser inspector rejects a URL | This is expected for localhost, private IP addresses, or a hostname resolving to one; use a publicly reachable URL. |
 
-**Control UI rejects the browser origin**
-`CONTROL_UI_ORIGIN` must be exactly `https://claw.asabizanjo.dev` with no trailing slash and no path.
+## Repository configuration
 
-**Gateway sees wrong client IP / proxy errors**
-`trustedProxies` in `config/openclaw.json` must match Caddy's IP on the `collab` network (`172.28.0.10`). If you changed the subnet in `docker-compose.yml`, update both places.
+`config/openclaw.json` is the versioned gateway source of truth. It is copied into the persistent OpenClaw state directory each time the container starts. Edit it to change the Webex allowlist, agent bindings, models, or plugin enablement, then rebuild/restart the stack. If the Compose network's fixed Caddy address changes, update `gateway.trustedProxies` there to match.
 
-**Webex messages not arriving**
-The gateway re-registers the Webex webhooks on every start (`plugins/webex/webhook/registration.js → ensureWebhooks`, one per token identity). Check:
-- `WEBEX_BOT_WEBHOOK_URL` / `WEBEX_OAUTH_WEBHOOK_URL` are exactly `https://claw.asabizanjo.dev/webhooks/webex/bot/default` and `.../oauth/default`.
-- The domain resolves and port 443 is reachable from the internet.
-- `docker compose logs openclaw` should show `[webex:default] Webex webhook registered` and `[webex] webhookRouter called` on incoming messages.
-
-**Brave reports that the Webex browser profile is locked**
-The gateway entrypoint removes the dedicated OpenClaw browser profile before
-each startup. This clears stale `Singleton*` locks; check `docker compose logs
-openclaw` if Brave still cannot start.
-
-**DMs not reaching the agent**
-The channel is set to `dmPolicy: allowlisted`. The sender's email or Webex `personId` must be in `channels.webex.allowFrom` in `config/openclaw.json`.
-
-**GitHub App calls fail in setup-ui**
-- Confirm `secrets/github-app-private-key.pem` exists and is the correct PEM for the App.
-- Confirm `GITHUB_APP_ID` matches the App ID in the GitHub App settings.
-- The GitHub App must be installed on the target repo before `POST /api/setup` can write to it.
-- Check `docker compose logs setup-ui` for the specific error.
-
-**Setup UI form has no GitHub authorisation button**
-`GITHUB_APP_NAME` is not set. The client calls `GET /api/config` to get the slug; without it the install URL cannot be built.
+Keep all production secrets out of Git. `.env`, the `secrets/` directory, and PEM files are already ignored.
