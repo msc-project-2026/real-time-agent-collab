@@ -2,6 +2,19 @@
   "id": "browser-inspector",
   "name": "Browser Inspector",
   "description": "Provides Webex agents with webpage inspection, screenshots, issue logging, and fix-suggestion tools.",
+  "contracts": {
+    "tools": [
+      "inspect_webpage",
+      "screenshot_page",
+      "inspect_element",
+      "get_page_structure",
+      "log_browser_issue",
+      "read_source_file",
+      "suggest_fix",
+      "commit_fix",
+      "reject_fix"
+    ]
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
