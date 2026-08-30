@@ -20,7 +20,7 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function makeHarness(behavior = async () => undefined, { log, fetchImpl, onAudioData } = {}) {
+function makeHarness(behavior = async () => undefined, { log, fetchImpl, onAudioData, onCaptions } = {}) {
   const pages = [];
   let launchCalls = 0;
   const browser = {
@@ -65,6 +65,7 @@ function makeHarness(behavior = async () => undefined, { log, fetchImpl, onAudio
     loadBundle: async () => '/* fake bundle */',
     fetchImpl,
     onAudioData,
+    onCaptions,
   });
   return { runtime, browser, pages, get launchCalls() { return launchCalls; } };
 }
@@ -252,6 +253,25 @@ test('the audio PCM binding is exposed and routes frames to onAudioData only whe
   const noAudio = makeHarness(async () => undefined);
   await noAudio.runtime.init('token-1');
   assert.equal(noAudio.pages[0].exposed.__openclawMeetingAudioPcm, undefined);
+});
+
+test('Webex caption binding and transcription controls cross the browser boundary', async () => {
+  const captions = [];
+  const harness = makeHarness(async () => undefined, {
+    onCaptions: (id, payload) => captions.push({ id, payload }),
+  });
+  await harness.runtime.init('token-1');
+  const page = harness.pages[0];
+  page.exposed.__openclawMeetingCaptions('sdk-1', { captions: [{ text: 'Hello' }] });
+  await harness.runtime.startTranscription({ sdkMeetingId: 'sdk-1' });
+  await harness.runtime.stopTranscription({ sdkMeetingId: 'sdk-1' });
+
+  assert.deepEqual(captions, [{ id: 'sdk-1', payload: { captions: [{ text: 'Hello' }] } }]);
+  assert.deepEqual(page.calls.slice(-2), [
+    { method: 'startTranscription', arg: { sdkMeetingId: 'sdk-1' } },
+    { method: 'stopTranscription', arg: { sdkMeetingId: 'sdk-1' } },
+  ]);
+  assert.equal(page.exposed.__openclawMeetingAudioPcm, undefined);
 });
 
 test('an injected executablePath is forwarded to the browser launcher', async () => {

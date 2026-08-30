@@ -2,8 +2,8 @@
 
 Self-contained OpenClaw plugin: auto-joins Webex space meetings (instant and
 scheduled) via the real Webex Browser SDK when they start, leaves on a chat
-command ("leave meeting"), and — when a Deepgram key is configured — transcribes
-the meeting in real time and posts proactive interventions into the meeting's
+command ("leave meeting"), transcribes the meeting in real time using the
+configured Webex or Deepgram provider, and posts proactive interventions into the meeting's
 Webex space. After the meeting, it consumes Webex's completed transcript,
 generates structured minutes, and commits them to `.collab/meeting minutes.md`
 in the space's mapped primary GitHub repository.
@@ -12,12 +12,12 @@ Scope: **join, leave, listen, generate post-meeting minutes, and (optionally)
 transcribe + intervene in real time**. On join
 the bot subscribes to the meeting's audio (receive-only — no microphone, camera,
 or screen share is published). It always logs whether that audio is audible; and
-when `DEEPGRAM_API_KEY` is set it additionally streams the audio to Deepgram's
-turn-based (Flux) API, runs each completed speaker turn through the **same
+when the Deepgram provider is selected it additionally streams the audio to
+Deepgram's turn-based (Flux) API. Webex mode consumes the SDK's live captions
+without exporting audio. Both run each completed speaker turn through the **same
 proactivity gate the webex chat plugin uses**, and posts a short agent reply to
 the space when the gate says it's worth it. See "Audio subscription" and
-"Real-time transcription & proactive interventions" below. With no Deepgram key
-the plugin behaves exactly as before and no audio leaves the browser.
+"Real-time transcription & proactive interventions" below.
 
 ## How it works (Approach 2 from the research phase)
 
@@ -123,11 +123,12 @@ main webex plugin's secret is fine), `WEBEX_MEETING_POLL_INTERVAL_MS`
 browser — see "Browser choice: the H264 requirement" below; when unset the
 runtime auto-detects Brave and otherwise falls back to Playwright's Chromium).
 
-Optional transcription (all no-ops unless `DEEPGRAM_API_KEY` is set):
+Live transcription configuration:
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `DEEPGRAM_API_KEY` | Enables real-time transcription + proactive interventions. | (unset → off) |
+| `WEBEX_MEETING_TRANSCRIPTION_PROVIDER` | Provider: `webex`, `deepgram`, or `off`. | `webex` |
+| `DEEPGRAM_API_KEY` | Required when the provider is `deepgram`. | unset |
 | `DEEPGRAM_BASE_URL` | Override the Deepgram endpoint (proxy / self-hosted). | `https://api.deepgram.com` |
 | `WEBEX_MEETING_DEEPGRAM_MODEL` | Deepgram Flux model. | `flux-general-en` |
 | `WEBEX_MEETING_EOT_THRESHOLD` | Flux end-of-turn confidence threshold (0–1). | `0.7` |
@@ -259,15 +260,16 @@ that's enabled (below).
 
 ## Real-time transcription & proactive interventions
 
-Enabled only when `DEEPGRAM_API_KEY` is set. End to end:
+Enabled when `WEBEX_MEETING_TRANSCRIPTION_PROVIDER` is `webex` or `deepgram`.
+Webex mode receives final `meeting:caption-received` captions directly from the
+Browser SDK. Deepgram mode follows this audio pipeline:
 
 1. **Capture (browser, `audio-capture.js`).** The remote-audio `MediaStream`
    lives only inside the headless page, so we tap it there: WebAudio resamples
    it to 16 kHz mono and a `ScriptProcessorNode` converts each ~256 ms frame to
    linear16 PCM, base64-encodes it, and hands it to Node through the
-   `__openclawMeetingAudioPcm` page binding. The binding is exposed **only** when
-   transcription is configured, so with no key nothing is captured and no audio
-   crosses the boundary.
+   `__openclawMeetingAudioPcm` page binding. The binding is exposed **only** for
+   the Deepgram provider, so Webex and off modes do not capture or export PCM.
 2. **Transcribe (Node, `transcription.js`).** One Deepgram Flux
    (`listen.v2`, turn-based) WebSocket per meeting. PCM frames are streamed with
    `sendMedia`; PCM arriving during the connection handshake is buffered and
@@ -287,8 +289,8 @@ Enabled only when `DEEPGRAM_API_KEY` is set. End to end:
    (`runtime.channel.reply…`, the same seam source-observer uses) and the reply
    is posted into the meeting's Webex space. One intervention at a time per room.
 
-The audio is a single mixed transcoded stream, so turns aren't attributed to
-individual speakers — interventions treat the meeting as one "participant."
+Deepgram receives a single mixed stream and therefore has no speaker attribution;
+Webex captions include speaker metadata.
 
 Sessions start on join and are torn down on leave / meeting-ended /
 `dispose()`. Everything new lives in this plugin; the only cross-plugin reach is

@@ -27,14 +27,9 @@ function register(api) {
   const log = api.logger;
   const tokenStore = createTokenStore(cfg, log);
 
-  // Real-time transcription is opt-in via DEEPGRAM_API_KEY. When enabled, the
-  // browser streams meeting audio as PCM to the Deepgram session manager, whose
-  // per-turn transcripts flow through the (reused) webex proactivity gate and,
-  // when warranted, become a proactive reply in the meeting's Webex space.
   let transcription = null;
   let meetingAgent = null;
   if (cfg.transcription.enabled) {
-    const { createTranscriptionManager } = require('./transcription');
     const { createMeetingAgent } = require('./meeting-agent');
     meetingAgent = createMeetingAgent({
       runtime: api.runtime,
@@ -45,23 +40,29 @@ function register(api) {
       minTurnWords: cfg.transcription.minTurnWords,
       log,
     });
-    transcription = createTranscriptionManager({
-      apiKey: cfg.transcription.apiKey,
-      baseUrl: cfg.transcription.baseUrl,
-      model: cfg.transcription.model,
-      sampleRate: cfg.transcription.sampleRate,
-      eotThreshold: cfg.transcription.eotThreshold,
-      eotTimeoutMs: cfg.transcription.eotTimeoutMs,
-      log,
-      onTurn: (turn) => meetingAgent.handleTurn(turn),
-    });
-    log?.info?.(`[webex-meeting-join] transcription enabled (Deepgram model=${cfg.transcription.model})`);
+    const common = { log, onTurn: (turn) => meetingAgent.handleTurn(turn) };
+    if (cfg.transcription.provider === 'deepgram') {
+      const { createTranscriptionManager } = require('./transcription');
+      transcription = createTranscriptionManager({
+        ...common,
+        apiKey: cfg.transcription.apiKey,
+        baseUrl: cfg.transcription.baseUrl,
+        model: cfg.transcription.model,
+        sampleRate: cfg.transcription.sampleRate,
+        eotThreshold: cfg.transcription.eotThreshold,
+        eotTimeoutMs: cfg.transcription.eotTimeoutMs,
+      });
+    } else {
+      const { createWebexTranscriptionManager } = require('./webex-transcription');
+      transcription = createWebexTranscriptionManager(common);
+    }
+    log?.info?.(`[webex-meeting-join] live transcription enabled (provider=${cfg.transcription.provider})`);
   } else {
-    log?.info?.('[webex-meeting-join] transcription disabled (set DEEPGRAM_API_KEY to enable)');
+    log?.info?.('[webex-meeting-join] live transcription disabled');
   }
 
-  // Post-meeting minutes use Webex's own completed transcript, independently
-  // of the optional live Deepgram stream above.
+  // Post-meeting minutes use Webex's completed transcript independently of the
+  // selected live provider.
   const meetingMinutes = cfg.minutes.enabled
     ? createMeetingMinutesManager({ runtime: api.runtime, tokenStore, config: cfg.minutes, log })
     : null;
@@ -75,7 +76,12 @@ function register(api) {
     log,
     joinTimeoutMs: cfg.joinTimeoutMs,
     executablePath: cfg.browserExecutablePath,
-    onAudioData: transcription ? (meetingId, base64) => transcription.pushPcm(meetingId, base64) : null,
+    onAudioData: cfg.transcription.provider === 'deepgram'
+      ? (meetingId, base64) => transcription.pushPcm(meetingId, base64)
+      : null,
+    onCaptions: cfg.transcription.provider === 'webex'
+      ? (meetingId, payload) => transcription.pushCaptions(meetingId, payload)
+      : null,
   });
   const orchestrator = createOrchestrator({
     cfg,

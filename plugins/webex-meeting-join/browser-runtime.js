@@ -153,8 +153,9 @@ function createBrowserRuntime({
   fetchImpl = globalThis.fetch,
   // (sdkMeetingId, base64Pcm) => void. When provided, the page is given a
   // binding to stream 16 kHz linear16 PCM here for transcription; when omitted
-  // (no Deepgram key configured), no audio leaves the browser at all.
+  // (a provider other than Deepgram), no audio leaves the browser at all.
   onAudioData = null,
+  onCaptions = null,
 }) {
   let browser = null;
   let page = null;
@@ -230,6 +231,17 @@ function createBrowserRuntime({
           }
         }).catch((err) => {
           log?.warn?.(`[webex-meeting-join] could not expose audio PCM binding: ${err?.message ?? err}`);
+        });
+      }
+      if (onCaptions) {
+        await page.exposeFunction('__openclawMeetingCaptions', (meetingId, payload) => {
+          try {
+            onCaptions(meetingId, payload);
+          } catch (err) {
+            log?.warn?.(`[webex-meeting-join] caption handler error: ${err?.message ?? err}`);
+          }
+        }).catch((err) => {
+          log?.warn?.(`[webex-meeting-join] could not expose caption binding: ${err?.message ?? err}`);
         });
       }
     }
@@ -450,6 +462,22 @@ function createBrowserRuntime({
     });
   }
 
+  async function startTranscription(reference) {
+    await ensureInitialized();
+    return withTimeout(
+      page.evaluate((ref) => window.__webexMeetingJoin.startTranscription(ref), reference),
+      'Webex transcription start'
+    );
+  }
+
+  async function stopTranscription(reference) {
+    await ensureInitialized();
+    return withTimeout(
+      page.evaluate((ref) => window.__webexMeetingJoin.stopTranscription(ref), reference),
+      'Webex transcription stop'
+    );
+  }
+
   async function syncActive() {
     await ensureBrowserAlive();
     if (!initialized) return [];
@@ -477,7 +505,7 @@ function createBrowserRuntime({
     pagePromise = null;
   }
 
-  return { init, join, leave, syncActive, status, dispose };
+  return { init, join, leave, startTranscription, stopTranscription, syncActive, status, dispose };
 }
 
 module.exports = {

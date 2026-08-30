@@ -5,7 +5,7 @@ const test = require('node:test');
 
 const indexPath = require.resolve('./index.js');
 const dependencyPaths = Object.fromEntries([
-  'config', 'token', 'webhook-subscriptions', 'webhook-router', 'browser-runtime', 'orchestrator', 'meeting-minutes', 'api', 'transcription', 'meeting-agent',
+  'config', 'token', 'webhook-subscriptions', 'webhook-router', 'browser-runtime', 'orchestrator', 'meeting-minutes', 'api', 'transcription', 'webex-transcription', 'meeting-agent',
 ].map((name) => [name, require.resolve(`./${name}.js`)]));
 
 function loadRegister(t, mocks) {
@@ -42,7 +42,7 @@ test('wires the lifecycle, recovery fallbacks, and shutdown cleanup through inje
   t.after(() => { global.setInterval = originalSetInterval; global.clearInterval = originalClearInterval; });
   const calls = [];
   const cfg = {
-    transcription: { enabled: false }, minutes: { enabled: true }, canRefreshMeetingToken: true,
+    transcription: { enabled: false, provider: 'off' }, minutes: { enabled: true }, canRefreshMeetingToken: true,
     webhookSecret: 'secret', webhookBaseUrl: 'https://hooks.example', botToken: 'bot-token',
     joinTimeoutMs: 10_000, browserExecutablePath: '/browser',
   };
@@ -101,7 +101,7 @@ test('wires the lifecycle, recovery fallbacks, and shutdown cleanup through inje
 
 test('enables live transcription and routes browser PCM frames to its session manager', (t) => {
   const cfg = {
-    transcription: { enabled: true, apiKey: 'key', baseUrl: 'https://deepgram.example', model: 'flux', sampleRate: 16000, eotThreshold: 0.7, eotTimeoutMs: 800, gateThreshold: 0.8, addressedGateThreshold: 0.5, minTurnWords: 3 },
+    transcription: { enabled: true, provider: 'deepgram', apiKey: 'key', baseUrl: 'https://deepgram.example', model: 'flux', sampleRate: 16000, eotThreshold: 0.7, eotTimeoutMs: 800, gateThreshold: 0.8, addressedGateThreshold: 0.5, minTurnWords: 3 },
     minutes: { enabled: false }, canRefreshMeetingToken: false, botToken: 'bot', webhookBaseUrl: 'https://hooks.example', webhookSecret: null,
   };
   let browserOptions;
@@ -122,4 +122,29 @@ test('enables live transcription and routes browser PCM frames to its session ma
   assert.deepEqual(transcriptionOptions.pushed, ['sdk-id', 'pcm']);
   assert.equal(transcriptionOptions.model, 'flux');
   assert.equal(browserOptions.onAudioData instanceof Function, true);
+  assert.equal(browserOptions.onCaptions, null);
+});
+
+test('routes Webex captions without exposing the Deepgram PCM bridge', (t) => {
+  const cfg = {
+    transcription: { enabled: true, provider: 'webex', gateThreshold: 0.8, addressedGateThreshold: 0.5, minTurnWords: 3 },
+    minutes: { enabled: false }, canRefreshMeetingToken: false, botToken: 'bot', webhookBaseUrl: 'https://hooks.example', webhookSecret: null,
+  };
+  let browserOptions;
+  let pushed;
+  const register = loadRegister(t, {
+    config: { getConfig: () => cfg }, token: { createTokenStore: () => ({ getToken: () => 'meeting' }) },
+    'webhook-subscriptions': { ensureWebhooks: async () => {}, deregisterWebhooks: async () => {} },
+    'webhook-router': { ROUTE_PREFIX: '/hooks', createWebhookRouter: () => () => {} },
+    'browser-runtime': { createBrowserRuntime: (options) => { browserOptions = options; return {}; } },
+    orchestrator: { createOrchestrator: () => ({}) },
+    'meeting-minutes': { createMeetingMinutesManager: () => {} },
+    api: { webexFetch: async () => {} },
+    'webex-transcription': { createWebexTranscriptionManager: () => ({ pushCaptions: (...args) => { pushed = args; } }) },
+    'meeting-agent': { createMeetingAgent: () => ({ handleTurn: () => {} }) },
+  });
+  register({ runtime: {}, logger: { info() {} }, registerHttpRoute() {}, on() {} });
+  browserOptions.onCaptions('sdk-id', { captions: [] });
+  assert.deepEqual(pushed, ['sdk-id', { captions: [] }]);
+  assert.equal(browserOptions.onAudioData, null);
 });

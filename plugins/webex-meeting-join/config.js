@@ -70,6 +70,7 @@ function getConfig(env = process.env) {
   const meetingClientSecret = trimmed(env.WEBEX_MEETING_CLIENT_SECRET) ?? trimmed(env.WEBEX_CLIENT_SECRET);
   const webhookBaseUrl = trimmed(env.WEBEX_MEETING_WEBHOOK_URL);
   const webhookSecret = trimmed(env.WEBEX_WEBHOOK_SECRET);
+  const transcriptionProvider = trimmed(env.WEBEX_MEETING_TRANSCRIPTION_PROVIDER)?.toLowerCase() ?? 'webex';
 
   const missing = [
     !botToken && 'WEBEX_BOT_TOKEN',
@@ -77,6 +78,9 @@ function getConfig(env = process.env) {
     !webhookBaseUrl && 'WEBEX_MEETING_WEBHOOK_URL',
   ].filter(Boolean);
   if (missing.length) throw new Error(`webex-meeting-join: missing ${missing.join(', ')}`);
+  if (!['webex', 'deepgram', 'off'].includes(transcriptionProvider)) {
+    throw new Error('webex-meeting-join: WEBEX_MEETING_TRANSCRIPTION_PROVIDER must be webex, deepgram, or off');
+  }
 
   const pollIntervalMsRaw = Number(env.WEBEX_MEETING_POLL_INTERVAL_MS);
   const pollIntervalMs = Number.isFinite(pollIntervalMsRaw) && pollIntervalMsRaw >= MIN_POLL_INTERVAL_MS
@@ -96,12 +100,10 @@ function getConfig(env = process.env) {
   // bundles H264) before falling back to Playwright's Chromium.
   const browserExecutablePath = trimmed(env.WEBEX_MEETING_BROWSER_EXECUTABLE);
 
-  // Real-time transcription (Deepgram) is entirely opt-in: with no API key the
-  // plugin behaves exactly as before (join/leave/listen), and no audio is
-  // captured out of the browser or sent off-box. The gate LLM reuses the webex
-  // chat plugin's CISCO_LLM_API_KEY-backed proactivity gate, so no extra key is
-  // needed for the intervention decision itself.
   const deepgramApiKey = trimmed(env.DEEPGRAM_API_KEY);
+  if (transcriptionProvider === 'deepgram' && !deepgramApiKey) {
+    throw new Error('webex-meeting-join: DEEPGRAM_API_KEY is required when WEBEX_MEETING_TRANSCRIPTION_PROVIDER=deepgram');
+  }
   // Optional: override the Deepgram endpoint (proxy or self-hosted). The SDK
   // already defaults to https://api.deepgram.com, so leaving this unset is the
   // same as pointing it there.
@@ -114,7 +116,8 @@ function getConfig(env = process.env) {
   const addressedThresholdRaw = Number(env.WEBEX_MEETING_ADDRESSED_GATE_THRESHOLD);
 
   const transcription = {
-    enabled: Boolean(deepgramApiKey),
+    enabled: transcriptionProvider !== 'off',
+    provider: transcriptionProvider,
     apiKey: deepgramApiKey,
     baseUrl: deepgramBaseUrl,
     model: trimmed(env.WEBEX_MEETING_DEEPGRAM_MODEL) ?? DEFAULT_DEEPGRAM_MODEL,

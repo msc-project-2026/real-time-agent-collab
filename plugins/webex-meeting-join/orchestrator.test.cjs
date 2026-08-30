@@ -38,7 +38,7 @@ function fakeTokenStore(routes) {
 }
 
 function fakeBrowserRuntime() {
-  const calls = { init: [], join: [], leave: [], syncActive: 0 };
+  const calls = { init: [], join: [], leave: [], startTranscription: [], stopTranscription: [], syncActive: 0 };
   return {
     calls,
     init: async (token) => { calls.init.push(token); },
@@ -47,6 +47,8 @@ function fakeBrowserRuntime() {
       return 'sdk-meeting-1';
     },
     leave: async (reference) => { calls.leave.push(reference); },
+    startTranscription: async (reference) => { calls.startTranscription.push(reference); },
+    stopTranscription: async (reference) => { calls.stopTranscription.push(reference); },
     syncActive: async () => {
       calls.syncActive += 1;
       return [];
@@ -109,6 +111,38 @@ test('handleMeetingStarted joins a member space meeting and announces success', 
     assert.deepEqual(browserRuntime.calls.join, [{ destination: 'sip:x@webex.com', type: 'SIP_URI' }]);
     assert.equal(posted.at(-1).roomId, 'room-1');
     assert.match(posted.at(-1).markdown, /Joined/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('Webex transcription starts only after the joined meeting is mapped to its room', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async (url, opts = {}) => {
+    if (String(url).endsWith('/people/me')) return response({ id: 'bot-id' });
+    if (String(url).endsWith('/messages')) return response({ id: 'msg-1' });
+    throw new Error(`unexpected bot-token fetch: ${url}`);
+  };
+  try {
+    const browserRuntime = fakeBrowserRuntime();
+    const sessions = [];
+    const orchestrator = createOrchestrator({
+      cfg: baseCfg({ transcription: { provider: 'webex' } }),
+      tokenStore: fakeTokenStore([
+        ['/people/me', { id: 'meeting-person-id' }],
+        ['/memberships?', { items: [{ id: 'membership-1' }] }],
+        ['/meetings/meeting-1', { id: 'meeting-1', roomId: 'room-1', sipUrl: 'sip:x@webex.com' }],
+      ]),
+      browserRuntime,
+      transcription: { startSession: (session) => sessions.push(session) },
+    });
+    await orchestrator.start();
+    await orchestrator.handleMeetingStarted({ data: { id: 'meeting-1' } });
+
+    assert.deepEqual(sessions, [{ sdkMeetingId: 'sdk-meeting-1', meetingId: 'meeting-1', roomId: 'room-1' }]);
+    assert.deepEqual(browserRuntime.calls.startTranscription, [{
+      sdkMeetingId: 'sdk-meeting-1', meetingId: 'meeting-1', destination: 'sip:x@webex.com',
+    }]);
   } finally {
     global.fetch = originalFetch;
   }

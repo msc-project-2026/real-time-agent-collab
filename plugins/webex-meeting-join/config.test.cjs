@@ -12,6 +12,7 @@ test('getConfig falls back to the shared WEBEX_ACCESS_TOKEN family when WEBEX_ME
     WEBEX_CLIENT_ID: 'shared-id',
     WEBEX_CLIENT_SECRET: 'shared-secret',
     WEBEX_MEETING_WEBHOOK_URL: 'https://example.com/webhooks/webex-meeting-join',
+    WEBEX_MEETING_TRANSCRIPTION_PROVIDER: 'off',
   });
   assert.equal(cfg.meetingAccessToken, 'shared-access');
   assert.equal(cfg.meetingRefreshToken, 'shared-refresh');
@@ -25,6 +26,7 @@ test('getConfig prefers dedicated WEBEX_MEETING_* vars over the shared fallback'
     WEBEX_MEETING_ACCESS_TOKEN: 'dedicated-access',
     WEBEX_ACCESS_TOKEN: 'shared-access',
     WEBEX_MEETING_WEBHOOK_URL: 'https://example.com/webhooks/webex-meeting-join/',
+    WEBEX_MEETING_TRANSCRIPTION_PROVIDER: 'off',
   });
   assert.equal(cfg.meetingAccessToken, 'dedicated-access');
   assert.equal(cfg.canRefreshMeetingToken, false); // no refresh triple provided
@@ -46,6 +48,7 @@ test('getConfig ignores an out-of-range poll interval and falls back to the defa
     WEBEX_BOT_TOKEN: 'bot-token',
     WEBEX_ACCESS_TOKEN: 'shared-access',
     WEBEX_MEETING_WEBHOOK_URL: 'https://example.com/hook',
+    WEBEX_MEETING_TRANSCRIPTION_PROVIDER: 'off',
     WEBEX_MEETING_POLL_INTERVAL_MS: '10', // below the 30s floor
   });
   assert.equal(cfg.pollIntervalMs, 5 * 60 * 1000);
@@ -55,15 +58,25 @@ const baseEnv = {
   WEBEX_BOT_TOKEN: 'bot-token',
   WEBEX_ACCESS_TOKEN: 'shared-access',
   WEBEX_MEETING_WEBHOOK_URL: 'https://example.com/hook',
+  WEBEX_MEETING_TRANSCRIPTION_PROVIDER: 'off',
 };
 
-test('transcription is disabled with no DEEPGRAM_API_KEY and enabled with one', () => {
+test('transcription defaults to Webex and does not infer behavior from the Deepgram key', () => {
+  const defaults = getConfig({ ...baseEnv, WEBEX_MEETING_TRANSCRIPTION_PROVIDER: undefined });
+  assert.equal(defaults.transcription.enabled, true);
+  assert.equal(defaults.transcription.provider, 'webex');
+
   const off = getConfig({ ...baseEnv });
   assert.equal(off.transcription.enabled, false);
-  assert.equal(off.transcription.apiKey, undefined);
+  assert.equal(off.transcription.provider, 'off');
 
-  const on = getConfig({ ...baseEnv, DEEPGRAM_API_KEY: 'dg-key' });
+  const on = getConfig({
+    ...baseEnv,
+    WEBEX_MEETING_TRANSCRIPTION_PROVIDER: 'deepgram',
+    DEEPGRAM_API_KEY: 'dg-key',
+  });
   assert.equal(on.transcription.enabled, true);
+  assert.equal(on.transcription.provider, 'deepgram');
   assert.equal(on.transcription.apiKey, 'dg-key');
   // Sensible Flux defaults.
   assert.equal(on.transcription.model, 'flux-general-en');
@@ -75,6 +88,7 @@ test('transcription is disabled with no DEEPGRAM_API_KEY and enabled with one', 
 test('transcription tunables come from env and out-of-range values fall back', () => {
   const cfg = getConfig({
     ...baseEnv,
+    WEBEX_MEETING_TRANSCRIPTION_PROVIDER: 'deepgram',
     DEEPGRAM_API_KEY: 'dg-key',
     WEBEX_MEETING_DEEPGRAM_MODEL: 'flux-general-multi',
     WEBEX_MEETING_EOT_THRESHOLD: '0.9',
@@ -85,6 +99,26 @@ test('transcription tunables come from env and out-of-range values fall back', (
   assert.equal(cfg.transcription.eotThreshold, 0.9);
   assert.equal(cfg.transcription.minTurnWords, 3);
   assert.equal(cfg.transcription.gateThreshold, 0.7); // default kept
+});
+
+test('Webex transcription needs no Deepgram key', () => {
+  const cfg = getConfig({
+    ...baseEnv,
+    WEBEX_MEETING_TRANSCRIPTION_PROVIDER: 'webex',
+  });
+  assert.equal(cfg.transcription.enabled, true);
+  assert.equal(cfg.transcription.provider, 'webex');
+});
+
+test('invalid providers and Deepgram without a key are rejected', () => {
+  assert.throws(
+    () => getConfig({ ...baseEnv, WEBEX_MEETING_TRANSCRIPTION_PROVIDER: 'auto' }),
+    /must be webex, deepgram, or off/
+  );
+  assert.throws(
+    () => getConfig({ ...baseEnv, WEBEX_MEETING_TRANSCRIPTION_PROVIDER: 'deepgram' }),
+    /DEEPGRAM_API_KEY is required/
+  );
 });
 
 test('post-meeting minutes are enabled by default and recovery settings are configurable', () => {

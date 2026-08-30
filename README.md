@@ -55,7 +55,7 @@ Preferences are stored in the persistent OpenClaw workspace. Startup reconciliat
 
 After a meeting, Webex's completed VTT/TXT transcript is summarized into **Summary**, **Decisions**, **Action Items**, and **Open Questions**, then appended idempotently to `.collab/meeting minutes.md` in the project's primary GitHub repository. A bounded retry job survives gateway restarts if the transcript webhook is delayed or missed.
 
-Set `DEEPGRAM_API_KEY` only if live transcription and proactive interventions are wanted. Without it, the plugin still joins, listens, responds to commands, and produces Webex-transcript-based minutes; no meeting audio is sent to Deepgram.
+`WEBEX_MEETING_TRANSCRIPTION_PROVIDER` defaults to `webex`; it can also be set to `deepgram` or `off`. Webex mode consumes live captions directly from the meeting; Deepgram mode additionally requires `DEEPGRAM_API_KEY` and sends meeting audio to Deepgram.
 
 ## Browser Inspector plugin
 
@@ -232,12 +232,13 @@ WEBEX_MEETING_WEBHOOK_URL=https://agent.example.com/webhooks/webex-meeting-join
 
 Do **not** manually create duplicate subscriptions. On every OpenClaw startup the chat plugin registers the bot attachment-action and OAuth message webhooks; the meeting plugin removes stale subscriptions at its target URLs and registers its four own resources. Both verify the Webex `X-Spark-Signature` against `WEBEX_WEBHOOK_SECRET` when it is set.
 
-### 4. Optional live transcription and minutes storage
+### 4. Configure live transcription and minutes storage
 
-For live Deepgram transcription and proactive replies, set:
+Choose the live transcription source explicitly:
 
 ```dotenv
-DEEPGRAM_API_KEY=<Deepgram API key>
+WEBEX_MEETING_TRANSCRIPTION_PROVIDER=webex # webex | deepgram | off
+# DEEPGRAM_API_KEY=<required only when provider=deepgram>
 ```
 
 For post-meeting minutes, use either the GitHub App configured below or a fine-grained token with **Contents: read and write** access to each mapped repository:

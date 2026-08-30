@@ -55,6 +55,7 @@ const audioCaptures = new Map();
 // and only ever see zeros (RTP packets flow, audioLevel stays 0.0000, no
 // transcript). Muted playback forces the decode without emitting sound.
 const audioSinks = new Map();
+const transcriptionListeners = new Map();
 
 // Public Webex SDK media events. In transcoded (non-multistream) mode — the
 // mode our signalling-only join negotiates — the remote audio of every
@@ -125,8 +126,8 @@ function attachAudioSink(meetingId, stream) {
 }
 
 // Start streaming this meeting's remote audio as PCM to Node for transcription,
-// but only when Node opted in by exposing the binding (i.e. a Deepgram key is
-// configured). Idempotent per meeting. See audio-capture.js.
+// but only when the Deepgram provider exposes the PCM binding. Idempotent per
+// meeting. See audio-capture.js.
 function startAudioCapture(meetingId, stream) {
   if (typeof window.__openclawMeetingAudioPcm !== 'function') return;
   if (audioCaptures.has(meetingId)) return;
@@ -252,6 +253,7 @@ async function init(accessToken) {
         device: { ephemeral: true },
         meetings: {
           reconnection: { enabled: true },
+          enableAutomaticLLM: typeof window.__openclawMeetingCaptions === 'function',
           experimental: {
             enableUnifiedMeetings: true,
             enableAdhocMeetings: true,
@@ -410,6 +412,39 @@ function findMeeting(reference, { activeOnly = false } = {}) {
   );
 }
 
+async function startTranscription(reference) {
+  const meeting = findMeeting(reference, { activeOnly: true }) ?? findMeeting(reference);
+  if (!meeting) throw new Error('no Webex meeting object matched the transcription request');
+  if (transcriptionListeners.has(meeting.id)) return;
+
+  const begin = async () => {
+    const entry = transcriptionListeners.get(meeting.id);
+    if (!entry || entry.started) return;
+    entry.started = true;
+    await meeting.startTranscription();
+  };
+  const onConnected = () => void begin().catch((err) => {
+    reportAudio('warn', `failed to start Webex transcription: ${err?.message ?? err}`);
+  });
+  const onCaptions = (payload) => window.__openclawMeetingCaptions?.(meeting.id, payload);
+  transcriptionListeners.set(meeting.id, { onConnected, onCaptions, started: false });
+  meeting.on('meeting:transcription:connected', onConnected);
+  meeting.on('meeting:caption-received', onCaptions);
+
+  if (webex.internal?.llm?.isConnected?.()) await begin();
+}
+
+function stopTranscription(reference) {
+  const meeting = findMeeting(reference);
+  const meetingId = meeting?.id ?? reference?.sdkMeetingId ?? reference;
+  const entry = transcriptionListeners.get(meetingId);
+  if (!entry) return;
+  transcriptionListeners.delete(meetingId);
+  meeting?.off?.('meeting:transcription:connected', entry.onConnected);
+  meeting?.off?.('meeting:caption-received', entry.onCaptions);
+  meeting?.stopTranscription?.();
+}
+
 async function leave(reference) {
   if (!webex) throw new Error('webex-meeting-join: browser SDK not initialised');
   // Always refresh first. The join response can reject after Locus accepts
@@ -424,6 +459,7 @@ async function leave(reference) {
     const id = typeof reference === 'string' ? reference : reference?.meetingId ?? reference?.sdkMeetingId;
     throw new Error(`no local or active Webex meeting object matched ${id ?? 'the requested meeting'}`);
   }
+  stopTranscription(meeting.id);
   // We're leaving on request — stop metering its audio now, whatever the leave
   // fetch itself does afterwards.
   stopAudioMonitor(meeting.id);
@@ -474,6 +510,7 @@ async function syncActive() {
 }
 
 async function dispose() {
+  for (const meetingId of [...transcriptionListeners.keys()]) stopTranscription(meetingId);
   const trackedMeetingIds = new Set([...audioMonitors.keys(), ...audioCaptures.keys(), ...audioSinks.keys()]);
   for (const meetingId of trackedMeetingIds) stopAudioMonitor(meetingId);
   if (!webex) return;
@@ -494,4 +531,15 @@ function status() {
   };
 }
 
-window.__webexMeetingJoin = { init, updateAccessToken, join, leave, confirmLeft, syncActive, dispose, status };
+window.__webexMeetingJoin = {
+  init,
+  updateAccessToken,
+  join,
+  leave,
+  startTranscription,
+  stopTranscription,
+  confirmLeft,
+  syncActive,
+  dispose,
+  status,
+};

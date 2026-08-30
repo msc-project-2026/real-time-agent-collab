@@ -84,6 +84,14 @@ function createOrchestrator({
     log?.info?.(`[webex-meeting-join] ready — bot=${botId} meeting-account=${meetingPersonId}`);
   }
 
+  async function startLiveTranscription({ sdkMeetingId, meetingId, roomId, destination }) {
+    transcription?.startSession({ sdkMeetingId, roomId, meetingId });
+    if (cfg.transcription?.provider !== 'webex') return;
+    await browserRuntime.startTranscription({ sdkMeetingId, meetingId, destination }).catch((err) => {
+      log?.warn?.(`[webex-meeting-join] Webex live transcription unavailable for meeting=${meetingId}: ${err?.message ?? err}`);
+    });
+  }
+
   // Attempts to join a meeting once, guarded by state.withLock so a retried
   // webhook or a poll-sweep race can't double-join. Idempotent: a no-op if
   // already joined or explicitly suppressed by a user "leave" request.
@@ -129,7 +137,7 @@ function createOrchestrator({
         await browserRuntime.init(tokenStore.getToken());
         const sdkMeetingId = await browserRuntime.join(destination, type);
         state.markJoined(meetingId, { roomId, kind, destination, sdkMeetingId });
-        transcription?.startSession({ sdkMeetingId, roomId, meetingId });
+        await startLiveTranscription({ sdkMeetingId, roomId, meetingId, destination });
       } catch (err) {
         // The Locus POST can commit the join and then reject while the SDK is
         // processing its response. Independently sync once at this boundary;
@@ -143,7 +151,12 @@ function createOrchestrator({
             destination,
             sdkMeetingId: recovered.sdkMeetingId,
           });
-          transcription?.startSession({ sdkMeetingId: recovered.sdkMeetingId, roomId, meetingId });
+          await startLiveTranscription({
+            sdkMeetingId: recovered.sdkMeetingId,
+            roomId,
+            meetingId,
+            destination,
+          });
           log?.warn?.(
             `[webex-meeting-join] join response failed but active Locus state confirmed meeting=${meetingId}`
           );
@@ -221,7 +234,12 @@ function createOrchestrator({
         destination,
         sdkMeetingId: matchingSdk.sdkMeetingId,
       });
-      transcription?.startSession({ sdkMeetingId: matchingSdk.sdkMeetingId, roomId, meetingId: meeting.id });
+      await startLiveTranscription({
+        sdkMeetingId: matchingSdk.sdkMeetingId,
+        roomId,
+        meetingId: meeting.id,
+        destination,
+      });
       log?.warn?.(`[webex-meeting-join] recovered joined state meeting=${meeting.id} room=${roomId}`);
       return state.findJoinedByRoom(roomId);
     } catch (err) {
@@ -292,6 +310,13 @@ function createOrchestrator({
     state.forgetLive(meetingId);
     state.suppressed.delete(meetingId); // a new instance of this meeting id won't recur, so free the slot
     if (info) {
+      if (cfg.transcription?.provider === 'webex') {
+        await browserRuntime.stopTranscription({
+          meetingId,
+          sdkMeetingId: info.sdkMeetingId,
+          destination: info.destination,
+        }).catch(() => {});
+      }
       transcription?.endSession(info.sdkMeetingId);
       meetingAgent?.clearRoom(info.roomId);
       log?.info?.(`[webex-meeting-join] meeting=${meetingId} ended, cleared local state`);
