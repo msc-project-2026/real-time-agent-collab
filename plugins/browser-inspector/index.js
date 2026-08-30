@@ -19,6 +19,13 @@ try {
   updateSuggestionStatus = null;
 }
 
+function toolResult(details) {
+  return {
+    content: [{ type: 'text', text: JSON.stringify(details) }],
+    details,
+  };
+}
+
 function register(api) {
   api.registerTool({
     name: 'inspect_webpage',
@@ -40,8 +47,8 @@ function register(api) {
       },
       required: ['url'],
     },
-    handler: async ({ url, check_links }) => {
-      return inspectPage(url, { checkLinks: check_links });
+    execute: async (_toolCallId, { url, check_links }) => {
+      return toolResult(await inspectPage(url, { checkLinks: check_links }));
     },
   });
 
@@ -77,7 +84,7 @@ function register(api) {
       },
       required: ['url', 'room_id'],
     },
-    handler: async ({ url, room_id, full_page, viewport_width, viewport_height }) => {
+    execute: async (_toolCallId, { url, room_id, full_page, viewport_width, viewport_height }) => {
       const { base64, mimeType } = await screenshotPage(url, {
         fullPage: full_page,
         width: viewport_width,
@@ -88,7 +95,7 @@ function register(api) {
       // Sending a multi-MB base64 string back as a tool result would overflow
       // the context window and cause the next LLM request to time out.
       const token = process.env.WEBEX_BOT_TOKEN;
-      if (!token) return { ok: false, error: 'WEBEX_BOT_TOKEN not set — cannot post screenshot' };
+      if (!token) return toolResult({ ok: false, error: 'WEBEX_BOT_TOKEN not set — cannot post screenshot' });
 
       const buffer = Buffer.from(base64, 'base64');
       const formData = new FormData();
@@ -103,10 +110,10 @@ function register(api) {
 
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
-        return { ok: false, error: `Webex upload failed: ${res.status} ${errText}` };
+        return toolResult({ ok: false, error: `Webex upload failed: ${res.status} ${errText}` });
       }
 
-      return { ok: true, posted: true, url };
+      return toolResult({ ok: true, posted: true, url });
     },
   });
 
@@ -129,8 +136,8 @@ function register(api) {
       },
       required: ['url', 'selector'],
     },
-    handler: async ({ url, selector }) => {
-      return inspectElement(url, selector);
+    execute: async (_toolCallId, { url, selector }) => {
+      return toolResult(await inspectElement(url, selector));
     },
   });
 
@@ -149,8 +156,8 @@ function register(api) {
       },
       required: ['url'],
     },
-    handler: async ({ url }) => {
-      return getPageStructure(url);
+    execute: async (_toolCallId, { url }) => {
+      return toolResult(await getPageStructure(url));
     },
   });
 
@@ -184,12 +191,12 @@ function register(api) {
       },
       required: ['room_id', 'title', 'severity', 'description'],
     },
-    handler: async ({ room_id, title, severity, description }) => {
+    execute: async (_toolCallId, { room_id, title, severity, description }) => {
       if (!saveIssue) {
-        return { ok: false, error: 'collab-cache module not available — issues.md logging is disabled' };
+        return toolResult({ ok: false, error: 'collab-cache module not available — issues.md logging is disabled' });
       }
       const result = await saveIssue(room_id, { title, severity, description });
-      return { ok: true, id: result.id };
+      return toolResult({ ok: true, id: result.id });
     },
   });
 
@@ -212,11 +219,11 @@ function register(api) {
       },
       required: ['room_id', 'file_path'],
     },
-    handler: async ({ room_id, file_path }) => {
-      if (!readSourceFile) return { ok: false, error: 'collab-cache module not available' };
+    execute: async (_toolCallId, { room_id, file_path }) => {
+      if (!readSourceFile) return toolResult({ ok: false, error: 'collab-cache module not available' });
       const content = await readSourceFile(room_id, file_path);
-      if (content === null) return { found: false, file_path };
-      return { found: true, file_path, content };
+      if (content === null) return toolResult({ found: false, file_path });
+      return toolResult({ found: true, file_path, content });
     },
   });
 
@@ -249,14 +256,14 @@ function register(api) {
       },
       required: ['room_id', 'file_path', 'proposed_content', 'explanation'],
     },
-    handler: async ({ room_id, file_path, proposed_content, explanation }) => {
-      if (!saveSuggestion) return { ok: false, error: 'collab-cache module not available, fix suggestions are disabled' };
+    execute: async (_toolCallId, { room_id, file_path, proposed_content, explanation }) => {
+      if (!saveSuggestion) return toolResult({ ok: false, error: 'collab-cache module not available, fix suggestions are disabled' });
       const suggestion = await saveSuggestion(room_id, {
         filePath: file_path,
         proposedContent: proposed_content,
         explanation,
       });
-      return { ok: true, id: suggestion.id, filePath: suggestion.filePath, explanation: suggestion.explanation };
+      return toolResult({ ok: true, id: suggestion.id, filePath: suggestion.filePath, explanation: suggestion.explanation });
     },
   });
 
@@ -273,13 +280,13 @@ function register(api) {
       },
       required: ['room_id', 'suggestion_id'],
     },
-    handler: async ({ room_id, suggestion_id }) => {
-      if (!commitSuggestion) return { ok: false, error: 'collab-cache module not available' };
+    execute: async (_toolCallId, { room_id, suggestion_id }) => {
+      if (!commitSuggestion) return toolResult({ ok: false, error: 'collab-cache module not available' });
       try {
         const result = await commitSuggestion(room_id, suggestion_id);
-        return { ok: true, ...result };
+        return toolResult({ ok: true, ...result });
       } catch (err) {
-        return { ok: false, error: err.message };
+        return toolResult({ ok: false, error: err.message });
       }
     },
   });
@@ -297,13 +304,13 @@ function register(api) {
       },
       required: ['room_id', 'suggestion_id'],
     },
-    handler: async ({ room_id, suggestion_id }) => {
-      if (!updateSuggestionStatus) return { ok: false, error: 'collab-cache module not available' };
+    execute: async (_toolCallId, { room_id, suggestion_id }) => {
+      if (!updateSuggestionStatus) return toolResult({ ok: false, error: 'collab-cache module not available' });
       try {
         await updateSuggestionStatus(room_id, suggestion_id, 'rejected');
-        return { ok: true, id: suggestion_id };
+        return toolResult({ ok: true, id: suggestion_id });
       } catch (err) {
-        return { ok: false, error: err.message };
+        return toolResult({ ok: false, error: err.message });
       }
     },
   });
