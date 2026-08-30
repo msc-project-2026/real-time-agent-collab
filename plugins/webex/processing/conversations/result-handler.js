@@ -6,6 +6,42 @@ const { validateConversationProcessingResult } = require('./validate-result');
 const { getConversations } = require('../../context/conversations-store');
 const { updateConversationsFromResult } = require('./update-from-result');
 const { extractItemsFromBatch } = require('../items/extract-from-batch');
+const { sendWebexMessage } = require('../../send');
+
+async function sendResponseDecision({
+  responseDecision,
+  spaceId,
+  account,
+  log,
+  sendMessage = sendWebexMessage,
+}) {
+  if (!responseDecision?.needed) return { sent: false };
+
+  const text = String(responseDecision.message ?? '').trim();
+  if (!text) {
+    throw new Error(
+      'responseDecision.message must be non-empty when responseDecision.needed is true'
+    );
+  }
+
+  const replyToId = String(responseDecision.replyToId ?? '').trim() || undefined;
+  const message = await sendMessage({
+    token: account.config.token,
+    to: spaceId,
+    text,
+    parentId: replyToId,
+  });
+
+  log?.info?.(
+    `[webex:${account.accountId}] sent response decision ${JSON.stringify({
+      spaceId,
+      messageId: message.id,
+      replyToId: replyToId ?? null,
+    })}`
+  );
+
+  return { sent: true, messageId: message.id };
+}
 
 // Make handler for parsing batch conversation processing result
 function makeConversationProcessingResultHandler({
@@ -111,6 +147,13 @@ async function handleConversationProcessingResult({
     log,
   });
 
+  const responseDelivery = await sendResponseDecision({
+    responseDecision: conversationProcessingResult.responseDecision,
+    spaceId: processingBatch.spaceId,
+    account,
+    log,
+  });
+
   // Extract items
   const itemExtractionResult = await extractItemsFromBatch({
     processingBatch,
@@ -126,6 +169,7 @@ async function handleConversationProcessingResult({
       conversationProcessingResult.conversationUpdates.length,
     conversationsCreated: conversationProcessingResult.newConversations.length,
     touchedConversationIds,
+    responseDelivery,
     itemExtraction: {
       skipped: itemExtractionResult.skipped,
       candidateItemCount: itemExtractionResult.candidateItems?.length ?? 0,
@@ -135,4 +179,5 @@ async function handleConversationProcessingResult({
 
 module.exports = {
   makeConversationProcessingResultHandler,
+  sendResponseDecision,
 };
