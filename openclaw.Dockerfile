@@ -1,7 +1,11 @@
 # Extends the official OpenClaw gateway image.
 # Base: node:24-bookworm-slim, runs as non-root user `node` (uid 1000).
 # Base ENTRYPOINT is ["tini", "-s", "--"]; kept as-is for signal handling.
-FROM ghcr.io/openclaw/openclaw:latest
+# Pinned by digest, not `latest`: a rebuild on 2026-09-01 pulled a newer
+# OpenClaw whose config schema had dropped agents.*.memorySearch and
+# cron.maxConcurrentRuns, and the gateway refused to start. Unpin only
+# alongside a deliberate config migration.
+FROM ghcr.io/openclaw/openclaw:latest@sha256:2f5ce8848a1a69b3c460622e566cb9395da9fd18d7ef7b038cd8e2c4f195decf
 
 # Versioned config is the source of truth. Copied into /app/config at build
 # time, then synced into the mounted volume at container start (volumes mask
