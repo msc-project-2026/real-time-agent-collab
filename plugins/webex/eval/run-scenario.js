@@ -114,9 +114,8 @@ function buildSyntheticMessage({ scenarioMsg, spaceId, participants, numberToId,
     mentionedPeople: hasMention(scenarioMsg.text) ? [botId] : [],
     _eval: {
       number: scenarioMsg.number,
-      round: scenarioMsg.round ?? null,
       where: scenarioMsg.where ?? null,
-      expectedRoute: scenarioMsg.expectedRoute ?? null,
+      expectedTags: scenarioMsg.expectedTags ?? null,
     },
   };
 }
@@ -317,7 +316,7 @@ async function runScenario({ scenario, variant = 'baseline', overrides = {}, log
     log.info('[eval] processing message', {
       number: scenarioMsg.number,
       sender: scenarioMsg.sender,
-      expectedRoute: scenarioMsg.expectedRoute ?? null,
+      expectedTags: scenarioMsg.expectedTags ?? null,
     });
 
     try {
@@ -348,7 +347,10 @@ async function runScenario({ scenario, variant = 'baseline', overrides = {}, log
   } finally {
     // Cleared even if a message throws — a stale override would silently
     // swallow this space's real traffic for the rest of the process's life.
-    setOutboundOverride(null);
+    // Only this run's own space: a bare clear would tear down a concurrently
+    // running scenario's capture too, which is the failure the keyed map in
+    // send.js exists to prevent.
+    setOutboundOverride({ spaceId, fn: null });
   }
   currentMessageNumber = null;
 

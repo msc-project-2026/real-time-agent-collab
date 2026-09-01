@@ -158,11 +158,46 @@ function renderMarkdown({ scorecard, gate, tasks, tasksJudge, response }) {
 
   lines.push('## Response quality (LLM judge)');
   lines.push('');
-  lines.push(
-    s.response
-      ? `${s.response.passed}/${s.response.judged} passed (${pct(s.response.passRate)}).`
-      : '_Not scored: the respond step sends via the model’s own message tool, which bypasses the eval capture, so no reply text reaches the bundle._'
-  );
+  // Mirrors the task-fidelity section above: a distribution over the same
+  // 1-4 anchored scale, never a pass rate. This section still read
+  // `passed/judged (passRate)` after the numeric score was removed, so every
+  // scorecard rendered `undefined/3 passed (n/a)` while the JSON beside it
+  // held the correct distribution. The markdown is what goes into the write-up,
+  // so a stale renderer here is a reporting error, not a cosmetic one.
+  if (!s.response) {
+    lines.push(
+      '_Judge not run (`--no-judge`, or judge credentials absent)._'
+    );
+  } else if (s.response.questions === 0) {
+    lines.push('_This scenario defines no `recallChecks`, so there is nothing to judge._');
+  } else {
+    const r = s.response;
+    lines.push(
+      `${r.judged} of ${r.questions} question(s) rated, mean ${r.mean === null ? 'n/a' : r.mean.toFixed(2)} of 4.`
+    );
+    if (r.unanswered) {
+      lines.push(
+        `${r.unanswered} question(s) got no reply at all, each rated 1 — being asked directly and saying nothing is a failure, not a skip.`
+      );
+    }
+    if (r.unjudged) lines.push(`${r.unjudged} repl(y/ies) could not be rated.`);
+    lines.push('');
+    lines.push('| Rating | Count | |');
+    lines.push('|---|---|---|');
+    for (const [rating, label] of [
+      [4, 'answers it, nothing unsupported'],
+      [3, 'answers it, minor omission or stray detail'],
+      [2, 'misses a key fact, or contradicts the conversation'],
+      [1, 'does not answer, or is substantially fabricated'],
+    ]) {
+      lines.push(`| ${rating} | ${r.distribution?.[rating] ?? 0} | ${label} |`);
+    }
+    lines.push('');
+    for (const q of response?.results ?? []) {
+      const head = q.judged ? `**${q.rating}/4**` : `**unrated** — ${q.error}`;
+      lines.push(`- msg ${q.questionNumber} ${head}: ${q.rationale ?? ''}`);
+    }
+  }
   lines.push('');
 
   lines.push('## Token usage');

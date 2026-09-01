@@ -1,0 +1,305 @@
+{
+  "id": "eval-s02-feature-brainstorm",
+  "title": "Feature brainstorm: proactive SLA breach notifications",
+  "type": "brainstorm",
+  "participants": [
+    {
+      "name": "Tom",
+      "personId": "eval-tom",
+      "email": "tom@example.test"
+    },
+    {
+      "name": "Jerry",
+      "personId": "eval-jerry",
+      "email": "jerry@example.test"
+    },
+    {
+      "name": "Spike",
+      "personId": "eval-spike",
+      "email": "spike@example.test"
+    }
+  ],
+  "metadata": {
+    "project": "Logistics platform, post-MVP feature planning",
+    "purpose": "Precision-focused scenario: an open brainstorm in which most of the conversation is speculation that must not become work. Only two of the eight discussed items are extractable tasks; the rest are dismissed ideas, an explicit scope decision, a dependency and a deferred policy question. Also exercises a research task tracked from proposal through commitment to a finding, and recall both before and after that finding lands.",
+    "expectedDifficulty": "high",
+    "authoredBy": "team member (converted from the pre-v3 fixture schema)"
+  },
+  "messages": [
+    {
+      "number": 1,
+      "sender": "Tom",
+      "where": "top-level",
+      "text": "Slow afternoon. Anyone got feature ideas after the MVP push",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 2,
+      "sender": "Jerry",
+      "where": "top-level",
+      "text": "Dark Mode? Half of our users probably work night shifts",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 3,
+      "sender": "Spike",
+      "where": "reply to 2",
+      "replyTo": 2,
+      "text": "True, but that's so much CSS work",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 4,
+      "sender": "Tom",
+      "where": "top-level",
+      "text": "What about notifications then? Like if a shipment's about to breach SLA, someone should know before it's too late",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 5,
+      "sender": "Jerry",
+      "where": "reply to 4",
+      "replyTo": 4,
+      "text": "Ooh yeah that could be useful. We'd need to hook into whatever's tracking SLA breaches though",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 6,
+      "sender": "Spike",
+      "where": "top-level",
+      "text": "Could also just export to CSV and let people build their own alerts in a spreadsheet? It's probably cheaper",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 7,
+      "sender": "Jerry",
+      "where": "reply to 6",
+      "replyTo": 6,
+      "text": "True, though that's a workaround not really a fix",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 8,
+      "sender": "Tom",
+      "where": "top-level",
+      "text": "Was actually thinking more about the notification idea overnight",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 9,
+      "sender": "Jerry",
+      "where": "top-level",
+      "text": "Oh what about a mobile view while we're dreaming big",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 10,
+      "sender": "Spike",
+      "where": "reply to 9",
+      "replyTo": 9,
+      "text": "I think you're dreaming too big lol",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 11,
+      "sender": "Tom",
+      "where": "reply to 8",
+      "replyTo": 8,
+      "text": "So yea I don't think it's a high lift if we already have the SLA breach events somewhere",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 12,
+      "sender": "Spike",
+      "where": "reply to 11",
+      "replyTo": 11,
+      "text": "I mean, we sort of do. They just don't really go anywhere, they just get logged",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 13,
+      "sender": "Tom",
+      "where": "top-level",
+      "text": "Okay, let's keep this on the radar, maybe not committing it to a sprint yet",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 14,
+      "sender": "Spike",
+      "where": "top-level",
+      "text": "Random thought. Do we even know which service owns the SLA breach events? Might not even be ours to hook into",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 15,
+      "sender": "Tom",
+      "where": "reply to 14",
+      "replyTo": 14,
+      "text": "Good question. I have no idea. Worth actually checking that before we scope this properly",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 16,
+      "sender": "Spike",
+      "where": "top-level",
+      "text": "I'll dig into which service owns or exposes the SLA breach events. Should know by the end of the week",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 17,
+      "sender": "Tom",
+      "where": "top-level",
+      "text": "Okay so should we shelve dark mode, CSV export and mobile view for now? They aren't really urgent",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 18,
+      "sender": "Spike",
+      "where": "reply to 17",
+      "replyTo": 17,
+      "text": "Yup agreed. Worth noting though that the notification idea can't move forward until the SLA breach events pipeline exposes something downstream",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 19,
+      "sender": "Tom",
+      "where": "top-level",
+      "text": "Also we'd probably need to think about alerting policy stuff eventually, like do we notify on every breach or just persistent ones. That's for the future though",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 20,
+      "sender": "Spike",
+      "where": "reply to 19",
+      "replyTo": 19,
+      "text": "Yea worth flagging but not urgent",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 21,
+      "sender": "Jerry",
+      "where": "top-level",
+      "text": "@Collaboration remind me, did we ever land on whether we're building the notifications thing or just keeping it as an idea?",
+      "expectedTags": { "isAddressed": true, "configRequest": false }
+    },
+    {
+      "number": 22,
+      "sender": "Tom",
+      "where": "reply to 21",
+      "replyTo": 21,
+      "text": "Not building it yet, but Spike is confirming who owns the SLA breach event so that we can start",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 23,
+      "sender": "Spike",
+      "where": "top-level",
+      "text": "Update on that SLA ownership thing. Turns out it's the shipment tracking service, they already log breach events internally, we'd just need to add a consumer for it",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 24,
+      "sender": "Tom",
+      "where": "reply to 23",
+      "replyTo": 23,
+      "text": "Nice, that unblocks the notification idea then, let's use that as the starting point",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 25,
+      "sender": "Jerry",
+      "where": "top-level",
+      "text": "Okay understood, so we will start building the notifications feature",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 26,
+      "sender": "Jerry",
+      "where": "top-level",
+      "text": "@Collaboration one more thing, did we ever figure out who owns the SLA breach events?",
+      "expectedTags": { "isAddressed": true, "configRequest": false }
+    }
+  ],
+  "expectedTasks": [
+    {
+      "id": "task-01",
+      "title": "Find out which service owns or exposes the SLA breach events",
+      "type": "research",
+      "evidenceMessages": [
+        14,
+        15,
+        16,
+        23
+      ],
+      "expectedStatus": "done",
+      "expectedAssigned": "eval-spike",
+      "notes": "Raised as an open question in 14-15, claimed by Spike in 16, and investigated to a finding in 23. A concrete question resolved to an answer, so research rather than development."
+    },
+    {
+      "id": "task-02",
+      "title": "Build proactive notifications for shipments about to breach SLA",
+      "type": "development",
+      "evidenceMessages": [
+        4,
+        5,
+        13,
+        24,
+        25
+      ],
+      "expectedStatus": "unapproved",
+      "expectedAssigned": "agent",
+      "notes": "Deliberately ambiguous until late: message 13 explicitly declines to commit it, and only 24-25 turn it into agreed work. Nobody claims it, so the agent takes it, and nothing directs the agent to start it, so the claim is at most `reasonable` (0.6) and stays below the 0.7 threshold as `unapproved`. Extracting it early off 4-5 alone would be wrong, but the scorer only sees final state, so an early create is not penalised here."
+    }
+  ],
+  "updates": [
+    {
+      "taskId": "task-01",
+      "afterMessage": 23,
+      "expectedStatus": "done",
+      "notes": "Spike's finding closes the question he opened in 16. Must patch the existing task rather than create a second one about SLA ownership."
+    }
+  ],
+  "recallChecks": [
+    {
+      "questionMessageNumber": 21,
+      "question": "@Collaboration remind me, did we ever land on whether we're building the notifications thing or just keeping it as an idea?",
+      "expectedAnswerPoints": [
+        "It has not been committed to build — message 13 deliberately kept it on the radar rather than putting it in a sprint.",
+        "Spike is first checking which service owns or exposes the SLA breach events, which the idea depends on."
+      ],
+      "evidenceMessages": [
+        4,
+        5,
+        8,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "notes": "Asked before Spike reports back in 23, so a correct answer must not claim the ownership question is already settled, and must not claim the feature is being built."
+    },
+    {
+      "questionMessageNumber": 26,
+      "question": "@Collaboration one more thing, did we ever figure out who owns the SLA breach events?",
+      "expectedAnswerPoints": [
+        "Yes — the shipment tracking service owns them.",
+        "It already logs breach events internally, so the work is to add a consumer for them."
+      ],
+      "evidenceMessages": [
+        14,
+        15,
+        16,
+        23,
+        24
+      ],
+      "notes": "The mirror of the check on message 21: the same topic asked after the finding lands, so the answer must reflect the resolved state rather than the earlier open one."
+    }
+  ],
+  "contextNotes": [
+    "Six items are discussed but must NOT be extracted as tasks. Dark mode (2-3), the CSV-export alerting workaround (6-7) and a mobile view (9-10) are all floated and immediately talked down, so they are vague interest rather than work. Message 17 is an explicit scope decision to shelve all three, message 18 states a dependency, and messages 19-20 raise an alerting-policy question that is explicitly deferred to the future. None of the six is a development, design or research deliverable.",
+    "Messages 21 and 26 are the only turns addressed to the agent and are what the response judge scores. Message 26 was added during the schema conversion: the original fixture attached two recall checks to message 21, one of which asked about a fact that only exists after message 23, so it could not have been answered where it was placed.",
+    "Message 22 is a human answering the same question the agent was asked in 21. The agent's reply is scored on its own, and a correct reply does not depend on Tom's."
+  ]
+}

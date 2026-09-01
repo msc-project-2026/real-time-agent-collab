@@ -1,0 +1,307 @@
+{
+  "id": "eval-s04-bug-triage",
+  "title": "Bug triage: a duplicate report and a premature close",
+  "type": "bug_triage",
+  "participants": [
+    {
+      "name": "Mary",
+      "personId": "eval-mary",
+      "email": "mary@example.test"
+    },
+    {
+      "name": "Phil",
+      "personId": "eval-phil",
+      "email": "phil@example.test"
+    },
+    {
+      "name": "Jim",
+      "personId": "eval-jim",
+      "email": "jim@example.test"
+    }
+  ],
+  "metadata": {
+    "project": "Logistics platform, shipments table and auth",
+    "purpose": "Identity and lifecycle scenario. The same bug is reported twice by different people in different threads and must resolve to one task, not two. A second bug is fixed, declared resolved, then reproduces and is reopened under a new owner — the only place in the set where a task moves backwards. Two questions are addressed to the agent, one of which asks about the state left behind by the premature close.",
+    "expectedDifficulty": "medium",
+    "authoredBy": "team member (converted from the pre-v3 fixture schema)"
+  },
+  "messages": [
+    {
+      "number": 1,
+      "sender": "Mary",
+      "where": "top-level",
+      "text": "Heads up, exporting the shipments table to CSV is giving me a blank file, just headers no rows",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 2,
+      "sender": "Phil",
+      "where": "reply to 1",
+      "replyTo": 1,
+      "text": "Ugh, when did that start? Was it working last week?",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 3,
+      "sender": "Mary",
+      "where": "reply to 2",
+      "replyTo": 2,
+      "text": "Pretty sure it broke with yesterday's deploy, the export endpoint might not be reading the filtered view",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 4,
+      "sender": "Phil",
+      "where": "top-level",
+      "text": "Can you log it properly so it doesn't get lost, I'll take a look after the standup",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 5,
+      "sender": "Mary",
+      "where": "reply to 4",
+      "replyTo": 4,
+      "text": "Will do",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 6,
+      "sender": "Jim",
+      "where": "top-level",
+      "text": "Also getting logged out randomly after like 10 minutes, anyone else seeing that?",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 7,
+      "sender": "Phil",
+      "where": "reply to 6",
+      "replyTo": 6,
+      "text": "Huh, not that I've noticed. Might be a token expiry thing",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 8,
+      "sender": "Jim",
+      "where": "reply to 7",
+      "replyTo": 7,
+      "text": "Could be, it's pretty disruptive though, I lost a form I was filling in",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 9,
+      "sender": "Jim",
+      "where": "top-level",
+      "text": "Oh also, when I download the CSV it's completely empty, just column headers. Is that a known thing?",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 10,
+      "sender": "Mary",
+      "where": "reply to 9",
+      "replyTo": 9,
+      "text": "Yeah that's the one I flagged earlier, I'm on it",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 11,
+      "sender": "Jim",
+      "where": "reply to 10",
+      "replyTo": 10,
+      "text": "Oh perfect, didn't see that sorry.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 12,
+      "sender": "Phil",
+      "where": "top-level",
+      "text": "Quick session token fix went out, that should sort the random logouts",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 13,
+      "sender": "Phil",
+      "where": "top-level",
+      "text": "I'll mark the login timeout one as resolved",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 14,
+      "sender": "Jim",
+      "where": "reply to 13",
+      "replyTo": 13,
+      "text": "Nice, thanks",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 15,
+      "sender": "Mary",
+      "where": "top-level",
+      "text": "CSV export fix is up too, turned out to be the filtered-view thing like I thought",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 16,
+      "sender": "Jim",
+      "where": "top-level",
+      "text": "Hmm, actually just got logged out again after 10 minutes, the fix doesn't seem to have worked?",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 17,
+      "sender": "Phil",
+      "where": "reply to 16",
+      "replyTo": 16,
+      "text": "Damn, okay, reopening that one, I must have missed something in the deploy",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 18,
+      "sender": "Mary",
+      "where": "top-level",
+      "text": "Want me to take a look since I'm already in the auth code from the CSV fix?",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 19,
+      "sender": "Phil",
+      "where": "reply to 18",
+      "replyTo": 18,
+      "text": "That would be great, thanks",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 20,
+      "sender": "Jim",
+      "where": "top-level",
+      "text": "@Collaboration by the way, did we ever confirm if the CSV fix covers the scheduled/automated exports too, or just the manual download button?",
+      "expectedTags": { "isAddressed": true, "configRequest": false }
+    },
+    {
+      "number": 21,
+      "sender": "Mary",
+      "where": "reply to 20",
+      "replyTo": 20,
+      "text": "Just the manual one so far, good catch, I'll check the scheduled path too",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 22,
+      "sender": "Phil",
+      "where": "top-level",
+      "text": "Alright, sounds like we've got a handle on both. Thanks all",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 23,
+      "sender": "Jim",
+      "where": "top-level",
+      "text": "@Collaboration before I log off, is the random logout thing actually fixed now or is it still open?",
+      "expectedTags": { "isAddressed": true, "configRequest": false }
+    }
+  ],
+  "expectedTasks": [
+    {
+      "id": "task-01",
+      "title": "Fix the shipments CSV export returning an empty file",
+      "type": "development",
+      "evidenceMessages": [
+        1,
+        3,
+        9,
+        10,
+        15
+      ],
+      "expectedStatus": "done",
+      "expectedAssigned": "eval-mary",
+      "notes": "One task, not two. Mary reports the bug in 1 and Jim reports the same bug independently in 9 — a duplicate that must attach here rather than create a second task. Phil offers to look at it in 4 but Mary claims it in 10 and ships the fix in 15, so it ends as hers. \"Log it properly\" in 4-5 is about tracking this bug, not a second deliverable."
+    },
+    {
+      "id": "task-02",
+      "title": "Fix users being logged out after about ten minutes",
+      "type": "development",
+      "evidenceMessages": [
+        6,
+        8,
+        12,
+        16,
+        17,
+        19
+      ],
+      "expectedStatus": "backlog",
+      "expectedAssigned": "eval-mary",
+      "notes": "The only task in the set that moves backwards. Phil ships a session-token fix in 12 and closes it in 13, Jim reproduces it in 16, Phil reopens in 17, and Mary takes it over in 18-19. Final owner is Mary, and since she has not started this particular fix, the schema says leave status unset, which defaults to backlog. `in_progress` is a defensible reading given \"I'm already in the auth code\" — treat it as a near miss rather than a clean failure."
+    },
+    {
+      "id": "task-03",
+      "title": "Check whether the CSV export fix also covers scheduled exports",
+      "type": "research",
+      "evidenceMessages": [
+        20,
+        21
+      ],
+      "expectedStatus": "backlog",
+      "expectedAssigned": "eval-mary",
+      "notes": "Distinct from task-01: the shipped fix covered the manual download path only. An open question Mary commits to investigating, so research rather than development, though reading it as development follow-up work is defensible."
+    }
+  ],
+  "updates": [
+    {
+      "taskId": "task-01",
+      "afterMessage": 9,
+      "expectedStatus": "done",
+      "notes": "Deduplication check. Jim's independent report of the same bug must land on the existing task — scored here as the task citing message 9. `expectedStatus` is the task's final status because the scorer compares against final state; message 9 itself changes no status."
+    },
+    {
+      "taskId": "task-01",
+      "afterMessage": 15,
+      "expectedStatus": "done",
+      "notes": "Mary ships the fix."
+    },
+    {
+      "taskId": "task-02",
+      "afterMessage": 17,
+      "expectedStatus": "backlog",
+      "notes": "The reopen. The task must cite Phil's reopen and end in a not-done state, rather than staying closed on the strength of message 13."
+    }
+  ],
+  "recallChecks": [
+    {
+      "questionMessageNumber": 20,
+      "question": "@Collaboration by the way, did we ever confirm if the CSV fix covers the scheduled/automated exports too, or just the manual download button?",
+      "expectedAnswerPoints": [
+        "It was never confirmed — the fix in message 15 was described only as the filtered-view problem behind the manual export.",
+        "Nothing in the conversation so far covers scheduled or automated exports."
+      ],
+      "evidenceMessages": [
+        1,
+        3,
+        15
+      ],
+      "notes": "Asked before Mary answers it in 21, so the correct reply is that the scope was never established. Claiming the fix does cover scheduled exports is a fabrication."
+    },
+    {
+      "questionMessageNumber": 23,
+      "question": "@Collaboration before I log off, is the random logout thing actually fixed now or is it still open?",
+      "expectedAnswerPoints": [
+        "Still open — it was reopened after the session-token fix did not hold.",
+        "Phil's fix in 12 was declared resolved in 13, but Jim reproduced the logout in 16.",
+        "Mary has taken it over."
+      ],
+      "evidenceMessages": [
+        12,
+        13,
+        16,
+        17,
+        18,
+        19
+      ],
+      "notes": "Added during the schema conversion. Final-state task scoring cannot see the intermediate close at 13, so this is the only place the premature-close-and-reopen sequence is actually measured. Reporting the bug as fixed is the specific failure it looks for."
+    }
+  ],
+  "contextNotes": [
+    "The centrepiece of this scenario — the resolve at message 13 followed by the reopen at 17 — is only partly scoreable. The task scorer reads final state, so it can check that the task ends reopened and cites message 17, but it cannot check that the task ever passed through `done` in between. The recall check on message 23 covers the rest, and the gap should be stated as a limitation rather than glossed over.",
+    "Messages 1 and 9 are the same bug reported by two people in two different threads. Beyond the update check on message 9, a second CSV-export task appearing in the run shows up as a spurious task, so deduplication is measured twice from different directions.",
+    "Messages 2, 5, 7, 11, 14 and 22 are conversational filler and carry no extractable work.",
+    "Messages 20 and 23 are the only turns addressed to the agent and are what the response judge scores."
+  ]
+}

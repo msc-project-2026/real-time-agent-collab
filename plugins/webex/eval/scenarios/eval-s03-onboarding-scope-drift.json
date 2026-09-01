@@ -1,0 +1,288 @@
+{
+  "id": "eval-s03-onboarding-scope-drift",
+  "title": "New teammate onboarding and scope drift",
+  "type": "onboarding",
+  "participants": [
+    {
+      "name": "Peter",
+      "personId": "eval-peter",
+      "email": "peter@example.test"
+    },
+    {
+      "name": "Mason",
+      "personId": "eval-mason",
+      "email": "mason@example.test"
+    },
+    {
+      "name": "Oliver",
+      "personId": "eval-oliver",
+      "email": "oliver@example.test"
+    },
+    {
+      "name": "James",
+      "personId": "eval-james",
+      "email": "james@example.test"
+    }
+  ],
+  "metadata": {
+    "project": "Logistics platform, shipment ingestion and reporting",
+    "purpose": "The set's hardest precision test and its densest recall test. Four commitments are made that look like tasks but fall outside the closed development/design/research taxonomy — an onboarding walkthrough, an access grant, a library choice and a resolved procedural question — and exactly one genuine development task is agreed. Three questions are addressed to the agent, including one asking about a decision that was never made.",
+    "expectedDifficulty": "high",
+    "authoredBy": "team member (converted from the pre-v3 fixture schema)"
+  },
+  "messages": [
+    {
+      "number": 1,
+      "sender": "Peter",
+      "where": "top-level",
+      "text": "Morning all, quick one before standup, Oliver's starting today so I've added him here",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 2,
+      "sender": "Mason",
+      "where": "top-level",
+      "text": "Welcome Oliver! Good timing, we're in the middle of discussing charting libraries lol",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 3,
+      "sender": "Oliver",
+      "where": "top-level",
+      "text": "Thanks! Excited to be here, what should I look at first?",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 4,
+      "sender": "Peter",
+      "where": "reply to 3",
+      "replyTo": 3,
+      "text": "Start by getting familiar with the shipment ingestion service. Mason can walk you through it this week.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 5,
+      "sender": "Mason",
+      "where": "reply to 4",
+      "replyTo": 4,
+      "text": "Happy to. I'll block out an hour on Thursday",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 6,
+      "sender": "James",
+      "where": "top-level",
+      "text": "Before that though, can someone add Oliver to the private repo? He won't be able to pull anything otherwise.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 7,
+      "sender": "Peter",
+      "where": "reply to 6",
+      "replyTo": 6,
+      "text": "Oh good catch, doing that now",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 8,
+      "sender": "James",
+      "where": "top-level",
+      "text": "Okay so back to charting, I've been going back and forth between Recharts and Visx all morning",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 9,
+      "sender": "Mason",
+      "where": "reply to 8",
+      "replyTo": 8,
+      "text": "Visx is more flexible but honestly Recharts will get us there faster for the MVP",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 10,
+      "sender": "James",
+      "where": "reply to 9",
+      "replyTo": 9,
+      "text": "Yeah that's fair, let's go with Recharts then, we can revisit post-MVP",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 11,
+      "sender": "Peter",
+      "where": "top-level",
+      "text": "Agreed, Recharts it is. Oliver once you're set up feel free to have a play with it too",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 12,
+      "sender": "Oliver",
+      "where": "top-level",
+      "text": "Sounds good, still waiting on repo access though",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 13,
+      "sender": "Peter",
+      "where": "reply to 7",
+      "replyTo": 7,
+      "text": "Sent, should be in your inbox now.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 14,
+      "sender": "Oliver",
+      "where": "reply to 13",
+      "replyTo": 13,
+      "text": "Got it, thank you!",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 15,
+      "sender": "Mason",
+      "where": "top-level",
+      "text": "@Collaboration random thing, did we ever decide who's owning the API rate-limit handling? I don't think that ever got assigned",
+      "expectedTags": { "isAddressed": true, "configRequest": false }
+    },
+    {
+      "number": 16,
+      "sender": "Peter",
+      "where": "reply to 15",
+      "replyTo": 15,
+      "text": "No, Mason can you take that once you're done onboarding Oliver?",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 17,
+      "sender": "Mason",
+      "where": "reply to 16",
+      "replyTo": 16,
+      "text": "Yea, I'll pick it up next week",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 18,
+      "sender": "James",
+      "where": "top-level",
+      "text": "I'm starving, is anyone else getting lunch?",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 19,
+      "sender": "Oliver",
+      "where": "top-level",
+      "text": "@Collaboration quick question, what did we decide on for the charting library again? Want to make sure I'm reading the right docs",
+      "expectedTags": { "isAddressed": true, "configRequest": false }
+    },
+    {
+      "number": 20,
+      "sender": "Peter",
+      "where": "reply to 19",
+      "replyTo": 19,
+      "text": "Recharts, James and Mason landed on it this morning",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 21,
+      "sender": "Oliver",
+      "where": "reply to 20",
+      "replyTo": 20,
+      "text": "Perfect, thanks",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 22,
+      "sender": "Peter",
+      "where": "top-level",
+      "text": "@Collaboration does anyone remember if Oliver's repo access request needed manager sign-off or did I just handle it directly?",
+      "expectedTags": { "isAddressed": true, "configRequest": false }
+    },
+    {
+      "number": 23,
+      "sender": "James",
+      "where": "reply to 22",
+      "replyTo": 22,
+      "text": "Pretty sure you just handled it, I don't think we needed sign off for read access",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 24,
+      "sender": "Peter",
+      "where": "top-level",
+      "text": "Great thanks for confirming",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 25,
+      "sender": "Mason",
+      "where": "top-level",
+      "text": "Alright I'm heading offline, catch you all tomorrow",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    }
+  ],
+  "expectedTasks": [
+    {
+      "id": "task-01",
+      "title": "Handle API rate limiting",
+      "type": "development",
+      "evidenceMessages": [
+        15,
+        16,
+        17
+      ],
+      "expectedStatus": "backlog",
+      "expectedAssigned": "eval-mason",
+      "notes": "The only genuine deliverable in the scenario. Peter asks Mason in 16, Mason accepts in 17 but has not started (\"next week\"), so it sits in backlog rather than in_progress."
+    }
+  ],
+  "updates": [],
+  "recallChecks": [
+    {
+      "questionMessageNumber": 15,
+      "question": "@Collaboration random thing, did we ever decide who's owning the API rate-limit handling? I don't think that ever got assigned",
+      "expectedAnswerPoints": [
+        "No — API rate-limit handling has not been discussed or assigned anywhere in this space.",
+        "There is no owner on record for it."
+      ],
+      "evidenceMessages": [
+        15
+      ],
+      "notes": "The hardest of the three: the correct answer is that nothing exists. Message 15 is the first mention of rate limiting in the whole scenario, and it is assigned to Mason only afterwards, in 16-17. Any answer naming an owner is a fabrication, and any answer describing the assignment is reading from the future."
+    },
+    {
+      "questionMessageNumber": 19,
+      "question": "@Collaboration quick question, what did we decide on for the charting library again? Want to make sure I'm reading the right docs",
+      "expectedAnswerPoints": [
+        "Recharts.",
+        "Chosen over Visx because it gets the MVP done faster, with the intent to revisit after the MVP."
+      ],
+      "evidenceMessages": [
+        8,
+        9,
+        10,
+        11
+      ],
+      "notes": "Recall across an intervening topic switch: the decision is made in 8-11 and asked about in 19, with the repo-access thread in between."
+    },
+    {
+      "questionMessageNumber": 22,
+      "question": "@Collaboration does anyone remember if Oliver's repo access request needed manager sign-off or did I just handle it directly?",
+      "expectedAnswerPoints": [
+        "Peter handled it directly — he granted it in 7 and confirmed it sent in 13.",
+        "No manager sign-off was mentioned at any point."
+      ],
+      "evidenceMessages": [
+        6,
+        7,
+        12,
+        13
+      ],
+      "notes": "Half the question (was sign-off needed) has no answer in the record and the other half does. A correct reply reports the access grant and does not invent a sign-off policy either way."
+    }
+  ],
+  "contextNotes": [
+    "Four commitments in this scenario are deliberately NOT tasks under the closed development/design/research taxonomy, and extracting any of them is a false positive. Messages 4-5: Mason commits to walking Oliver through the shipment ingestion service on Thursday — a real commitment with an owner and a date, but onboarding, not a deliverable of any of the three types. Messages 6-7 and 13: granting Oliver repo access is account administration. Messages 8-11: choosing Recharts over Visx is a decision, not work. Messages 22-24: whether sign-off was needed is a procedural question, answered in-thread.",
+    "This is the strongest disagreement risk in the set. The onboarding walkthrough and the repo access grant are the two most defensible over-extractions a reader could argue for, since both have a named owner and a clear completion condition. They are scored as non-tasks because `coordination` was deliberately removed from the taxonomy for exactly this class of item. If a run extracts them, report it as a taxonomy-boundary result, not simply as a false positive.",
+    "Message 18 (lunch) is pure noise. Message 25 is a sign-off with no content.",
+    "Messages 15, 19 and 22 are the only turns addressed to the agent and are what the response judge scores."
+  ]
+}

@@ -14,6 +14,14 @@
 // is one valid phrasing, and judging against it would penalise correct
 // paraphrases.
 
+// Frozen for calibration. The grader packs under plugins/webex/calibration/
+// were built against this exact prompt, and an agreement figure only describes
+// the prompt it was measured on — editing SYSTEM silently invalidates every
+// number the calibration produced. test/judge-prompt-freeze.test.cjs pins the
+// prompt's hash, so any edit fails the suite until this version is bumped and
+// the calibration is redone or explicitly declared still applicable.
+const PROMPT_VERSION = 'task-fidelity/v1 (2026-08-29)';
+
 const SYSTEM = `You evaluate whether a task extracted from a chat conversation faithfully represents that conversation.
 
 You are given the whole conversation, with the messages the extracted task cites as its evidence marked. You are also given the extracted task and a reference title written by a human describing what the task should capture.
@@ -131,4 +139,12 @@ async function scoreTasksJudge({ bundle, taskScore, judge }) {
   };
 }
 
-module.exports = { scoreTasksJudge, buildUserPrompt, conversationFor, citedNumbersFor, normaliseRating, SYSTEM };
+module.exports = {
+  scoreTasksJudge,
+  buildUserPrompt,
+  conversationFor,
+  citedNumbersFor,
+  normaliseRating,
+  SYSTEM,
+  PROMPT_VERSION,
+};

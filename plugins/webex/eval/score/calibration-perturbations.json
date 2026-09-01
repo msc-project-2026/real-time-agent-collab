@@ -1,0 +1,352 @@
+{
+  "_comment": [
+    "Hand-authored calibration material for docs/judge-calibration-plan.md.",
+    "The real thirds are generated from run bundles by build-calibration-pack.js;",
+    "these two thirds are deliberately NOT generated. Their whole value is that a",
+    "person chose exactly one thing to break (or to change while keeping it right),",
+    "so the expected band is known by construction rather than by human label.",
+    "`expected` is what the judge should return if it is working. `basis` says which",
+    "real example each was derived from, so a reviewer can see the single change.",
+    "All entries are written against eval-s01-release-readiness."
+  ],
+  "taskFidelity": {
+    "conversationId": "eval-s01-release-readiness",
+    "wrong": [
+      {
+        "id": "W-1",
+        "perturbation": "invented detail",
+        "expected": "1-2",
+        "basis": "the export button rename",
+        "cited": [
+          4,
+          5,
+          20,
+          23
+        ],
+        "title": "Rename the export button before Wednesday standup",
+        "description": "Rename the export button to \"export filtered results\", coordinating the copy change with the design system team, and ship it before Wednesday's standup.",
+        "reference": "Rename the export button to say it exports filtered results",
+        "why": "No deadline and no design system team appear anywhere in the conversation. Both are inventions attached to an otherwise accurate task."
+      },
+      {
+        "id": "W-2",
+        "perturbation": "invented detail",
+        "expected": "1-2",
+        "basis": "the permissions task",
+        "cited": [
+          6,
+          7,
+          21
+        ],
+        "title": "Restrict dashboard visibility using the existing RBAC service",
+        "description": "Wire the dashboard's account visibility through the existing RBAC service so managers only see accounts they own.",
+        "reference": "Restrict dashboard visibility to accounts owned by the signed-in manager",
+        "why": "The requirement is right but no RBAC service is ever mentioned; the implementation route is invented."
+      },
+      {
+        "id": "W-3",
+        "perturbation": "wrong scope, narrowed",
+        "expected": "2-3",
+        "basis": "the export button rename",
+        "cited": [
+          4,
+          5
+        ],
+        "title": "Fix the export button tooltip",
+        "description": "Update the tooltip on the export button so it explains what the export contains.",
+        "reference": "Rename the export button to say it exports filtered results",
+        "why": "The conversation asks for the button label to change, not a tooltip. Narrower than what was agreed and it targets the wrong element."
+      },
+      {
+        "id": "W-4",
+        "perturbation": "wrong scope, broadened",
+        "expected": "1-2",
+        "basis": "the export button rename",
+        "cited": [
+          4,
+          5,
+          9,
+          10
+        ],
+        "title": "Overhaul the reporting dashboard export system",
+        "description": "Rework how the dashboard exports data, covering both filtered and full-account export paths.",
+        "reference": "Rename the export button to say it exports filtered results",
+        "why": "Full-account export was explicitly ruled out of pilot scope in messages 9-10, so this broadens the task into work the team decided not to do.",
+        "revisedAfterGrading": "Both markers rated this 1 and both described it as fabrication. Broadening a task into scope the team explicitly excluded reads as invention rather than as a scope error, so the original 2-3 band was wrong on its merits."
+      },
+      {
+        "id": "W-5",
+        "perturbation": "too vague",
+        "expected": "3",
+        "basis": "the empty-state cleanup",
+        "cited": [
+          2,
+          3,
+          16,
+          17
+        ],
+        "title": "Improve the dashboard",
+        "description": "Make the reporting dashboard better before the walkthrough.",
+        "reference": "Clean up the empty state for accounts without enough historical data",
+        "why": "Nothing here is false, and it does point at real work. It simply says nothing specific enough to act on."
+      },
+      {
+        "id": "W-6",
+        "perturbation": "omits a key element",
+        "expected": "2",
+        "basis": "the empty-state cleanup",
+        "cited": [
+          2,
+          3,
+          16
+        ],
+        "title": "Add an illustration to the report view",
+        "description": "Add an illustration to the main report view.",
+        "reference": "Clean up the empty state for accounts without enough historical data",
+        "why": "The illustration is real but incidental. The point of the work — the empty state shown to teams without enough historical data — is dropped entirely."
+      },
+      {
+        "id": "W-7",
+        "perturbation": "fabricated",
+        "expected": "1",
+        "basis": "the analytics contract check",
+        "cited": [
+          13,
+          18
+        ],
+        "title": "Migrate the reporting dashboard to the new analytics warehouse",
+        "description": "Move the dashboard's data source onto the new analytics warehouse so the account health score reads from production data.",
+        "reference": "Check whether the analytics score endpoint and response shape are confirmed",
+        "why": "No migration and no warehouse are ever discussed. The cited messages are about whether an endpoint contract is confirmed."
+      },
+      {
+        "id": "W-8",
+        "perturbation": "contradicts the conversation",
+        "expected": "2",
+        "basis": "the analytics contract check",
+        "cited": [
+          13,
+          14,
+          15,
+          18
+        ],
+        "title": "Confirm the analytics score endpoint contract is final",
+        "description": "Noah confirmed with analytics that the score endpoint and its response shape are stable and final, so the dashboard can depend on it for the walkthrough.",
+        "reference": "Check whether the analytics score endpoint and response shape are confirmed",
+        "why": "Message 18 says the opposite: the endpoint will exist but the response shape is not stable until Friday. The task states as settled the exact thing that was left open."
+      }
+    ],
+    "correct": [
+      {
+        "id": "C-1",
+        "perturbation": "heavy paraphrase, some loss of specificity",
+        "expected": "3-4",
+        "basis": "the export button rename",
+        "cited": [
+          4,
+          5,
+          20,
+          23
+        ],
+        "title": "Correct the misleading export control copy",
+        "description": "The export control currently promises a full download but only ever returns the rows currently filtered. Change the wording so it states what it actually does.",
+        "reference": "Rename the export button to say it exports filtered results",
+        "why": "Same work, almost no shared vocabulary with the reference title. A judge marking this down is scoring string overlap rather than substance.",
+        "revisedAfterGrading": "Both markers rated this 3, citing vagueness. The perturbation was intended to isolate paraphrase but also reduced specificity, so it varied two things at once. Band widened to 3-4 and the label corrected to describe what the example actually is."
+      },
+      {
+        "id": "C-2",
+        "perturbation": "heavy paraphrase",
+        "expected": "4",
+        "basis": "the permissions task",
+        "cited": [
+          6,
+          7,
+          21
+        ],
+        "title": "Scope account visibility to the signed-in manager's own book",
+        "description": "Managers currently see every account in the demo environment. Limit what each one can see to the accounts they personally own.",
+        "reference": "Restrict dashboard visibility to accounts owned by the signed-in manager",
+        "why": "Restated in different business vocabulary, identical in substance and scope."
+      },
+      {
+        "id": "C-3",
+        "perturbation": "correct use of uncited context",
+        "expected": "4",
+        "basis": "the empty-state cleanup",
+        "cited": [
+          16
+        ],
+        "title": "Clean up the empty state before the customer success walkthrough",
+        "description": "Some teams will not have enough historical data yet, so the empty state needs finished copy and an illustration before the walkthrough with the customer success leads next week.",
+        "reference": "Clean up the empty state for accounts without enough historical data",
+        "why": "The single most important case in the pack. The walkthrough and the missing-history reason come from messages 1 and 3, which this task does not cite — but the extraction step read the whole thread, so that detail is legitimate context, not invention. Marking this down is the exact failure that occurred in practice."
+      },
+      {
+        "id": "C-4",
+        "perturbation": "correct use of uncited context",
+        "expected": "4",
+        "basis": "the export button rename",
+        "cited": [
+          20
+        ],
+        "title": "Rename the export button to export filtered results",
+        "description": "The button currently reads \"download everything\" but only exports the filtered rows, so the label needs to say it exports filtered results.",
+        "reference": "Rename the export button to say it exports filtered results",
+        "why": "\"download everything\" is verbatim from message 4, which this task does not cite. Same shape as C-3 with a shorter reach."
+      },
+      {
+        "id": "C-5",
+        "perturbation": "legitimate synonym vocabulary",
+        "expected": "4",
+        "basis": "the analytics contract check",
+        "cited": [
+          13,
+          14,
+          15
+        ],
+        "title": "Verify with analytics whether the score API contract is locked",
+        "description": "Check with the analytics team whether the account health score endpoint and its response shape are agreed, or still liable to change.",
+        "reference": "Check whether the analytics score endpoint and response shape are confirmed",
+        "why": "\"API contract is locked\" for \"endpoint and response shape are confirmed\" is a synonym swap, not a change of meaning."
+      },
+      {
+        "id": "C-6",
+        "perturbation": "extra detail, all supported",
+        "expected": "4",
+        "basis": "the preview-label task",
+        "cited": [
+          12,
+          19,
+          24
+        ],
+        "title": "Label the account health score as preview data",
+        "description": "The score still uses last week's mock calculation, so it needs a preview label in the report header for the walkthrough — otherwise the audience will read a placeholder figure as final.",
+        "reference": "Label the account health score as preview data for the walkthrough",
+        "why": "Richer than the reference, but every added clause traces to messages 11, 12 and 24. Detail is not drift when the conversation supports it."
+      },
+      {
+        "id": "C-7",
+        "perturbation": "different granularity",
+        "expected": "4",
+        "basis": "the empty-state cleanup",
+        "cited": [
+          2,
+          3,
+          16,
+          17
+        ],
+        "title": "Replace the rough empty state with finished copy and an illustration",
+        "description": "Rewrite the empty state for accounts that do not yet have enough activity, and add the illustration.",
+        "reference": "Clean up the empty state for accounts without enough historical data",
+        "why": "More concrete than the reference about what the work involves, and each specific is stated in messages 2, 3 and 16."
+      },
+      {
+        "id": "C-8",
+        "perturbation": "compressed, includes the finding",
+        "expected": "4",
+        "basis": "the analytics contract check",
+        "cited": [
+          13,
+          14,
+          15,
+          18
+        ],
+        "title": "Check the analytics score endpoint contract",
+        "description": "Confirm the score endpoint and response shape with analytics. Outcome: the endpoint will exist, but the shape is not stable until Friday.",
+        "reference": "Check whether the analytics score endpoint and response shape are confirmed",
+        "why": "Records the investigation together with the answer it reached. Compare with W-8, which reports the opposite finding — the pair separates a judge reading the conversation from one pattern-matching on shape."
+      }
+    ]
+  },
+  "responseQuality": {
+    "conversationId": "eval-s01-release-readiness",
+    "wrong": [
+      {
+        "id": "W-1",
+        "perturbation": "omits key expected facts",
+        "expected": "2",
+        "questionNumber": 22,
+        "reply": "The permissions work is the main thing outstanding — managers still need to be restricted to their own accounts before the walkthrough. That's the non-trivial piece Aisha flagged.",
+        "why": "True as far as it goes, and it answers the question, but it drops the export rename, the preview label on the health score, and the fact that the empty state is already done."
+      },
+      {
+        "id": "W-2",
+        "perturbation": "unsupported claim",
+        "expected": "2",
+        "questionNumber": 22,
+        "reply": "Three things left: the account health score needs its preview label kept until analytics stabilise the response shape, the export button rename is pending with Ben, and the empty state is already done. Permissions are handled — Ben merged the account-visibility change this morning, so managers already only see their own accounts.",
+        "why": "Conveys three expected facts and then contradicts the conversation on the fourth. Message 21 says permissions are the one non-trivial thing still left; nobody has merged anything."
+      },
+      {
+        "id": "W-3",
+        "perturbation": "non-answer",
+        "expected": "1",
+        "questionNumber": 25,
+        "reply": "Good question — there were a few scope calls made in this thread. Let me pull together what was decided and come back to you with a clear list.",
+        "why": "Fluent, cooperative, and answers nothing. The information needed was already in the conversation."
+      },
+      {
+        "id": "W-4",
+        "perturbation": "fabricated",
+        "expected": "1",
+        "questionNumber": 25,
+        "reply": "The pilot steering committee decided to cut the mobile app and SSO from this release, and to defer the scheduled-report builder to Q3. Everything else stays in.",
+        "why": "No steering committee, mobile app, SSO or report builder appears anywhere. Confidently stated and entirely invented."
+      },
+      {
+        "id": "W-5",
+        "perturbation": "too vague to land",
+        "expected": "2",
+        "questionNumber": 22,
+        "reply": "There are still a few things outstanding before the walkthrough, but the team seems to be on top of them and most of the work is either done or close to done.",
+        "why": "Nothing in it is false. It also conveys none of the four expected facts, which is what separates band 2 from band 3."
+      }
+    ],
+    "correct": [
+      {
+        "id": "C-1",
+        "perturbation": "different phrasing, same facts",
+        "expected": "4",
+        "questionNumber": 25,
+        "reply": "Two things were explicitly parked for the pilot: dark mode, and exporting whole accounts. Export itself stays in — it just only ever covers the filtered rows.",
+        "why": "All three expected facts, in a fraction of the words and with different vocabulary."
+      },
+      {
+        "id": "C-2",
+        "perturbation": "terse but complete",
+        "expected": "4",
+        "questionNumber": 22,
+        "reply": "Permissions (managers seeing only their own accounts), the export button rename, and keeping the preview label on the health score while the analytics response shape is unsettled. Empty state is done.",
+        "why": "Every expected fact, no elaboration. Terseness is not an omission, and length is explicitly outside the rubric."
+      },
+      {
+        "id": "C-3",
+        "perturbation": "reordered, synonym vocabulary",
+        "expected": "4",
+        "questionNumber": 22,
+        "reply": "The empty state has already been sorted. Still open: account-level access control so a manager only sees their own book, the copy fix on the export control, and holding the score behind a preview marker until analytics settle the payload shape.",
+        "why": "Same four facts, reversed order, and almost no shared wording with the expected points."
+      },
+      {
+        "id": "C-4",
+        "perturbation": "adds a correct, supported detail",
+        "expected": "4",
+        "questionNumber": 25,
+        "reply": "Dark mode and full-account export are both out of pilot scope — only filtered-results export is in. Maya's re-read of the pilot notes is what settled it: the customer success leads asked for account health, recent usage and the owner filter, and neither of those two.",
+        "why": "The added justification is message 9, verbatim in substance. Supported extra detail belongs in band 4."
+      },
+      {
+        "id": "C-5",
+        "perturbation": "false-positive control, minimal vocabulary overlap",
+        "expected": "4",
+        "questionNumber": 25,
+        "reply": "Night-time theming was ruled out for now, and so was dumping an entire account's data — the download only ever covers what is on screen.",
+        "why": "The control case: conveys all three expected facts while sharing almost no words with them. A judge that rates this below 4 is matching strings, not substance."
+      }
+    ]
+  },
+  "_revisions": [
+    "2026-08-30: two expected bands corrected AFTER grading, on the merits of the examples rather than to match the observed ratings. Both are disclosed here and in the report. Item text is unchanged, so the packs the graders saw remain valid and the manifest fingerprints do not move."
+  ]
+}

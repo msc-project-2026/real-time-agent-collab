@@ -14,6 +14,12 @@
 // respond step's reply goes out through the model's own `message` tool, which
 // no injected `sendFn` could reach, so no reply text ever reached the bundle.
 
+// Frozen for calibration — see the same note in score-tasks-judge.js. The
+// version is stamped independently of the task judge's because the two are
+// separate prompts with separate agreement numbers; one can be revised
+// without invalidating the other.
+const PROMPT_VERSION = 'response-quality/v1 (2026-08-29)';
+
 const SYSTEM = `You evaluate whether an assistant's reply in a team chat correctly answers the question it was asked.
 
 You are given the conversation up to and including the question, the assistant's reply, and the facts a correct answer needs to convey. Those facts are a checklist of substance, not required wording — any phrasing that conveys them is correct.
@@ -133,4 +139,4 @@ async function scoreResponse({ bundle, judge }) {
   };
 }
 
-module.exports = { scoreResponse, buildUserPrompt, replyForQuestion, SYSTEM };
+module.exports = { scoreResponse, buildUserPrompt, replyForQuestion, SYSTEM, PROMPT_VERSION };

@@ -437,3 +437,66 @@ describe('scoreResponse', () => {
     assert.equal(replyForQuestion(sends, 3).markdown, 'The real answer.');
   });
 });
+
+// ---------------------------------------------------------------------------
+// The scorecard markdown is what gets read and quoted; the JSON beside it is
+// not. So the renderer needs its own coverage: when the response judge moved
+// from a pass/fail score to a 1-4 distribution, the task-fidelity section was
+// updated and this one was not, and every scorecard rendered
+// "undefined/3 passed (n/a)" over correct underlying JSON for weeks.
+// ---------------------------------------------------------------------------
+
+describe('renderMarkdown — response quality section', () => {
+  const { buildScorecard, renderMarkdown } = require('../eval/score/score-summary');
+
+  const bundle = {
+    meta: { scenarioId: 'eval-sxx', variant: 'baseline', evalRunId: 'r1', completedAt: 'now', totalMs: 1 },
+    scenario: { id: 'eval-sxx', messages: [] },
+    usageSummary: { byStep: {}, total: null },
+  };
+  const emptyGate = { messages: [], byField: {}, overall: { messagesScored: 0, messagesMissingGateRun: 0, fullyCorrect: 0, accuracy: null, sliceReadyRate: null } };
+  const emptyTasks = { matched: [], missing: [], spurious: [], updates: [], overall: { expected: 0, observed: 0, matched: 0, missing: 0, spurious: 0, fieldsAllCorrect: 0, byField: {}, updateHits: 0, updateTotal: 0 } };
+
+  function render(response) {
+    const scorecard = buildScorecard({ bundle, gate: emptyGate, tasks: emptyTasks, tasksJudge: null, response });
+    return renderMarkdown({ scorecard, gate: emptyGate, tasks: emptyTasks, tasksJudge: null, response });
+  }
+
+  const response = {
+    results: [
+      { questionNumber: 22, replied: true, judged: true, rating: 4, rationale: 'Covers every expected fact.' },
+      { questionNumber: 25, replied: true, judged: true, rating: 2, rationale: 'Omits dark mode.' },
+      { questionNumber: 30, replied: false, judged: true, rating: 1, rationale: 'No reply was sent for this question.' },
+    ],
+    overall: { questions: 3, judged: 3, unjudged: 0, unanswered: 1, distribution: { 1: 1, 2: 1, 3: 0, 4: 1 }, mean: 7 / 3 },
+  };
+
+  test('renders the 1-4 distribution, never a pass rate', () => {
+    const md = render(response);
+    const section = md.slice(md.indexOf('## Response quality'));
+    assert.ok(!section.includes('undefined'), 'no undefined leaked into the scorecard');
+    assert.ok(!/passed/.test(section), 'the response judge has no pass/fail notion to report');
+    assert.match(section, /3 of 3 question\(s\) rated, mean 2\.33 of 4/);
+    for (const band of ['| 4 | 1 |', '| 3 | 0 |', '| 2 | 1 |', '| 1 | 1 |']) {
+      assert.ok(section.includes(band), `missing distribution row ${band}`);
+    }
+  });
+
+  test('calls out unanswered questions rather than hiding them in the 1s', () => {
+    const section = render(response);
+    assert.match(section, /1 question\(s\) got no reply at all/);
+  });
+
+  test('per-question rationales are listed so a verdict can be spot-checked', () => {
+    const section = render(response);
+    assert.match(section, /- msg 25 \*\*2\/4\*\*: Omits dark mode\./);
+  });
+
+  test('distinguishes "judge not run" from "scenario has no questions"', () => {
+    assert.match(render(null), /Judge not run/);
+    assert.match(
+      render({ results: [], overall: { questions: 0, judged: 0, unjudged: 0, unanswered: 0, distribution: {}, mean: null } }),
+      /defines no `recallChecks`/
+    );
+  });
+});

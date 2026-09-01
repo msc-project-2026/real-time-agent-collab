@@ -13,6 +13,11 @@
 //   EVAL_JUDGE_BASE_URL  (e.g. https://llm-proxy.dev.outshift.ai/)
 //   EVAL_JUDGE_API_KEY
 //   EVAL_JUDGE_MODEL     (default: Sonnet 4.6 via the same proxy)
+//   EVAL_JUDGE_HEADERS   optional JSON object of extra request headers, for
+//                        providers that require one beyond bearer auth (an
+//                        Anthropic identity-linked key, for instance, needs
+//                        `anthropic-workspace-id`). Kept generic so no single
+//                        provider is wired into the client.
 //
 // Every call is appended to judge-log.jsonl next to the bundle, prompt and
 // raw response included. An unexplained verdict is not reportable, and the
@@ -30,7 +35,16 @@ function readEnvConfig(env = process.env) {
   const missing = [];
   if (!baseUrl) missing.push('EVAL_JUDGE_BASE_URL');
   if (!apiKey) missing.push('EVAL_JUDGE_API_KEY');
-  return { baseUrl, apiKey, model, missing };
+
+  let extraHeaders = {};
+  if (env.EVAL_JUDGE_HEADERS) {
+    try {
+      extraHeaders = JSON.parse(env.EVAL_JUDGE_HEADERS);
+    } catch {
+      missing.push('EVAL_JUDGE_HEADERS (not valid JSON)');
+    }
+  }
+  return { baseUrl, apiKey, model, extraHeaders, missing };
 }
 
 // Models wrap JSON in prose or fences often enough that a bare JSON.parse is
@@ -94,19 +108,32 @@ function createJudge({ logPath, env = process.env, fetchImpl = globalThis.fetch 
     };
 
     let lastError = null;
-    for (let attempt = 1; attempt <= 2; attempt += 1) {
+    // Providers disagree about which sampling parameters they accept: some
+    // newer models reject `temperature` outright rather than ignoring it. A
+    // rejected parameter is dropped and the call retried, so the client stays
+    // usable across providers without a per-provider switch. `temperature: 0`
+    // remains the intent wherever it is accepted.
+    let omitTemperature = false;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const requestBody = { ...body };
+      if (omitTemperature) delete requestBody.temperature;
       try {
         const res = await fetchImpl(url, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${config.apiKey}`,
+            ...(config.extraHeaders ?? {}),
           },
-          body: JSON.stringify(body),
+          body: JSON.stringify(requestBody),
           signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
         });
         if (!res.ok) {
-          lastError = `HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`;
+          const detail = (await res.text().catch(() => '')).slice(0, 200);
+          lastError = `HTTP ${res.status}: ${detail}`;
+          if (res.status === 400 && /temperature/i.test(detail) && !omitTemperature) {
+            omitTemperature = true;
+          }
           continue;
         }
         const payload = await res.json();

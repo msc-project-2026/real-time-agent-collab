@@ -106,26 +106,48 @@ async function sendWebexMessage({
 // against a transcript in which it stayed silent.
 //
 // A module-level seam consulted *inside* the senders catches all of them
-// uniformly, the model's tool call included. It is scoped to a single spaceId
-// so it can never intercept a real space: the gateway serves live Webex rooms
-// while a scenario runs, and eval space ids decode to `:eval/ROOM/` URNs that
-// no real room can match. Overrides are registered and cleared around a run;
-// two concurrent runs would clobber each other, so runs stay sequential.
-let outboundOverride = null; // { spaceId, fn }
+// uniformly, the model's tool call included. It is scoped per spaceId so it
+// can never intercept a real space: the gateway serves live Webex rooms while
+// a scenario runs, and eval space ids decode to `:eval/ROOM/` URNs that no
+// real room can match.
+//
+// Keyed by spaceId rather than held in a single slot. It was one slot, and
+// two scenarios run concurrently silently destroyed each other's results: the
+// second registration replaced the first, so the first run's sends fell
+// through to real Webex, 401'd against the eval account's sentinel token, and
+// its bundle came back with an empty `sends` array. Nothing failed loudly —
+// the run completed, wrote a bundle, and the response judge then scored every
+// question 1 for "no reply was sent". Different scenarios use different
+// spaceIds, so keying by space makes concurrent runs correct instead of
+// merely forbidden; two runs of the *same* scenario still collide, but they
+// already collide on the shared eval space directory.
+const outboundOverrides = new Map(); // spaceId -> fn
 
 function setOutboundOverride(entry) {
-  outboundOverride = entry ?? null;
+  // Clearing without a spaceId drops everything, preserving the old
+  // `setOutboundOverride(null)` teardown call.
+  if (!entry) {
+    outboundOverrides.clear();
+    return;
+  }
+  const { spaceId, fn } = entry;
+  if (!spaceId) throw new Error('setOutboundOverride requires a spaceId');
+  if (fn) outboundOverrides.set(spaceId, fn);
+  else outboundOverrides.delete(spaceId);
 }
 
-function getOutboundOverride() {
-  return outboundOverride;
+function getOutboundOverride(spaceId) {
+  if (spaceId === undefined) {
+    return outboundOverrides.size === 0 ? null : Object.fromEntries(outboundOverrides);
+  }
+  return outboundOverrides.get(spaceId) ?? null;
 }
 
 // The one place that owns override semantics. Both senders below call it, so
 // neither can drift out of sync with the other.
 function resolveOutboundSender({ spaceId, sendFn = sendWebexMessage }) {
-  if (outboundOverride && spaceId && outboundOverride.spaceId === spaceId) {
-    return outboundOverride.fn;
+  if (spaceId && outboundOverrides.has(spaceId)) {
+    return outboundOverrides.get(spaceId);
   }
   return sendFn;
 }

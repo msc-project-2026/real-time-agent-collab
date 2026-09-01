@@ -322,4 +322,44 @@ describe('resolveOutboundSender', () => {
 
     assert.equal(resolveOutboundSender({ spaceId: undefined }), sendWebexMessage);
   });
+
+  // The failure that motivated keying by space rather than holding one slot.
+  // Two scenarios were run concurrently against one gateway; the second
+  // registration replaced the first, so the first run's replies fell through
+  // to real Webex, 401'd on the eval account's sentinel token, and its bundle
+  // came back with an empty `sends` array. Nothing threw — the run finished,
+  // wrote a bundle, and the response judge scored every question 1 for "no
+  // reply was sent". A silently wrong result is worse than a loud failure, so
+  // this is pinned.
+  test('two concurrent runs keep their own capture', (t) => {
+    const first = t.mock.fn();
+    const second = t.mock.fn();
+    setOutboundOverride({ spaceId: 'eval-space-a', fn: first });
+    setOutboundOverride({ spaceId: 'eval-space-b', fn: second });
+    t.after(() => setOutboundOverride(null));
+
+    assert.equal(resolveOutboundSender({ spaceId: 'eval-space-a' }), first);
+    assert.equal(resolveOutboundSender({ spaceId: 'eval-space-b' }), second);
+  });
+
+  test('one run tearing down leaves a concurrent run\'s capture intact', (t) => {
+    const first = t.mock.fn();
+    const second = t.mock.fn();
+    setOutboundOverride({ spaceId: 'eval-space-a', fn: first });
+    setOutboundOverride({ spaceId: 'eval-space-b', fn: second });
+    t.after(() => setOutboundOverride(null));
+
+    // run-scenario.js's `finally` clears only its own space.
+    setOutboundOverride({ spaceId: 'eval-space-a', fn: null });
+
+    assert.equal(resolveOutboundSender({ spaceId: 'eval-space-a' }), sendWebexMessage);
+    assert.equal(resolveOutboundSender({ spaceId: 'eval-space-b' }), second);
+  });
+
+  test('registering without a spaceId throws rather than overriding everything', () => {
+    assert.throws(
+      () => setOutboundOverride({ fn: () => {} }),
+      /requires a spaceId/
+    );
+  });
 });

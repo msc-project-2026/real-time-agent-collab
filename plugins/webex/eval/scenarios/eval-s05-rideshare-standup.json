@@ -1,0 +1,343 @@
+{
+  "id": "eval-s05-rideshare-standup",
+  "title": "RideNow standup: an in-app chat idea surfaces mid-standup",
+  "type": "standup",
+  "participants": [
+    {
+      "name": "Sara",
+      "personId": "eval-sara",
+      "email": "sara@example.test"
+    },
+    {
+      "name": "Tom",
+      "personId": "eval-tom",
+      "email": "tom@example.test"
+    },
+    {
+      "name": "Priya",
+      "personId": "eval-priya",
+      "email": "priya@example.test"
+    },
+    {
+      "name": "Jake",
+      "personId": "eval-jake",
+      "email": "jake@example.test"
+    },
+    {
+      "name": "Lena",
+      "personId": "eval-lena",
+      "email": "lena@example.test"
+    }
+  ],
+  "metadata": {
+    "project": "RideNow, a ride-hailing app in closed beta",
+    "purpose": "The widest scenario: five participants and four concurrent workstreams, with a feature debate that is deliberately parked rather than decided. Tests that a recommendation reversal arriving as a reply to a much earlier message patches the existing task instead of creating a contradictory one, and that the agent distinguishes work someone committed to from work someone confirmed doing — two of the three questions ask about commitments that were never confirmed.",
+    "expectedDifficulty": "medium",
+    "authoredBy": "team member (converted from the pre-v3 fixture schema)"
+  },
+  "messages": [
+    {
+      "number": 1,
+      "sender": "Sara",
+      "where": "top-level",
+      "text": "Morning all, quick sync before we dive in. Where are we on the driver onboarding flow?",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 2,
+      "sender": "Tom",
+      "where": "top-level",
+      "text": "Onboarding screens are basically done, just waiting on the doc upload API from Priya to wire up the last step.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 3,
+      "sender": "Priya",
+      "where": "reply to 2",
+      "replyTo": 2,
+      "text": "Doc upload endpoint is live in staging now, Tom, should be good to test after lunch.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 4,
+      "sender": "Jake",
+      "where": "top-level",
+      "text": "iOS build is green again after I sorted out the Google Maps SDK conflict from last week.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 5,
+      "sender": "Lena",
+      "where": "top-level",
+      "text": "Nice, I'll kick off a full regression pass on staging once Tom's onboarding change lands.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 6,
+      "sender": "Sara",
+      "where": "top-level",
+      "text": "Good progress everyone. One thing I want to raise, a few of the beta testers said they wish they could message their driver directly instead of calling. Might be worth adding in-app chat between rider and driver.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 7,
+      "sender": "Tom",
+      "where": "reply to 6",
+      "replyTo": 6,
+      "text": "That could be huge for the airport pickup case, people keep missing each other because there's no easy way to say 'I'm by the taxi rank, not the drop-off zone'.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 8,
+      "sender": "Jake",
+      "where": "reply to 6",
+      "replyTo": 6,
+      "text": "Agreed, though I'm not sure how we'd wire that up on the backend, are we thinking normal request polling or something more real time?",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 9,
+      "sender": "Priya",
+      "where": "reply to 8",
+      "replyTo": 8,
+      "text": "If it needs to feel instant we'd probably want sockets, but we don't have any websocket infra at all right now, everything's request and response.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 10,
+      "sender": "Sara",
+      "where": "top-level",
+      "text": "Let's not commit to an architecture yet, I just want it on the radar as something to properly spec out this week.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 11,
+      "sender": "Priya",
+      "where": "top-level",
+      "text": "Circling back to the chat idea, I looked at it a bit more over lunch. I think we could get away with short polling every few seconds for v1 instead of full websockets, it's a lot less infra to stand up before launch.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 12,
+      "sender": "Tom",
+      "where": "reply to 11",
+      "replyTo": 11,
+      "text": "Polling might feel laggy for something people expect to be instant though. What if it only polls while a trip is actually active, not all the time?",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 13,
+      "sender": "Sara",
+      "where": "top-level",
+      "text": "Let's park the exact approach for now. Priya, can you write up a short comparison of polling versus sockets by Thursday so we can decide?",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 14,
+      "sender": "Priya",
+      "where": "reply to 13",
+      "replyTo": 13,
+      "text": "Yep, I'll have something ready by Thursday.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 15,
+      "sender": "Jake",
+      "where": "top-level",
+      "text": "Can someone open a ticket for the Maps SDK conflict fix I did today, want it documented before I forget the details.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 16,
+      "sender": "Sara",
+      "where": "reply to 15",
+      "replyTo": 15,
+      "text": "Good call, I'll create it right after standup.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 17,
+      "sender": "Priya",
+      "where": "top-level",
+      "text": "Also flagging, our push notification certificates expire next week. I'll renew those today so it doesn't hold up the beta launch.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 18,
+      "sender": "Lena",
+      "where": "top-level",
+      "text": "I'll block out some QA time Thursday afternoon in case Priya's comparison needs a quick prototype to test against.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 19,
+      "sender": "Sara",
+      "where": "top-level",
+      "text": "Sounds good, let's wrap here. We'll pick up test coverage planning tomorrow.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 20,
+      "sender": "Lena",
+      "where": "top-level",
+      "text": "@Collaboration quick one before we start, did we ever land on polling vs sockets for the chat feature, or is that still open?",
+      "expectedTags": { "isAddressed": true, "configRequest": false }
+    },
+    {
+      "number": 21,
+      "sender": "Sara",
+      "where": "top-level",
+      "text": "Still open, Priya's finishing the comparison today.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 22,
+      "sender": "Priya",
+      "where": "reply to 11",
+      "replyTo": 11,
+      "text": "Actually, small update before I even finish the write-up, I mocked up polling at a five second interval last night and testers noticed the lag immediately, so I'm now leaning towards recommending a lightweight websocket layer instead.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 23,
+      "sender": "Tom",
+      "where": "top-level",
+      "text": "@Collaboration did the push cert renewal go through okay?",
+      "expectedTags": { "isAddressed": true, "configRequest": false }
+    },
+    {
+      "number": 24,
+      "sender": "Priya",
+      "where": "reply to 23",
+      "replyTo": 23,
+      "text": "Yep, renewed yesterday afternoon, we're good until next spring.",
+      "expectedTags": { "isAddressed": false, "configRequest": false }
+    },
+    {
+      "number": 25,
+      "sender": "Jake",
+      "where": "top-level",
+      "text": "@Collaboration and did the SDK conflict ticket ever get created?",
+      "expectedTags": { "isAddressed": true, "configRequest": false }
+    }
+  ],
+  "expectedTasks": [
+    {
+      "id": "task-01",
+      "title": "Wire the last step of the driver onboarding flow to the document upload API",
+      "type": "development",
+      "evidenceMessages": [
+        2,
+        3
+      ],
+      "expectedStatus": "in_progress",
+      "expectedAssigned": "eval-tom",
+      "notes": "Tom reports the screens are basically done and only the last step remains, which is progress that already happened, so in_progress rather than backlog. Priya's endpoint being live in 3 unblocks him but does not complete his work — nothing in the scenario says he wired or tested it."
+    },
+    {
+      "id": "task-02",
+      "title": "Run a full regression pass on staging after the onboarding change lands",
+      "type": "development",
+      "evidenceMessages": [
+        5
+      ],
+      "expectedStatus": "backlog",
+      "expectedAssigned": "eval-lena",
+      "notes": "Lena commits to it but it is explicitly gated on task-01 landing, so it has not started. QA work has no bucket of its own in the closed taxonomy; development is the nearest fit and design/research would both be wrong."
+    },
+    {
+      "id": "task-03",
+      "title": "Compare polling against websockets for in-app rider-driver chat",
+      "type": "research",
+      "evidenceMessages": [
+        11,
+        12,
+        13,
+        14,
+        22
+      ],
+      "expectedStatus": "in_progress",
+      "expectedAssigned": "eval-priya",
+      "notes": "Sara asks for it in 13 with a Thursday deadline and Priya accepts in 14. By 22 she has mocked up polling and formed a recommendation, which is progress, so in_progress. An open technical question investigated to a finding, so research; reading the deliverable as a written spec and calling it design is defensible."
+    },
+    {
+      "id": "task-04",
+      "title": "Renew the push notification certificates before they expire",
+      "type": "development",
+      "evidenceMessages": [
+        17,
+        24
+      ],
+      "expectedStatus": "done",
+      "expectedAssigned": "eval-priya",
+      "notes": "Priya raises and claims it in 17 and confirms it complete in 24. The cleanest task in the scenario: one owner, one commitment, one confirmation."
+    }
+  ],
+  "updates": [
+    {
+      "taskId": "task-03",
+      "afterMessage": 22,
+      "expectedStatus": "in_progress",
+      "notes": "The reversal. Message 22 never says it is an update, is phrased as a reply to message 11 eleven turns earlier, and contradicts the position Priya took there. It must patch task-03 rather than create a second, contradictory chat-architecture task."
+    },
+    {
+      "taskId": "task-04",
+      "afterMessage": 24,
+      "expectedStatus": "done",
+      "notes": "Priya confirms the renewal, closing the task she opened in 17."
+    }
+  ],
+  "recallChecks": [
+    {
+      "questionMessageNumber": 20,
+      "question": "@Collaboration quick one before we start, did we ever land on polling vs sockets for the chat feature, or is that still open?",
+      "expectedAnswerPoints": [
+        "Still open — the approach was explicitly parked rather than decided.",
+        "Priya is writing a polling-versus-sockets comparison, due Thursday, so the team can decide.",
+        "The relevant constraint is that no websocket infrastructure exists today."
+      ],
+      "evidenceMessages": [
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ],
+      "notes": "Priya's reversal in message 22 lands after this question and must not appear in the answer. The original fixture expected it to be incorporated, which is not possible at this point in the conversation."
+    },
+    {
+      "questionMessageNumber": 23,
+      "question": "@Collaboration did the push cert renewal go through okay?",
+      "expectedAnswerPoints": [
+        "Priya said in message 17 that she would renew them that day.",
+        "No confirmation that the renewal actually happened appears in the conversation before this question."
+      ],
+      "evidenceMessages": [
+        17
+      ],
+      "notes": "Priya confirms it in 24, immediately after. A correct reply reports the commitment and does not assert the renewal is complete. The original fixture expected the answer from message 24, which the agent cannot have seen."
+    },
+    {
+      "questionMessageNumber": 25,
+      "question": "@Collaboration and did the SDK conflict ticket ever get created?",
+      "expectedAnswerPoints": [
+        "Sara said in message 16 that she would create it right after standup.",
+        "Nobody confirms it was actually created, so it cannot be reported as done."
+      ],
+      "evidenceMessages": [
+        4,
+        15,
+        16
+      ],
+      "notes": "The same shape as the check on message 23 but with no confirmation anywhere in the scenario, so the honest answer is the only correct one. The original fixture expected the agent to infer yes from Sara's commitment; that inference is exactly the failure this now tests for."
+    }
+  ],
+  "contextNotes": [
+    "Four items are discussed but must NOT be extracted as tasks. Messages 6-10 float in-app chat and are explicitly parked (\"let's not commit to an architecture yet\") — the only committed work that comes out of it is Priya's comparison, task-03. Message 9 states a constraint (no websocket infrastructure), not work. Messages 15-16 ask for a ticket to be opened, which is documentation admin rather than a development, design or research deliverable. Message 18 has Lena reserving time in case a prototype is needed, which is contingent and names no deliverable.",
+    "Message 4 reports the Maps SDK conflict as already fixed, in passing, and was never tracked. Extracting it as a completed task is a plausible over-extraction worth noting if it appears.",
+    "Priya's document upload endpoint is mentioned in 2 and reported live in 3, and could be read as a separate completed task of hers. It is scored as part of task-01 because it is only ever mentioned as already delivered. If a run produces both, evidence overlap will match one and report the other as spurious.",
+    "Messages 20, 23 and 25 are the only turns addressed to the agent and are what the response judge scores."
+  ]
+}
