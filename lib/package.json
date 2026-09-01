@@ -1,6 +1,0 @@
-{
-  "name": "@collab/github",
-  "version": "1.0.0",
-  "main": "github.js",
-  "private": true
-}

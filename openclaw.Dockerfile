@@ -22,13 +22,9 @@ RUN chmod +x /app/docker-entrypoint.sh
 # the Railway service variables so the container runs as root and can write
 # to the mounted volume.
 
-# Copy shared lib and update plugins/ ownership.
-# npm install --workspaces creates the @collab/* symlinks in node_modules
-# so plugins can import shared packages (e.g. @collab/github) at runtime.
+# The plugin has no third-party runtime dependencies: every require is either
+# a node: builtin or a relative path, so there is no install step here.
 COPY --chown=root:root plugins/ /app/plugins/
-COPY --chown=root:root lib/ /app/lib/
-COPY --chown=root:root package.json /app/package.json
-RUN npm install --workspaces --ignore-scripts
 
 # Overrides the base CMD only; ENTRYPOINT (tini) is inherited.
 CMD ["/app/docker-entrypoint.sh"]

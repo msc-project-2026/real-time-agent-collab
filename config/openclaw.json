@@ -147,14 +147,6 @@
       ]
     }
   },
-  "hooks": {
-    "enabled": true,
-    "token": "${OPENCLAW_WEBHOOK_SECRET}",
-    "path": "/hooks",
-    "allowRequestSessionKey": true,
-    "allowedSessionKeyPrefixes": ["agent:collab-agent:webex:", "hook:"],
-    "defaultSessionKey": "hook:collab-sync"
-  },
   "plugins": {
     "allow": ["webex", "memory-core", "openai"],
     "load": {
