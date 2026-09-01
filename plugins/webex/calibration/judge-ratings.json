@@ -1,0 +1,645 @@
+{
+  "model": "claude-sonnet-5",
+  "results": [
+    {
+      "id": "T-1",
+      "judge": "task-fidelity",
+      "kind": "perturbed-correct",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 4,
+      "rationale": "The task accurately reflects Maya's request in [14] to check with analytics about the score endpoint/response shape, and Noah's follow-up in [18] providing the outcome, matching the reference title's intent.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 4,
+          "rationale": "The task accurately reflects Maya's request in [14] to check with analytics about the score endpoint/response shape, and Noah's follow-up in [18] providing the outcome, matching the reference title's intent.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-2",
+      "judge": "task-fidelity",
+      "kind": "perturbed-correct",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 4,
+      "rationale": "The task accurately reflects the discussion in messages 6, 7, and 21 about restricting dashboard access so managers only see accounts they own, with correct scope for the pilot walkthrough.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 4,
+          "rationale": "The task accurately reflects the discussion in messages 6, 7, and 21 about restricting dashboard access so managers only see accounts they own, with correct scope for the pilot walkthrough.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-3",
+      "judge": "task-fidelity",
+      "kind": "perturbed-wrong",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 1,
+      "rationale": "The conversation discusses confirming the analytics score endpoint and keeping a 'preview data' label until the response shape stabilizes, but never mentions migrating the dashboard to a new analytics warehouse or moving the data source to production. This task is fabricated.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 1,
+          "rationale": "The conversation discusses confirming the analytics score endpoint and keeping a 'preview data' label until the response shape stabilizes, but never mentions migrating the dashboard to a new analytics warehouse or moving the data source to production. This task is fabricated.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-4",
+      "judge": "task-fidelity",
+      "kind": "perturbed-wrong",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 2,
+      "rationale": "The extracted task is overly vague and generic, omitting the specific work item (fixing the empty state) that messages [2]/[3]/[16]/[17] describe and which was already completed, instead framing it as an open-ended 'improve dashboard' task.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 2,
+          "rationale": "The extracted task is overly vague and generic, omitting the specific work item (fixing the empty state) that messages [2]/[3]/[16]/[17] describe and which was already completed, instead framing it as an open-ended 'improve dashboard' task.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-5",
+      "judge": "task-fidelity",
+      "kind": "perturbed-correct",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 2,
+      "rationale": "The task description frames this as work still needing to be done, but message [16] (the cited evidence) shows Aisha already completed the empty-state cleanup with copy and illustration, and [17] confirms it's done. The extraction misrepresents a completed task as an outstanding to-do.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 2,
+          "rationale": "The task description frames this as work still needing to be done, but message [16] (the cited evidence) shows Aisha already completed the empty-state cleanup with copy and illustration, and [17] confirms it's done. The extraction misrepresents a completed task as an outstanding to-do.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-6",
+      "judge": "task-fidelity",
+      "kind": "perturbed-wrong",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 2,
+      "rationale": "The core task (rename export button to 'export filtered results') matches the conversation, but the extraction fabricates details not supported by the messages: no deadline of 'Wednesday standup' is mentioned, and there is no mention of coordinating with a 'design system team'.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 2,
+          "rationale": "The core task (rename export button to 'export filtered results') matches the conversation, but the extraction fabricates details not supported by the messages: no deadline of 'Wednesday standup' is mentioned, and there is no mention of coordinating with a 'design system team'.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-7",
+      "judge": "task-fidelity",
+      "kind": "perturbed-wrong",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 2,
+      "rationale": "The core idea of restricting dashboard visibility to the signed-in manager's own accounts is accurate, but the task fabricates a specific implementation detail—wiring through an 'existing RBAC service'—which is never mentioned in the conversation.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 2,
+          "rationale": "The core idea of restricting dashboard visibility to the signed-in manager's own accounts is accurate, but the task fabricates a specific implementation detail—wiring through an 'existing RBAC service'—which is never mentioned in the conversation.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-8",
+      "judge": "task-fidelity",
+      "kind": "perturbed-correct",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 3,
+      "rationale": "The task accurately reflects the discussion about cleaning up the empty state (messages 2-3, 16-17), and the description aligns with what Aisha actually did. However, the extracted task is framed as still-pending work ('Replace...') when the conversation shows this was already completed by message 17, creating a minor scope/status inaccuracy.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 3,
+          "rationale": "The task accurately reflects the discussion about cleaning up the empty state (messages 2-3, 16-17), and the description aligns with what Aisha actually did. However, the extracted task is framed as still-pending work ('Replace...') when the conversation shows this was already completed by message 17, creating a minor scope/status inaccuracy.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-9",
+      "judge": "task-fidelity",
+      "kind": "real",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 2,
+      "rationale": "The description omits that this work was already completed and reported done by Aisha (msg 16) and confirmed by Ben (msg 17), presenting it as still outstanding, which misrepresents the current status of the task.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 2,
+          "rationale": "The description omits that this work was already completed and reported done by Aisha (msg 16) and confirmed by Ben (msg 17), presenting it as still outstanding, which misrepresents the current status of the task.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-10",
+      "judge": "task-fidelity",
+      "kind": "real",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 1,
+      "rationale": "The conversation explicitly resolves to keep the preview label and NOT depend on the final endpoint before the walkthrough, but the extracted task claims the opposite: to 'finalize and implement the formula before showing the dashboard,' contradicting the actual decision and fabricating a task never assigned.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 1,
+          "rationale": "The conversation explicitly resolves to keep the preview label and NOT depend on the final endpoint before the walkthrough, but the extracted task claims the opposite: to 'finalize and implement the formula before showing the dashboard,' contradicting the actual decision and fabricating a task never assigned.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-11",
+      "judge": "task-fidelity",
+      "kind": "perturbed-wrong",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 2,
+      "rationale": "The conversation explicitly excludes full-account export from this release/pilot scope, and the actual task was a simple rename of the export button label, not a system overhaul; the extracted task fabricates a broader scope involving full-account export work that was explicitly rejected.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 2,
+          "rationale": "The conversation explicitly excludes full-account export from this release/pilot scope, and the actual task was a simple rename of the export button label, not a system overhaul; the extracted task fabricates a broader scope involving full-account export work that was explicitly rejected.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-12",
+      "judge": "task-fidelity",
+      "kind": "real",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 4,
+      "rationale": "The task accurately captures the permissions restriction discussed in [6], [7], and [21], correctly describing that managers should only see their own accounts before the pilot walkthrough.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 4,
+          "rationale": "The task accurately captures the permissions restriction discussed in [6], [7], and [21], correctly describing that managers should only see their own accounts before the pilot walkthrough.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-13",
+      "judge": "task-fidelity",
+      "kind": "real",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 4,
+      "rationale": "The task accurately reflects the discussion in [4], [5], and [20]/[23]: the export button label was misleading, was renamed to 'export filtered results', and full-account export was explicitly excluded from scope. Description is accurate and well-scoped.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 4,
+          "rationale": "The task accurately reflects the discussion in [4], [5], and [20]/[23]: the export button label was misleading, was renamed to 'export filtered results', and full-account export was explicitly excluded from scope. Description is accurate and well-scoped.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-14",
+      "judge": "task-fidelity",
+      "kind": "perturbed-correct",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 4,
+      "rationale": "Accurately reflects messages 4, 5, 20, and 23, which describe fixing the misleading export button copy so it reflects that it only exports filtered rows; scope and detail match the conversation.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 4,
+          "rationale": "Accurately reflects messages 4, 5, 20, and 23, which describe fixing the misleading export button copy so it reflects that it only exports filtered rows; scope and detail match the conversation.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-15",
+      "judge": "task-fidelity",
+      "kind": "real",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 4,
+      "rationale": "The task accurately reflects the discussion in messages 6-7 and 21 about restricting dashboard access to accounts owned by the signed-in manager for the pilot, with correct scope and rationale.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 4,
+          "rationale": "The task accurately reflects the discussion in messages 6-7 and 21 about restricting dashboard access to accounts owned by the signed-in manager for the pilot, with correct scope and rationale.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-16",
+      "judge": "task-fidelity",
+      "kind": "perturbed-correct",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 4,
+      "rationale": "The task accurately reflects Maya's request in [14] to check with analytics about the score endpoint and response shape, matching the reference title's intent and scope.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 4,
+          "rationale": "The task accurately reflects Maya's request in [14] to check with analytics about the score endpoint and response shape, matching the reference title's intent and scope.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-17",
+      "judge": "task-fidelity",
+      "kind": "perturbed-wrong",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 2,
+      "rationale": "The conversation shows the decision was to rename the export button label to 'export filtered results' (confirmed done in message 23), not to add/fix a tooltip explaining its contents. This mischaracterizes the actual fix.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 2,
+          "rationale": "The conversation shows the decision was to rename the export button label to 'export filtered results' (confirmed done in message 23), not to add/fix a tooltip explaining its contents. This mischaracterizes the actual fix.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-18",
+      "judge": "task-fidelity",
+      "kind": "perturbed-correct",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 4,
+      "rationale": "The task accurately captures the decision to label the mock account health score as preview data for the walkthrough, matching the cited messages [12], [19], and [24], and is appropriately scoped as a single actionable item.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 4,
+          "rationale": "The task accurately captures the decision to label the mock account health score as preview data for the walkthrough, matching the cited messages [12], [19], and [24], and is appropriately scoped as a single actionable item.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-19",
+      "judge": "task-fidelity",
+      "kind": "real",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 3,
+      "rationale": "The task accurately captures the request and Noah's follow-up finding, but adds an unsupported detail ('blocks using the final formula for tomorrow's release') that isn't explicitly stated—Ben only said the endpoint was meant to expose tomorrow, not that this blocks a release. Minor embellishment aside, the core task matches the conversation.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 3,
+          "rationale": "The task accurately captures the request and Noah's follow-up finding, but adds an unsupported detail ('blocks using the final formula for tomorrow's release') that isn't explicitly stated—Ben only said the endpoint was meant to expose tomorrow, not that this blocks a release. Minor embellishment aside, the core task matches the conversation.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-20",
+      "judge": "task-fidelity",
+      "kind": "real",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 4,
+      "rationale": "Message [24] confirms the preview label was added next to the account health score in the report header, consistent with the earlier discussion (messages 11-15, 19) about labeling the score as preview data since the final endpoint wasn't confirmed. The extracted task accurately captures this completed work and its rationale.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 4,
+          "rationale": "Message [24] confirms the preview label was added next to the account health score in the report header, consistent with the earlier discussion (messages 11-15, 19) about labeling the score as preview data since the final endpoint wasn't confirmed. The extracted task accurately captures this completed work and its rationale.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-21",
+      "judge": "task-fidelity",
+      "kind": "perturbed-wrong",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 1,
+      "rationale": "The description falsely claims the endpoint/response shape were confirmed as stable and final, whereas message [18] and [19] state the opposite—the shape isn't stable until Friday and they should keep the preview label, not depend on the endpoint.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 1,
+          "rationale": "The description falsely claims the endpoint/response shape were confirmed as stable and final, whereas message [18] and [19] state the opposite—the shape isn't stable until Friday and they should keep the preview label, not depend on the endpoint.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-22",
+      "judge": "task-fidelity",
+      "kind": "perturbed-wrong",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 2,
+      "rationale": "Message [16] reports that the empty-state cleanup (including the illustration) was already completed, not an open task to be done; the extraction misrepresents a status update as a pending task and narrows the scope from the broader empty-state cleanup discussed in [2]/[3] to just 'add an illustration'.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 2,
+          "rationale": "Message [16] reports that the empty-state cleanup (including the illustration) was already completed, not an open task to be done; the extraction misrepresents a status update as a pending task and narrows the scope from the broader empty-state cleanup discussed in [2]/[3] to just 'add an illustration'.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-23",
+      "judge": "task-fidelity",
+      "kind": "real",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 4,
+      "rationale": "The task accurately reflects messages [4], [5], [20], and [23], correctly capturing the rename to 'export filtered results' and the decision to exclude full-account export from this release.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 4,
+          "rationale": "The task accurately reflects messages [4], [5], [20], and [23], correctly capturing the rename to 'export filtered results' and the decision to exclude full-account export from this release.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "T-24",
+      "judge": "task-fidelity",
+      "kind": "perturbed-correct",
+      "promptVersion": "task-fidelity/v1 (2026-08-29)",
+      "rating": 4,
+      "rationale": "The extracted task accurately reflects Ben's stated action in [20], consistent with the earlier discussion in [4]-[5] about the misleading export button label, and matches the reference title's intent.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 4,
+          "rationale": "The extracted task accurately reflects Ben's stated action in [20], consistent with the earlier discussion in [4]-[5] about the misleading export button label, and matches the reference title's intent.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "Q-1",
+      "judge": "response-quality",
+      "kind": "perturbed-correct",
+      "promptVersion": "response-quality/v1 (2026-08-29)",
+      "rating": 4,
+      "rationale": "The reply covers all expected facts: permissions still needed, export rename pending, preview label on health score due to unstable analytics response shape, and empty state already completed.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 4,
+          "rationale": "The reply covers all expected facts: permissions still needed, export rename pending, preview label on health score due to unstable analytics response shape, and empty state already completed.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "Q-2",
+      "judge": "response-quality",
+      "kind": "perturbed-wrong",
+      "promptVersion": "response-quality/v1 (2026-08-29)",
+      "rating": 2,
+      "rationale": "The reply only mentions permissions as outstanding but omits the export button rename status, the preview label requirement for the health score due to unstable analytics response, and the completed empty-state work.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 2,
+          "rationale": "The reply only mentions permissions as outstanding but omits the export button rename status, the preview label requirement for the health score due to unstable analytics response, and the completed empty-state work.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "Q-3",
+      "judge": "response-quality",
+      "kind": "perturbed-correct",
+      "promptVersion": "response-quality/v1 (2026-08-29)",
+      "rating": 3,
+      "rationale": "Covers permissions still open, empty state done, and preview label for score due to unstable analytics shape. However, it slightly misstates the export status—Ben said he 'can rename the export button today,' which the reply presents as still open without noting it may already be nearly resolved, though this is a minor nuance rather than a factual contradiction.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 3,
+          "rationale": "Covers permissions still open, empty state done, and preview label for score due to unstable analytics shape. However, it slightly misstates the export status—Ben said he 'can rename the export button today,' which the reply presents as still open without noting it may already be nearly resolved, though this is a minor nuance rather than a factual contradiction.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "Q-4",
+      "judge": "response-quality",
+      "kind": "real",
+      "promptVersion": "response-quality/v1 (2026-08-29)",
+      "rating": 4,
+      "rationale": "The reply accurately lists permissions as remaining work, notes the export rename is pending (though implies it's happening today), covers the analytics score preview label rationale, and correctly states the empty state is done. All facts are supported by the conversation.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 4,
+          "rationale": "The reply accurately lists permissions as remaining work, notes the export rename is pending (though implies it's happening today), covers the analytics score preview label rationale, and correctly states the empty state is done. All facts are supported by the conversation.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "Q-5",
+      "judge": "response-quality",
+      "kind": "real",
+      "promptVersion": "response-quality/v1 (2026-08-29)",
+      "rating": 2,
+      "rationale": "The reply correctly identifies full-account export as out of scope, but omits dark mode entirely, which was explicitly excluded (message 10), missing a key expected fact.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 2,
+          "rationale": "The reply correctly identifies full-account export as out of scope, but omits dark mode entirely, which was explicitly excluded (message 10), missing a key expected fact.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "Q-6",
+      "judge": "response-quality",
+      "kind": "real",
+      "promptVersion": "response-quality/v1 (2026-08-29)",
+      "rating": 2,
+      "rationale": "The reply covers permissions, empty state, export, and the preview label correctly, but fabricates a 'tomorrow's walkthrough' timeframe (the conversation says 'next week') and incorrectly states export is 'already being worked on today' as if in progress, when the conversation actually says Ben is doing it today, which is roughly consistent, but the more clear contradiction is the 'tomorrow' claim not supported by the thread.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 2,
+          "rationale": "The reply covers permissions, empty state, export, and the preview label correctly, but fabricates a 'tomorrow's walkthrough' timeframe (the conversation says 'next week') and incorrectly states export is 'already being worked on today' as if in progress, when the conversation actually says Ben is doing it today, which is roughly consistent, but the more clear contradiction is the 'tomorrow' claim not supported by the thread.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "Q-7",
+      "judge": "response-quality",
+      "kind": "real",
+      "promptVersion": "response-quality/v1 (2026-08-29)",
+      "rating": 3,
+      "rationale": "The reply correctly covers permissions, the export rename, the preview label on the score, and notes the empty state is done. However, it fabricates a detail not supported by the conversation—claiming there's 'a task tracked for this, but it's still unapproved and needs to be assigned'—which is an unsupported addition.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 3,
+          "rationale": "The reply correctly covers permissions, the export rename, the preview label on the score, and notes the empty state is done. However, it fabricates a detail not supported by the conversation—claiming there's 'a task tracked for this, but it's still unapproved and needs to be assigned'—which is an unsupported addition.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "Q-8",
+      "judge": "response-quality",
+      "kind": "perturbed-wrong",
+      "promptVersion": "response-quality/v1 (2026-08-29)",
+      "rating": 1,
+      "rationale": "The reply fabricates entirely unrelated exclusions (mobile app, SSO, scheduled-report builder) that were never mentioned in the conversation, instead of correctly stating that dark mode and full-account export were left out of pilot scope.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 1,
+          "rationale": "The reply fabricates entirely unrelated exclusions (mobile app, SSO, scheduled-report builder) that were never mentioned in the conversation, instead of correctly stating that dark mode and full-account export were left out of pilot scope.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "Q-9",
+      "judge": "response-quality",
+      "kind": "perturbed-wrong",
+      "promptVersion": "response-quality/v1 (2026-08-29)",
+      "rating": 2,
+      "rationale": "The reply fabricates that Ben already merged the permissions fix and calls permissions 'handled,' directly contradicting the conversation, which states permissions still need work before the walkthrough.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 2,
+          "rationale": "The reply fabricates that Ben already merged the permissions fix and calls permissions 'handled,' directly contradicting the conversation, which states permissions still need work before the walkthrough.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "Q-10",
+      "judge": "response-quality",
+      "kind": "perturbed-wrong",
+      "promptVersion": "response-quality/v1 (2026-08-29)",
+      "rating": 1,
+      "rationale": "The assistant deflects and promises to follow up instead of stating the decided scope exclusions (dark mode and full-account export), providing none of the required facts.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 1,
+          "rationale": "The assistant deflects and promises to follow up instead of stating the decided scope exclusions (dark mode and full-account export), providing none of the required facts.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "Q-11",
+      "judge": "response-quality",
+      "kind": "real",
+      "promptVersion": "response-quality/v1 (2026-08-29)",
+      "rating": 2,
+      "rationale": "The reply correctly identifies full-account export as out of scope but completely omits dark mode, a key expected fact, and instead substitutes an unsupported item ('analytics response contract stability') as being left out of scope.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 2,
+          "rationale": "The reply correctly identifies full-account export as out of scope but completely omits dark mode, a key expected fact, and instead substitutes an unsupported item ('analytics response contract stability') as being left out of scope.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "Q-12",
+      "judge": "response-quality",
+      "kind": "real",
+      "promptVersion": "response-quality/v1 (2026-08-29)",
+      "rating": 1,
+      "rationale": "The reply fails to mention dark mode or full-account export as out-of-scope items, which are the explicit facts requested, and instead substitutes unrelated pending items like permissions and the analytics endpoint.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 1,
+          "rationale": "The reply fails to mention dark mode or full-account export as out-of-scope items, which are the explicit facts requested, and instead substitutes unrelated pending items like permissions and the analytics endpoint.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "Q-13",
+      "judge": "response-quality",
+      "kind": "perturbed-wrong",
+      "promptVersion": "response-quality/v1 (2026-08-29)",
+      "rating": 1,
+      "rationale": "The reply gives a vague generic statement without listing any of the required specifics (permissions, export rename status, preview label for score, empty state completion), so it fails to convey the expected facts.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 1,
+          "rationale": "The reply gives a vague generic statement without listing any of the required specifics (permissions, export rename status, preview label for score, empty state completion), so it fails to convey the expected facts.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "Q-14",
+      "judge": "response-quality",
+      "kind": "perturbed-correct",
+      "promptVersion": "response-quality/v1 (2026-08-29)",
+      "rating": 4,
+      "rationale": "The reply correctly conveys that dark mode and full-account export are excluded from pilot scope, and clarifies that only filtered/on-screen export is included, matching all expected facts.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 4,
+          "rationale": "The reply correctly conveys that dark mode and full-account export are excluded from pilot scope, and clarifies that only filtered/on-screen export is included, matching all expected facts.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "Q-15",
+      "judge": "response-quality",
+      "kind": "perturbed-correct",
+      "promptVersion": "response-quality/v1 (2026-08-29)",
+      "rating": 4,
+      "rationale": "The reply correctly identifies dark mode and full-account export as out of scope, and clarifies that filtered export remains in scope, matching all expected facts.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 4,
+          "rationale": "The reply correctly identifies dark mode and full-account export as out of scope, and clarifies that filtered export remains in scope, matching all expected facts.",
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "Q-16",
+      "judge": "response-quality",
+      "kind": "perturbed-correct",
+      "promptVersion": "response-quality/v1 (2026-08-29)",
+      "rating": 4,
+      "rationale": "The reply correctly states that dark mode and full-account export are excluded, that only filtered-results export is in scope, and accurately ties this to Maya's review of the pilot notes without adding unsupported claims.",
+      "ratings": [
+        {
+          "pass": 1,
+          "rating": 4,
+          "rationale": "The reply correctly states that dark mode and full-account export are excluded, that only filtered-results export is in scope, and accurately ties this to Maya's review of the pilot notes without adding unsupported claims.",
+          "error": null
+        }
+      ]
+    }
+  ]
+}

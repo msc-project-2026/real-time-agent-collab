@@ -1,0 +1,1074 @@
+[
+  {
+    "label": "Task fidelity",
+    "n": 24,
+    "judgeVsHuman": {
+      "n": 24,
+      "vsA": {
+        "n": 24,
+        "exact": 16,
+        "exactRate": 0.6666666666666666,
+        "adjacent": 23,
+        "adjacentRate": 0.9583333333333334,
+        "meanDifference": -0.20833333333333334,
+        "meanAbsoluteDifference": 0.375,
+        "qwk": 0.8151260504201681,
+        "alpha": 0.8187475295928769,
+        "matrix": [
+          [
+            2,
+            1,
+            0,
+            0
+          ],
+          [
+            1,
+            3,
+            3,
+            1
+          ],
+          [
+            0,
+            0,
+            1,
+            1
+          ],
+          [
+            0,
+            0,
+            1,
+            10
+          ]
+        ]
+      },
+      "vsB": {
+        "n": 24,
+        "exact": 9,
+        "exactRate": 0.375,
+        "adjacent": 21,
+        "adjacentRate": 0.875,
+        "meanDifference": -0.16666666666666666,
+        "meanAbsoluteDifference": 0.75,
+        "qwk": 0.5733333333333333,
+        "alpha": 0.5872462060124881,
+        "matrix": [
+          [
+            0,
+            3,
+            0,
+            0
+          ],
+          [
+            2,
+            1,
+            3,
+            2
+          ],
+          [
+            0,
+            1,
+            0,
+            1
+          ],
+          [
+            0,
+            1,
+            2,
+            8
+          ]
+        ]
+      },
+      "vsAReal": {
+        "n": 8,
+        "exact": 6,
+        "exactRate": 0.75,
+        "adjacent": 8,
+        "adjacentRate": 1,
+        "meanDifference": -0.25,
+        "meanAbsoluteDifference": 0.25,
+        "qwk": 0.8571428571428571,
+        "alpha": 0.96875,
+        "matrix": [
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            5
+          ]
+        ]
+      },
+      "vsBReal": {
+        "n": 8,
+        "exact": 4,
+        "exactRate": 0.5,
+        "adjacent": 6,
+        "adjacentRate": 0.75,
+        "meanDifference": 0,
+        "meanAbsoluteDifference": 0.75,
+        "qwk": 0.4117647058823529,
+        "alpha": 0.47834158415841577,
+        "matrix": [
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            1
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            4
+          ]
+        ]
+      },
+      "distribution": {
+        "1": 3,
+        "2": 8,
+        "3": 2,
+        "4": 11
+      },
+      "mean": 2.875,
+      "inBand": 12,
+      "inBandOf": 16,
+      "offBand": [
+        {
+          "id": "T-4",
+          "perturbation": "too vague",
+          "expected": "3",
+          "judge": 2,
+          "a": 3,
+          "b": 3
+        },
+        {
+          "id": "T-5",
+          "perturbation": "correct use of uncited context",
+          "expected": "4",
+          "judge": 2,
+          "a": 4,
+          "b": 4
+        },
+        {
+          "id": "T-8",
+          "perturbation": "different granularity",
+          "expected": "4",
+          "judge": 3,
+          "a": 4,
+          "b": 4
+        },
+        {
+          "id": "T-21",
+          "perturbation": "contradicts the conversation",
+          "expected": "2",
+          "judge": 1,
+          "a": 1,
+          "b": 2
+        }
+      ]
+    },
+    "counts": {
+      "real": 8,
+      "perturbedWrong": 8,
+      "perturbedCorrect": 8
+    },
+    "markerA": {
+      "distribution": {
+        "1": 3,
+        "2": 4,
+        "3": 5,
+        "4": 12
+      },
+      "mean": 3.0833333333333335
+    },
+    "markerB": {
+      "distribution": {
+        "1": 2,
+        "2": 6,
+        "3": 5,
+        "4": 11
+      },
+      "mean": 3.0416666666666665
+    },
+    "humanVsHuman": {
+      "all": {
+        "n": 24,
+        "exact": 16,
+        "exactRate": 0.6666666666666666,
+        "adjacent": 23,
+        "adjacentRate": 0.9583333333333334,
+        "meanDifference": 0.041666666666666664,
+        "meanAbsoluteDifference": 0.375,
+        "qwk": 0.7917981072555205,
+        "alpha": 0.8028855140186916,
+        "matrix": [
+          [
+            1,
+            2,
+            0,
+            0
+          ],
+          [
+            1,
+            2,
+            1,
+            0
+          ],
+          [
+            0,
+            1,
+            3,
+            1
+          ],
+          [
+            0,
+            1,
+            1,
+            10
+          ]
+        ]
+      },
+      "realOnly": {
+        "n": 8,
+        "exact": 5,
+        "exactRate": 0.625,
+        "adjacent": 7,
+        "adjacentRate": 0.875,
+        "meanDifference": 0.25,
+        "meanAbsoluteDifference": 0.5,
+        "qwk": 0.5,
+        "alpha": 0.53125,
+        "matrix": [
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            1
+          ],
+          [
+            0,
+            1,
+            0,
+            4
+          ]
+        ]
+      },
+      "constructedOnly": {
+        "n": 16,
+        "exact": 11,
+        "exactRate": 0.6875,
+        "adjacent": 16,
+        "adjacentRate": 1,
+        "meanDifference": -0.0625,
+        "meanAbsoluteDifference": 0.3125,
+        "qwk": 0.8709677419354839,
+        "alpha": 0.9022057338986473,
+        "matrix": [
+          [
+            1,
+            2,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            3,
+            0
+          ],
+          [
+            0,
+            0,
+            1,
+            6
+          ]
+        ]
+      }
+    },
+    "construction": {
+      "n": 16,
+      "markerAInBand": 15,
+      "markerBInBand": 13,
+      "offBand": [
+        {
+          "id": "T-3",
+          "perturbation": "fabricated",
+          "expected": "1",
+          "a": 1,
+          "b": 2
+        },
+        {
+          "id": "T-18",
+          "perturbation": "extra detail, all supported",
+          "expected": "4",
+          "a": 4,
+          "b": 3
+        },
+        {
+          "id": "T-21",
+          "perturbation": "contradicts the conversation",
+          "expected": "2",
+          "a": 1,
+          "b": 2
+        },
+        {
+          "id": "T-22",
+          "perturbation": "omits a key element",
+          "expected": "2",
+          "a": 2,
+          "b": 3
+        }
+      ]
+    },
+    "rows": [
+      {
+        "id": "T-1",
+        "a": 4,
+        "b": 4,
+        "kind": "perturbed-correct",
+        "perturbation": "compressed, includes the finding",
+        "expected": {},
+        "m": 4
+      },
+      {
+        "id": "T-2",
+        "a": 4,
+        "b": 4,
+        "kind": "perturbed-correct",
+        "perturbation": "heavy paraphrase",
+        "expected": {},
+        "m": 4
+      },
+      {
+        "id": "T-3",
+        "a": 1,
+        "b": 2,
+        "kind": "perturbed-wrong",
+        "perturbation": "fabricated",
+        "expected": {},
+        "m": 1
+      },
+      {
+        "id": "T-4",
+        "a": 3,
+        "b": 3,
+        "kind": "perturbed-wrong",
+        "perturbation": "too vague",
+        "expected": {},
+        "m": 2
+      },
+      {
+        "id": "T-5",
+        "a": 4,
+        "b": 4,
+        "kind": "perturbed-correct",
+        "perturbation": "correct use of uncited context",
+        "expected": {},
+        "m": 2
+      },
+      {
+        "id": "T-6",
+        "a": 2,
+        "b": 1,
+        "kind": "perturbed-wrong",
+        "perturbation": "invented detail",
+        "expected": {},
+        "m": 2
+      },
+      {
+        "id": "T-7",
+        "a": 2,
+        "b": 2,
+        "kind": "perturbed-wrong",
+        "perturbation": "invented detail",
+        "expected": {},
+        "m": 2
+      },
+      {
+        "id": "T-8",
+        "a": 4,
+        "b": 4,
+        "kind": "perturbed-correct",
+        "perturbation": "different granularity",
+        "expected": {},
+        "m": 3
+      },
+      {
+        "id": "T-9",
+        "a": 3,
+        "b": 4,
+        "kind": "real",
+        "perturbation": "—",
+        "expected": null,
+        "m": 2
+      },
+      {
+        "id": "T-10",
+        "a": 2,
+        "b": 2,
+        "kind": "real",
+        "perturbation": "—",
+        "expected": null,
+        "m": 1
+      },
+      {
+        "id": "T-11",
+        "a": 1,
+        "b": 1,
+        "kind": "perturbed-wrong",
+        "perturbation": "wrong scope, broadened",
+        "expected": {},
+        "m": 2
+      },
+      {
+        "id": "T-12",
+        "a": 4,
+        "b": 4,
+        "kind": "real",
+        "perturbation": "—",
+        "expected": null,
+        "m": 4
+      },
+      {
+        "id": "T-13",
+        "a": 4,
+        "b": 4,
+        "kind": "real",
+        "perturbation": "—",
+        "expected": null,
+        "m": 4
+      },
+      {
+        "id": "T-14",
+        "a": 3,
+        "b": 3,
+        "kind": "perturbed-correct",
+        "perturbation": "heavy paraphrase, some loss of specificity",
+        "expected": {},
+        "m": 4
+      },
+      {
+        "id": "T-15",
+        "a": 4,
+        "b": 4,
+        "kind": "real",
+        "perturbation": "—",
+        "expected": null,
+        "m": 4
+      },
+      {
+        "id": "T-16",
+        "a": 4,
+        "b": 4,
+        "kind": "perturbed-correct",
+        "perturbation": "legitimate synonym vocabulary",
+        "expected": {},
+        "m": 4
+      },
+      {
+        "id": "T-17",
+        "a": 3,
+        "b": 3,
+        "kind": "perturbed-wrong",
+        "perturbation": "wrong scope, narrowed",
+        "expected": {},
+        "m": 2
+      },
+      {
+        "id": "T-18",
+        "a": 4,
+        "b": 3,
+        "kind": "perturbed-correct",
+        "perturbation": "extra detail, all supported",
+        "expected": {},
+        "m": 4
+      },
+      {
+        "id": "T-19",
+        "a": 3,
+        "b": 2,
+        "kind": "real",
+        "perturbation": "—",
+        "expected": null,
+        "m": 3
+      },
+      {
+        "id": "T-20",
+        "a": 4,
+        "b": 4,
+        "kind": "real",
+        "perturbation": "—",
+        "expected": null,
+        "m": 4
+      },
+      {
+        "id": "T-21",
+        "a": 1,
+        "b": 2,
+        "kind": "perturbed-wrong",
+        "perturbation": "contradicts the conversation",
+        "expected": {},
+        "m": 1
+      },
+      {
+        "id": "T-22",
+        "a": 2,
+        "b": 3,
+        "kind": "perturbed-wrong",
+        "perturbation": "omits a key element",
+        "expected": {},
+        "m": 2
+      },
+      {
+        "id": "T-23",
+        "a": 4,
+        "b": 2,
+        "kind": "real",
+        "perturbation": "—",
+        "expected": null,
+        "m": 4
+      },
+      {
+        "id": "T-24",
+        "a": 4,
+        "b": 4,
+        "kind": "perturbed-correct",
+        "perturbation": "correct use of uncited context",
+        "expected": {},
+        "m": 4
+      }
+    ]
+  },
+  {
+    "label": "Response quality",
+    "n": 16,
+    "judgeVsHuman": {
+      "n": 16,
+      "vsA": {
+        "n": 16,
+        "exact": 13,
+        "exactRate": 0.8125,
+        "adjacent": 15,
+        "adjacentRate": 0.9375,
+        "meanDifference": -0.125,
+        "meanAbsoluteDifference": 0.25,
+        "qwk": 0.8636363636363636,
+        "alpha": 0.8725534705407587,
+        "matrix": [
+          [
+            3,
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            4,
+            0,
+            1
+          ],
+          [
+            0,
+            1,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            5
+          ]
+        ]
+      },
+      "vsB": {
+        "n": 16,
+        "exact": 11,
+        "exactRate": 0.6875,
+        "adjacent": 16,
+        "adjacentRate": 1,
+        "meanDifference": -0.3125,
+        "meanAbsoluteDifference": 0.3125,
+        "qwk": 0.8863636363636364,
+        "alpha": 0.8792761148442272,
+        "matrix": [
+          [
+            2,
+            2,
+            0,
+            0
+          ],
+          [
+            0,
+            4,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            2
+          ],
+          [
+            0,
+            0,
+            0,
+            5
+          ]
+        ]
+      },
+      "vsAReal": {
+        "n": 6,
+        "exact": 3,
+        "exactRate": 0.5,
+        "adjacent": 5,
+        "adjacentRate": 0.8333333333333334,
+        "meanDifference": -0.3333333333333333,
+        "meanAbsoluteDifference": 0.6666666666666666,
+        "qwk": 0.47058823529411764,
+        "alpha": 0.44837758112094395,
+        "matrix": [
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            2,
+            0,
+            1
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "vsBReal": {
+        "n": 6,
+        "exact": 3,
+        "exactRate": 0.5,
+        "adjacent": 6,
+        "adjacentRate": 1,
+        "meanDifference": -0.5,
+        "meanAbsoluteDifference": 0.5,
+        "qwk": 0.7428571428571429,
+        "alpha": 0.7428861788617886,
+        "matrix": [
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            2,
+            1,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            1
+          ],
+          [
+            0,
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "distribution": {
+        "1": 4,
+        "2": 5,
+        "3": 2,
+        "4": 5
+      },
+      "mean": 2.5,
+      "inBand": 8,
+      "inBandOf": 10,
+      "offBand": [
+        {
+          "id": "Q-3",
+          "perturbation": "reordered, synonym vocabulary",
+          "expected": "4",
+          "judge": 3,
+          "a": 3,
+          "b": 4
+        },
+        {
+          "id": "Q-13",
+          "perturbation": "too vague to land",
+          "expected": "2",
+          "judge": 1,
+          "a": 1,
+          "b": 2
+        }
+      ]
+    },
+    "counts": {
+      "real": 6,
+      "perturbedWrong": 5,
+      "perturbedCorrect": 5
+    },
+    "markerA": {
+      "distribution": {
+        "1": 3,
+        "2": 6,
+        "3": 1,
+        "4": 6
+      },
+      "mean": 2.625
+    },
+    "markerB": {
+      "distribution": {
+        "1": 2,
+        "2": 6,
+        "3": 1,
+        "4": 7
+      },
+      "mean": 2.8125
+    },
+    "humanVsHuman": {
+      "all": {
+        "n": 16,
+        "exact": 12,
+        "exactRate": 0.75,
+        "adjacent": 15,
+        "adjacentRate": 0.9375,
+        "meanDifference": -0.1875,
+        "meanAbsoluteDifference": 0.3125,
+        "qwk": 0.8362573099415205,
+        "alpha": 0.8400600835945664,
+        "matrix": [
+          [
+            2,
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            5,
+            0,
+            1
+          ],
+          [
+            0,
+            0,
+            0,
+            1
+          ],
+          [
+            0,
+            0,
+            1,
+            5
+          ]
+        ]
+      },
+      "realOnly": {
+        "n": 6,
+        "exact": 4,
+        "exactRate": 0.6666666666666666,
+        "adjacent": 5,
+        "adjacentRate": 0.8333333333333334,
+        "meanDifference": -0.16666666666666666,
+        "meanAbsoluteDifference": 0.5,
+        "qwk": 0.5161290322580645,
+        "alpha": 0.5958333333333333,
+        "matrix": [
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            3,
+            0,
+            1
+          ],
+          [
+            0,
+            0,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            1,
+            1
+          ]
+        ]
+      },
+      "constructedOnly": {
+        "n": 10,
+        "exact": 8,
+        "exactRate": 0.8,
+        "adjacent": 10,
+        "adjacentRate": 1,
+        "meanDifference": -0.2,
+        "meanAbsoluteDifference": 0.2,
+        "qwk": 0.9382716049382716,
+        "alpha": 0.9188034188034188,
+        "matrix": [
+          [
+            2,
+            1,
+            0,
+            0
+          ],
+          [
+            0,
+            2,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            0,
+            1
+          ],
+          [
+            0,
+            0,
+            0,
+            4
+          ]
+        ]
+      }
+    },
+    "construction": {
+      "n": 10,
+      "markerAInBand": 8,
+      "markerBInBand": 10,
+      "offBand": [
+        {
+          "id": "Q-3",
+          "perturbation": "reordered, synonym vocabulary",
+          "expected": "4",
+          "a": 3,
+          "b": 4
+        },
+        {
+          "id": "Q-13",
+          "perturbation": "too vague to land",
+          "expected": "2",
+          "a": 1,
+          "b": 2
+        }
+      ]
+    },
+    "rows": [
+      {
+        "id": "Q-1",
+        "a": 4,
+        "b": 4,
+        "kind": "perturbed-correct",
+        "perturbation": "terse but complete",
+        "expected": {},
+        "m": 4
+      },
+      {
+        "id": "Q-2",
+        "a": 2,
+        "b": 2,
+        "kind": "perturbed-wrong",
+        "perturbation": "omits key expected facts",
+        "expected": {},
+        "m": 2
+      },
+      {
+        "id": "Q-3",
+        "a": 3,
+        "b": 4,
+        "kind": "perturbed-correct",
+        "perturbation": "reordered, synonym vocabulary",
+        "expected": {},
+        "m": 3
+      },
+      {
+        "id": "Q-4",
+        "a": 4,
+        "b": 4,
+        "kind": "real",
+        "perturbation": "—",
+        "expected": null,
+        "m": 4
+      },
+      {
+        "id": "Q-5",
+        "a": 2,
+        "b": 2,
+        "kind": "real",
+        "perturbation": "—",
+        "expected": null,
+        "m": 2
+      },
+      {
+        "id": "Q-6",
+        "a": 4,
+        "b": 3,
+        "kind": "real",
+        "perturbation": "—",
+        "expected": null,
+        "m": 2
+      },
+      {
+        "id": "Q-7",
+        "a": 2,
+        "b": 4,
+        "kind": "real",
+        "perturbation": "—",
+        "expected": null,
+        "m": 3
+      },
+      {
+        "id": "Q-8",
+        "a": 1,
+        "b": 1,
+        "kind": "perturbed-wrong",
+        "perturbation": "fabricated",
+        "expected": {},
+        "m": 1
+      },
+      {
+        "id": "Q-9",
+        "a": 2,
+        "b": 2,
+        "kind": "perturbed-wrong",
+        "perturbation": "unsupported claim",
+        "expected": {},
+        "m": 2
+      },
+      {
+        "id": "Q-10",
+        "a": 1,
+        "b": 1,
+        "kind": "perturbed-wrong",
+        "perturbation": "non-answer",
+        "expected": {},
+        "m": 1
+      },
+      {
+        "id": "Q-11",
+        "a": 2,
+        "b": 2,
+        "kind": "real",
+        "perturbation": "—",
+        "expected": null,
+        "m": 2
+      },
+      {
+        "id": "Q-12",
+        "a": 2,
+        "b": 2,
+        "kind": "real",
+        "perturbation": "—",
+        "expected": null,
+        "m": 1
+      },
+      {
+        "id": "Q-13",
+        "a": 1,
+        "b": 2,
+        "kind": "perturbed-wrong",
+        "perturbation": "too vague to land",
+        "expected": {},
+        "m": 1
+      },
+      {
+        "id": "Q-14",
+        "a": 4,
+        "b": 4,
+        "kind": "perturbed-correct",
+        "perturbation": "false-positive control, minimal vocabulary overlap",
+        "expected": {},
+        "m": 4
+      },
+      {
+        "id": "Q-15",
+        "a": 4,
+        "b": 4,
+        "kind": "perturbed-correct",
+        "perturbation": "different phrasing, same facts",
+        "expected": {},
+        "m": 4
+      },
+      {
+        "id": "Q-16",
+        "a": 4,
+        "b": 4,
+        "kind": "perturbed-correct",
+        "perturbation": "adds a correct, supported detail",
+        "expected": {},
+        "m": 4
+      }
+    ]
+  }
+]
