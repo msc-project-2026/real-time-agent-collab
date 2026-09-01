@@ -20,10 +20,18 @@ function buildTaskApprovalCard({ task, boardUrl }) {
   const body = [
     {
       type: 'TextBlock',
-      text: `New task pending approval: ${valueOrEmpty(task.title)}`,
+      text: 'New task pending approval',
       weight: 'Bolder',
       size: 'Medium',
       wrap: true,
+    },
+    // Title on its own line under the heading: a long title on the heading
+    // line pushed the fixed part off screen on narrow clients.
+    {
+      type: 'TextBlock',
+      text: valueOrEmpty(task.title),
+      wrap: true,
+      spacing: 'Small',
     },
   ];
 
